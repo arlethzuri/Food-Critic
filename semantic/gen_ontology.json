@@ -1,0 +1,441 @@
+{
+  "_meta": {
+    "title": "SLC Health Inspection Ontology (data-grounded v1)",
+    "generated_from": "scribbles/data_exploration/01_sanity_check_slc.ipynb",
+    "data_snapshot": {
+      "establishments": 204,
+      "inspections": 1258,
+      "violations": 5515,
+      "date_range": "2009-01-09 to 2026-07-14"
+    },
+    "purpose": [
+      "Tag ingested SLCHD facts and (later) RAG chunks with concept labels",
+      "Ground hypothesis generation and evidence lookup for the MVP agent",
+      "Expose a structure the agent can cite when explaining reasoning (RQ2)"
+    ]
+  },
+  "data_sources": {
+    "slc_establishments": {
+      "file": "data/slc/establishments.csv",
+      "grain": "one row per establishment (portal listing)",
+      "primary_key": "establishment_key"
+    },
+    "slc_inspections": {
+      "file": "data/slc/inspections.csv",
+      "grain": "one row per inspection event",
+      "join_key": [
+        "establishment_key",
+        "inspection_date"
+      ]
+    },
+    "slc_violations": {
+      "file": "data/slc/violations.csv",
+      "grain": "one row per violation line item on an inspection",
+      "join_key": [
+        "establishment_key",
+        "inspection_date",
+        "code",
+        "observed_violation"
+      ]
+    }
+  },
+  "classes": {
+    "Establishment": {
+      "description": "A licensed food-service premises in the SLCHD public portal. Broader than 'restaurant' \u2014 includes caterers, coffee shops, mobile units, commissaries.",
+      "source_table": "slc_establishments",
+      "attributes": {
+        "establishment_key": {
+          "type": "string",
+          "description": "Composite key: NAME|ADDRESS|CITY (uppercased). Not an official permit ID."
+        },
+        "name": {
+          "type": "string"
+        },
+        "address": {
+          "type": "string"
+        },
+        "city": {
+          "type": "string"
+        },
+        "city_state_zip": {
+          "type": "string"
+        },
+        "phone": {
+          "type": "string",
+          "nullable": true
+        },
+        "establishment_type": {
+          "type": "string",
+          "description": "SLCHD license category (e.g. 'Restaurants: plated', 'Mobiles: Food Carts')."
+        },
+        "rank": {
+          "type": "string",
+          "description": "Portal compliance rank as percentage string (e.g. '89%')."
+        },
+        "list_page": {
+          "type": "integer",
+          "description": "Source list page number."
+        },
+        "scraped_at": {
+          "type": "datetime",
+          "description": "Ingestion timestamp."
+        }
+      }
+    },
+    "EstablishmentType": {
+      "description": "Normalized license category for an Establishment.",
+      "source_field": "Establishment.establishment_type",
+      "observed_values": [
+        "Restaurants: non-plated",
+        "Restaurants: plated",
+        "Beverage Service: Coffee",
+        "Caterers, not restaurant connected",
+        "Mobiles: Mobile Food Units (Trucks)",
+        "Commissary",
+        "Beverage Service: Bars/Lounges",
+        "Beverage Service: Juice/Smoothies",
+        "Mobiles: Food Carts",
+        "Concessions: shaved ice only",
+        "Concessions: potentially hazardous foods"
+      ]
+    },
+    "ComplianceRank": {
+      "description": "Portal-reported compliance percentile for an establishment (75\u2013100% in current sample). Distinct from per-inspection violation score.",
+      "source_field": "Establishment.rank",
+      "derived_field": "rank_pct",
+      "value_range": [
+        75,
+        100
+      ]
+    },
+    "Inspection": {
+      "description": "A single health inspection event. Lower score = fewer violation points (0 = clean).",
+      "source_table": "slc_inspections",
+      "attributes": {
+        "establishment_key": {
+          "type": "string",
+          "fk": "Establishment.establishment_key"
+        },
+        "name": {
+          "type": "string",
+          "note": "Denormalized from portal; prefer establishment_key for joins."
+        },
+        "inspection_date": {
+          "type": "date"
+        },
+        "inspection_type": {
+          "type": "enum",
+          "values": [
+            "01 - Routine",
+            "02 - Followup",
+            "07 - Critical Item"
+          ]
+        },
+        "score": {
+          "type": "integer",
+          "description": "Total violation points for this inspection. 0 means no points assessed."
+        },
+        "critical_violations": {
+          "type": "integer",
+          "nullable": true,
+          "description": "Summary count from portal; often null when score is 0."
+        },
+        "noncritical_violations": {
+          "type": "integer",
+          "nullable": true,
+          "description": "Summary count from portal; often null when score is 0."
+        },
+        "scraped_at": {
+          "type": "datetime"
+        }
+      }
+    },
+    "Violation": {
+      "description": "One cited violation line on an inspection. Structured code + rubric category + free-text observation.",
+      "source_table": "slc_violations",
+      "attributes": {
+        "establishment_key": {
+          "type": "string",
+          "fk": "Establishment.establishment_key"
+        },
+        "inspection_date": {
+          "type": "date",
+          "fk": "Inspection.inspection_date"
+        },
+        "code": {
+          "type": "string",
+          "description": "Utah Food Code section reference (e.g. '4.6.40', '4.4.82*'). Asterisk often marks critical items."
+        },
+        "observed_violation": {
+          "type": "string",
+          "description": "Inspector narrative for this citation."
+        },
+        "points": {
+          "type": "integer",
+          "nullable": true,
+          "description": "Per-violation points when present; mostly null \u2014 prefer Inspection.score."
+        },
+        "critical": {
+          "type": "enum",
+          "values": [
+            "Yes",
+            "No"
+          ]
+        },
+        "occurrences": {
+          "type": "integer",
+          "description": "Repeat count of this violation within the inspection (usually 1)."
+        },
+        "cos": {
+          "type": "enum",
+          "values": [
+            "Yes",
+            "No"
+          ],
+          "description": "Corrected on site during inspection."
+        },
+        "phr": {
+          "type": "string",
+          "description": "Public health rationale. 160 distinct values in sample."
+        },
+        "scraped_at": {
+          "type": "datetime"
+        }
+      }
+    },
+    "ViolationCategory": {
+      "description": "Raw rubric label from the portal (Violation.phr). Kept as-is for traceability; map to ViolationType for reasoning.",
+      "source_field": "Violation.phr",
+      "cardinality_in_sample": 160
+    },
+    "ViolationType": {
+      "description": "Normalized violation bucket for agent reasoning. Populated via hand-curated semantic/violation_map.csv keyed on code and/or phr.",
+      "values": [
+        "temperature_control",
+        "cross_contamination",
+        "hygiene_practice",
+        "pest_presence",
+        "facility_maintenance",
+        "documentation"
+      ],
+      "attributes": {
+        "risk_level": {
+          "values": [
+            "critical",
+            "non_critical"
+          ],
+          "derivation": "Prefer Violation.critical; corroborate with code/phr asterisk markers."
+        }
+      },
+      "mapping_notes": [
+        "161 distinct codes and 160 phr labels in sample \u2014 map top-frequency codes first.",
+        "Example: 'Cold Holding*' \u2192 temperature_control + critical.",
+        "Example: 'Repairing-Physical Facilities' \u2192 facility_maintenance + non_critical."
+      ]
+    },
+    "InspectionTrend": {
+      "description": "Derived trend over available inspection history for an establishment.",
+      "values": [
+        "improving",
+        "stable",
+        "worsening",
+        "insufficient_data"
+      ],
+      "derivation": {
+        "score_delta": "last_score - first_score by inspection_date within establishment window",
+        "improving": "score_delta < -2",
+        "worsening": "score_delta > 2",
+        "stable": "abs(score_delta) <= 2",
+        "insufficient_data": "fewer than 2 inspections"
+      }
+    },
+    "Hypothesis": {
+      "description": "Candidate explanation the agent generates before recommending or warning about an establishment.",
+      "types": [
+        "safe_bet",
+        "health_risk_concern",
+        "improving_compliance",
+        "declining_compliance",
+        "repeat_critical_violator"
+      ],
+      "attributes": [
+        "hypothesis_id",
+        "establishment_key",
+        "type",
+        "supporting_evidence",
+        "undermining_evidence",
+        "confidence"
+      ]
+    },
+    "Evidence": {
+      "description": "A traceable fact or retrieved chunk cited for or against a Hypothesis.",
+      "attributes": {
+        "evidence_id": {
+          "type": "string"
+        },
+        "source_type": {
+          "values": [
+            "sql_fact",
+            "rag_chunk",
+            "live_search"
+          ]
+        },
+        "source_ref": {
+          "type": "string",
+          "examples": [
+            "inspections:100 LIONS BAR|...|2022-07-17",
+            "violations:4.5.18*",
+            "slchd_rag:handwashing_sinks#chunk_2"
+          ]
+        },
+        "relates_to_concept": {
+          "type": "string"
+        },
+        "direction": {
+          "values": [
+            "supports",
+            "undermines"
+          ]
+        },
+        "establishment_key": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "relations": [
+    {
+      "name": "hasEstablishmentType",
+      "domain": "Establishment",
+      "range": "EstablishmentType"
+    },
+    {
+      "name": "hasComplianceRank",
+      "domain": "Establishment",
+      "range": "ComplianceRank"
+    },
+    {
+      "name": "hasInspection",
+      "domain": "Establishment",
+      "range": "Inspection"
+    },
+    {
+      "name": "hasViolation",
+      "domain": "Inspection",
+      "range": "Violation"
+    },
+    {
+      "name": "hasViolationCategory",
+      "domain": "Violation",
+      "range": "ViolationCategory"
+    },
+    {
+      "name": "mapsToViolationType",
+      "domain": "Violation",
+      "range": "ViolationType"
+    },
+    {
+      "name": "impliesRiskLevel",
+      "domain": "ViolationType",
+      "range": [
+        "critical",
+        "non_critical"
+      ]
+    },
+    {
+      "name": "hasInspectionTrend",
+      "domain": "Establishment",
+      "range": "InspectionTrend"
+    },
+    {
+      "name": "supportsHypothesis",
+      "domain": "Evidence",
+      "range": "Hypothesis"
+    },
+    {
+      "name": "underminesHypothesis",
+      "domain": "Evidence",
+      "range": "Hypothesis"
+    }
+  ],
+  "fact_tables": {
+    "_target": "DuckDB views over parquet emitted by etl/",
+    "establishments": {
+      "ontology_class": "Establishment",
+      "primary_key": "establishment_key"
+    },
+    "inspections": {
+      "ontology_class": "Inspection",
+      "primary_key": [
+        "establishment_key",
+        "inspection_date",
+        "inspection_type"
+      ],
+      "foreign_keys": {
+        "establishment_key": "establishments.establishment_key"
+      }
+    },
+    "violations": {
+      "ontology_class": "Violation",
+      "primary_key": [
+        "establishment_key",
+        "inspection_date",
+        "code",
+        "observed_violation"
+      ],
+      "foreign_keys": {
+        "establishment_key": "establishments.establishment_key",
+        "inspection_date": "inspections.inspection_date"
+      },
+      "enriched_columns": [
+        "violation_type",
+        "risk_level"
+      ]
+    }
+  },
+  "hypothesis_evidence_map": {
+    "_note": "Analytical guidance scoped to SLCHD data available now. Expand when reviews/RAG sources land.",
+    "safe_bet": {
+      "look_for": [
+        "Inspection.score: recent values low (0\u20133), stable over window",
+        "Violation.critical: none in last 1\u20132 inspections",
+        "ComplianceRank.rank_pct: high (e.g. \u2265 90%)",
+        "InspectionTrend: stable or improving"
+      ]
+    },
+    "health_risk_concern": {
+      "look_for": [
+        "Violation.critical: Yes on recent inspection",
+        "ViolationType: temperature_control or cross_contamination with risk_level=critical",
+        "Inspection.score: elevated on most recent visit",
+        "Violation.occurrences: > 1 for same code on one inspection"
+      ]
+    },
+    "improving_compliance": {
+      "look_for": [
+        "InspectionTrend: improving (score_delta negative)",
+        "Violation.critical: decreasing count over window",
+        "Inspection.inspection_type: follow-up after prior violations with lower score"
+      ]
+    },
+    "declining_compliance": {
+      "look_for": [
+        "InspectionTrend: worsening (score_delta positive)",
+        "Violation.critical: increasing count or new critical codes",
+        "Inspection.score: upward trend across last 3 inspections"
+      ]
+    },
+    "repeat_critical_violator": {
+      "look_for": [
+        "Violation.code: same critical code on multiple inspection dates",
+        "Violation.cos: No on critical items (not corrected on site)",
+        "Inspection.inspection_type: '07 - Critical Item' or '02 - Followup' present"
+      ]
+    }
+  },
+  "data_quality_flags": {
+    "sparse_violation_points": "Violation.points null for most rows; use Inspection.score instead.",
+    "zero_violation_rows": "Some establishments have inspections but no violation rows \u2014 treat as clean history.",
+    "composite_key": "establishment_key can split multi-location brands; do not infer sibling groups without external data."
+  }
+}

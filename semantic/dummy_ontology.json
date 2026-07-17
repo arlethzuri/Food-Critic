@@ -1,0 +1,229 @@
+{
+    "_meta": {
+      "title": "Restaurant Recommendation Agent — First-Pass Domain Ontology (v1)",
+      "purpose": [
+        "Tag ingested facts + RAG chunks with concept labels (concept-driven retrieval instead of pure vector similarity)",
+        "Ground the abductive reasoning step (hypothesis generation + evidence evaluation)",
+        "Provide a structure that can be rendered as a diagram for RQ2 (agent explaining its own reasoning)"
+      ],
+      "scope_note": "Intentionally small (dozens of concepts, not hundreds). Expand only when a concept is needed to explain an actual data field or support an actual hypothesis type below."
+    },
+  
+    "classes": {
+  
+      "Restaurant": {
+        "description": "A single dining establishment in the SLC dataset.",
+        "attributes": [
+          "restaurant_id",
+          "name",
+          "entity_name",
+          "address",
+          "lat",
+          "lon",
+          "founding_date",
+          "price_tier",
+          "cuisine_type",
+          "sibling_group_id"
+        ]
+      },
+  
+      "RestaurantGroup": {
+        "description": "A parent entity or informal group linking sibling restaurants (shared ownership, brand, or registered agent).",
+        "attributes": ["group_id", "group_name", "member_restaurant_ids"]
+      },
+  
+      "CuisineType": {
+        "description": "Hierarchical cuisine taxonomy (normalize OSM/Foursquare tags into this).",
+        "hierarchy_example": {
+          "Asian": {
+            "Thai": ["Northern Thai", "Isaan"],
+            "Vietnamese": [],
+            "Japanese": []
+          },
+          "American": {
+            "Southern": [],
+            "New American": []
+          },
+          "Latin American": {
+            "Mexican": [],
+            "Peruvian": []
+          },
+          "Mediterranean": []
+        }
+      },
+  
+      "PriceTier": {
+        "description": "Coarse price bucket, normalized from $ / $$ / $$$ / $$$$ tags.",
+        "values": ["budget", "moderate", "upscale", "fine_dining"]
+      },
+  
+      "Inspection": {
+        "description": "A single health inspection event for a restaurant.",
+        "attributes": ["inspection_id", "restaurant_id", "date", "score", "violations"]
+      },
+  
+      "ViolationType": {
+        "description": "Normalized category of health code violation (map raw SLCHD violation codes into these buckets so they're reasoning-tractable, not just free text).",
+        "values": [
+          "temperature_control",
+          "cross_contamination",
+          "hygiene_practice",
+          "pest_presence",
+          "facility_maintenance",
+          "documentation"
+        ],
+        "attributes": ["risk_level"],
+        "risk_level_values": ["critical", "non_critical"]
+      },
+  
+      "ReviewTheme": {
+        "description": "Normalized theme bucket for sentiment/review content (assign via classification when ingesting review/Reddit/news text, or via RAG-retrieved chunk tagging).",
+        "values": [
+          "food_quality",
+          "service",
+          "ambiance",
+          "value_for_price",
+          "cleanliness",
+          "wait_time",
+          "consistency"
+        ]
+      },
+  
+      "SentimentTrend": {
+        "description": "Direction of sentiment for a restaurant over a time window.",
+        "values": ["improving", "stable", "declining", "volatile", "insufficient_data"]
+      },
+  
+      "MarketingSignal": {
+        "description": "A recognition/marketing event tied to a restaurant.",
+        "attributes": ["signal_id", "restaurant_id", "type", "source", "date", "polarity"],
+        "type_values": ["award", "press_mention", "social_growth", "closure_notice"],
+        "polarity_values": ["positive", "negative", "neutral"]
+      },
+  
+      "Hypothesis": {
+        "description": "A candidate explanation the agent generates when answering a recommendation query. This is the abductive-reasoning unit — the agent should generate several of these per query, then evaluate each against available evidence rather than emitting one answer directly.",
+        "types": [
+          "safe_bet",
+          "hidden_gem",
+          "declining_quality",
+          "hype_driven",
+          "health_risk_concern",
+          "inconsistent_experience"
+        ],
+        "attributes": [
+          "hypothesis_id",
+          "restaurant_id",
+          "type",
+          "supporting_evidence",
+          "undermining_evidence",
+          "confidence"
+        ]
+      },
+  
+      "Evidence": {
+        "description": "A single fact or retrieved chunk cited in support of or against a Hypothesis. Every Evidence instance must be traceable to a concrete source — this is what makes RQ2 (agent explaining itself) answerable rather than hand-wavy.",
+        "attributes": [
+          "evidence_id",
+          "source_type",
+          "source_ref",
+          "relates_to_concept",
+          "direction",
+          "restaurant_id"
+        ],
+        "source_type_values": ["sql_fact", "rag_chunk", "live_search"],
+        "direction_values": ["supports", "undermines"]
+      }
+    },
+  
+    "relations": [
+      { "name": "hasViolationType", "domain": "Inspection", "range": "ViolationType" },
+      { "name": "impliesRiskLevel", "domain": "ViolationType", "range": ["critical", "non_critical"] },
+      { "name": "correlatesWithReviewTheme", "domain": "ViolationType", "range": "ReviewTheme", "note": "e.g. temperature_control violations often co-occur with food_quality complaints" },
+      { "name": "partOfRestaurantGroup", "domain": "Restaurant", "range": "RestaurantGroup" },
+      { "name": "hasCuisine", "domain": "Restaurant", "range": "CuisineType" },
+      { "name": "supportsHypothesis", "domain": "Evidence", "range": "Hypothesis" },
+      { "name": "underminesHypothesis", "domain": "Evidence", "range": "Hypothesis" },
+      { "name": "locatedNear", "domain": "Restaurant", "range": "Restaurant", "note": "spatial proximity, for area-based recommendation queries" }
+    ],
+  
+    "hypothesis_evidence_map": {
+      "_note": "This is the 'analytical guidance' layer: a starting map of which concept types are relevant evidence for which hypothesis type. The agent uses this to know WHERE to look (which tool / which RAG tag) when evaluating a given hypothesis, rather than searching everything unguided.",
+  
+      "safe_bet": {
+        "look_for": [
+          "Inspection.violations: none, or only non_critical, stable over time",
+          "SentimentTrend: stable or improving",
+          "ReviewTheme.consistency: positive"
+        ]
+      },
+      "hidden_gem": {
+        "look_for": [
+          "MarketingSignal: low count / absence",
+          "ReviewTheme.food_quality: positive, small review volume",
+          "SentimentTrend: stable or improving"
+        ]
+      },
+      "declining_quality": {
+        "look_for": [
+          "SentimentTrend: declining",
+          "Inspection.violations: recent increase in count or severity",
+          "ReviewTheme.consistency: negative, 'used to be' language"
+        ]
+      },
+      "hype_driven": {
+        "look_for": [
+          "MarketingSignal: high count, recent press/award",
+          "ReviewTheme: mixed or declining sentiment despite marketing presence"
+        ]
+      },
+      "health_risk_concern": {
+        "look_for": [
+          "Inspection.violations: risk_level = critical, unresolved / repeat",
+          "ReviewTheme.cleanliness: negative"
+        ]
+      },
+      "inconsistent_experience": {
+        "look_for": [
+          "ReviewTheme: high variance across food_quality / service / wait_time",
+          "SentimentTrend: volatile"
+        ]
+      }
+    },
+  
+    "example": {
+      "_note": "Illustrative only.",
+      "restaurant": {
+        "restaurant_id": "r_0142",
+        "name": "Example Thai Kitchen",
+        "cuisine_type": "Thai",
+        "price_tier": "moderate",
+        "sibling_group_id": null
+      },
+      "hypotheses_generated": [
+        {
+          "hypothesis_id": "h1",
+          "type": "safe_bet",
+          "supporting_evidence": [
+            { "evidence_id": "e1", "source_type": "sql_fact", "source_ref": "inspections:insp_881", "relates_to_concept": "ViolationType.none_critical", "direction": "supports" },
+            { "evidence_id": "e2", "source_type": "rag_chunk", "source_ref": "cdc_doc_12#chunk_3", "relates_to_concept": "ReviewTheme.consistency", "direction": "supports" }
+          ],
+          "undermining_evidence": [],
+          "confidence": 0.78
+        },
+        {
+          "hypothesis_id": "h2",
+          "type": "hype_driven",
+          "supporting_evidence": [
+            { "evidence_id": "e3", "source_type": "sql_fact", "source_ref": "marketing_signals:ms_44", "relates_to_concept": "MarketingSignal.press_mention", "direction": "supports" }
+          ],
+          "undermining_evidence": [
+            { "evidence_id": "e4", "source_type": "sql_fact", "source_ref": "reviews_agg:ra_19", "relates_to_concept": "ReviewTheme.food_quality", "direction": "undermines" }
+          ],
+          "confidence": 0.31
+        }
+      ],
+      "selected_hypothesis": "h1",
+      "selection_note": "Selection = highest confidence given evidence balance; the agent's explanation to the user should walk through h1 vs h2 and why h1 won. This h1-vs-h2 comparison is exactly what your diagram/report should render."
+    }
+  }
