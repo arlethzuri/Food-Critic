@@ -1,0 +1,68 @@
+**sythesis of food agent proj (mvp)**
+
+
+- *Research Questions*
+	- RQ1: Does an agent provided tooling, analytical guidance, and knowledge structure provide better suggestions for restaurants as opposed to an agent provided data only?
+	- RQ2: Can an agent communicate how it uses provided analytical guidance and/or knowledge structures to a human and have a continued "conversation" with a human within this framework and does this provide clearer answers?
+
+- *Data Sources*
+	- Government data:
+		- SLC health inspections
+	- Sentiment:
+		- (live later) ANY reviews (google, yelp, tripadvisor)
+		- (live later) Reddit
+	- Is listed on food delivery reviews/option
+		- (live later)
+	- Whatever restaurant details are available ([utah business entity search](https://businessregistration.utah.gov/)):
+		- Whether restaurant has multiple locations
+		- Age of restaurant
+		- Any sibling restaurants
+		- Cuisine type
+		- Allergens and menu
+		- Location of restaurant
+	- Marketing presence:
+		- News / Food Critique coverage
+			- common crawl, google trends
+	- Spatial/demographic context
+		- US Census/ACS
+		- OSM
+- *Knowledge sources*
+	- All knowledge sources will be organized with a hand-made ontology.
+	- Fact tables (populated by data tables) 
+	- Restaurant Reviews data (live later, (RAG knowledge base or may need to be solely based on what LLM can search for bc there's no free/open API))
+	- Domain knowledge (RAG, e.g. some sections from textbooks/CDC reports about food safety, SLCHD documentation, cuisine knowledge)
+	- some potential tools/knowledge sources:
+		- [GI Detection and Extraction from reviews](https://arxiv.org/pdf/2503.09743)
+		- [Food Label Analyzer for Personalized Health Risk Insights](https://ieeexplore.ieee.org/document/11199271)
+- *Knowledge Organization*
+	- create fact tables
+	- create RAG with SLCHD inspection definitions
+- *Analytics and Data Usage*
+	- Evidence gathering via:
+		- RAG feature using a prebuilt knowledge source.
+		- Provide agent the tools for engaging in knowledge retrieval via searching.
+		- Have agent identify relevant trends, correlations, sentiment. 
+	- Hypothesis generation using hand-written ontology:
+		- Report hypotheses to user and be able to explain to user how the agentic system arrived to those conclusions.
+- *Visualization and Report Generation*:
+	- word cloud or some other visual showing sentiment
+	- traditional info vis (line plots, bar plots, scatter)
+	- standardized report showing summary of results to user (still unsure what it looks like)
+	- chat enabling user to continue line of questioning with agentic system
+- *Evaluation*
+	- We will compare agentic system using RAG + ontology + hypothesis/evidence pipeline versus agentic system only accessing data NO RAG, ontology, or hypothesis/evidence pipeline. To compare them we will give them the same prompt to obtain a one-shot response.
+	- we'll compare agent's ability to reason on its own with provided data versus agent 'taught' how to use ontology, interpreting it's own visualizations, and/or how to speak about restaurants
+- *Potential software/tools to use*
+	- LLM APIs
+		- for initial development
+			- llama, gemma, gemini 2.5 flash... any free LLMs
+			- or [sentencetransformer](https://sbert.net/)
+		- for final deployment/testing
+			- OpenAI, Claude...whatever is used 
+	- Langchain
+	- Python for data analysis
+	- d3, or other VIS respected visualization tools
+	- [RAG tutorial](https://huggingface.co/blog/ngxson/make-your-own-rag)
+	- Knowledge base 
+		- ontology written in json
+		- knowledge graph stored in json/networkx?
