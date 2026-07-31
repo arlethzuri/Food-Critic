@@ -49,9 +49,15 @@ SENTIMENT / REVIEWS (live_later)
   API:  no free/open bulk API; scraping or paid Places API
   Ontology: ReviewTheme, SentimentTrend, Evidence (live_search or rag_chunk)
 
-[live_later] Yelp reviews
-  API:  Fusion API (rate-limited; terms apply) or scrape
+[implemented] Yelp reviews
+  API:  Fusion API (free, 500 calls/day, rate-limited; terms apply re: attribution/caching)
+  Collector: collectors/yelp_reviews.py
+  Output: data/processed/yelp/yelp_businesses.csv, yelp_reviews.csv
   Ontology: ReviewTheme, SentimentTrend
+  Notes: 1 call per restaurant for rating/review_count/price/categories, +1
+    optional call for up to 3 review excerpts; resume-safe across daily
+    quota resets. Matched against establishments in
+    data/processed/merged_food_inspections.csv.
 
 [live_later] TripAdvisor reviews
   API:  none official for research use; scrape or manual sample
