@@ -26,7 +26,15 @@ else needed to run the app is already in the repo.
 python scripts/load_duckdb.py
 ```
 
-**Run the app** (needs an LLM provider — see `app/README.md` for Groq/Google/Ollama setup):
+**Set up an LLM provider:**
+```bash
+cp app/.env.example app/.env
+```
+Edit `app/.env` and fill in one provider — Groq (free key, default) or Google
+(free key), or set `LLM_PROVIDER=ollama` for a local model (no key, needs
+`ollama serve` running). Full details in `app/README.md`.
+
+**Run the app:**
 ```bash
 streamlit run app/dashboard.py       # V1
 streamlit run app/dashboard_v2.py    # V2, needs: python3 app/rag/ingest.py first
