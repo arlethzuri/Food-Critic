@@ -9,7 +9,7 @@ row with the missing fields left empty — rows are never dropped for
 lacking detail.
 
 Regenerate with `python3 scripts/merge_food_inspections.py` (reads
-`processed/slc/*.csv` and `../food_inspections.csv`, both described below).
+`processed/slc/*.csv` and `food_inspections.csv`, both described below).
 
 ### Columns
 
@@ -48,8 +48,8 @@ tables, group by `establishment_name`+`address` or by
 - **`friend_slc`** (32,738 rows) — from `processed/slc/establishments.csv`,
   `inspections.csv`, and `violations.csv`, joined on `establishment_key`
   (and `inspection_date` for violations). Has full violation-level detail.
-- **`own_scrape`** (431 rows) — from `../food_inspections.csv`
-  (`data-scrapping/scrapper.py` output, pages 76-118 of the results list).
+- **`own_scrape`** (431 rows) — from `food_inspections.csv`
+  (`scripts/collectors/slchd/scrapper.py` output, pages 76-118 of the results list).
   Only captured establishment info and inspection-history summaries, not
   individual violation line items, so `violation_code`,
   `violation_description`, and the other `violation_*` columns are always

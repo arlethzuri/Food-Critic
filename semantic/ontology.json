@@ -1,0 +1,136 @@
+{
+  "ontology": {
+    "name": "Food-Health-Viz Ontology",
+    "sources": [
+      "Salt Lake County Health Department (SLCHD) food inspection portal",
+      "University of California San Diego (UCSD) Google Local dataset (Utah subset)",
+      "US Census batch geocoder",
+      "OpenStreetMap Nominatim"
+    ],
+    "note": "Column-level meaning and enums live in data_dictionary.json, keyed table.column. This file is structure only: classes, relationships, and cross-cutting reasoning guidance."
+  },
+  "classes": {
+    "Establishment": {
+      "description": "A Google Local place in Utah tagged as food-related. Most have no SLCHD inspection history.",
+      "source_table": "establishments",
+      "primary_key": "gmap_id"
+    },
+    "SLCHDListing": {
+      "description": "A food service establishment in Salt Lake County",
+      "source_table": "establishment_keys",
+      "primary_key": "slchd_establishment_key"
+    },
+    "Category": {
+      "description": "A Google Places category tag.",
+      "source_table": "category",
+      "primary_key": "category_id"
+    },
+    "EstablishmentCategory": {
+      "type": "join_table",
+      "source_table": "establishment_categories",
+      "primary_key": ["gmap_id", "category_id"]
+    },
+    "EstablishmentAttribute": {
+      "description": "A free-text feature/amenity tag for an Establishment.",
+      "source_table": "establishment_attributes",
+      "primary_key": ["gmap_id", "attribute"]
+    },
+    "OperatingHours": {
+      "description": "One day's open/close span for an Establishment. A missing day means closed, not missing data.",
+      "source_table": "gmap_hours",
+      "primary_key": ["gmap_id", "day"]
+    },
+    "Review": {
+      "description": "A Google Local user review for an Establishment.",
+      "source_table": "review"
+    },
+    "InspectionType": {
+      "description": "Lookup for the SLCHD inspection-type code.",
+      "source_table": "inspection_types",
+      "primary_key": "inspection_type_id"
+    },
+    "Inspection": {
+      "description": "A single health inspection event.",
+      "source_table": "inspections",
+      "primary_key": "inspection_id"
+    },
+    "ViolationCode": {
+      "description": "One distinct raw SLCHD violation code.",
+      "source_table": "violation_codes",
+      "primary_key": "violation_code_id"
+    },
+    "Violation": {
+      "description": "One cited violation line on an inspection. Zero citations = zero rows, not a placeholder row.",
+      "source_table": "violations",
+      "primary_key": "violation_id"
+    },
+    "ViolationPublicHealthRationale": {
+      "description": "Raw rubric label as scraped (violations.violation_phr; \"phr\" = public health rationale). Kept for traceability; map to ViolationType for reasoning.",
+      "source_field": "violations.violation_phr"
+    },
+    "ViolationType": {
+      "type": "derived",
+      "description": "Normalized violation bucket for agent reasoning. Not a stored column — join violations.violation_phr against semantic/violation_map.csv.",
+      "values": ["temperature_control", "cross_contamination", "hygiene_practice", "pest_presence", "facility_maintenance", "documentation", "other"]
+    },
+    "InspectionTrend": {
+      "type": "derived",
+      "description": "Trend over an SLCHDListing's inspection history. Compute on demand, not stored.",
+      "values": ["improving", "stable", "worsening", "insufficient_data"],
+      "derivation": {
+        "score_delta": "last_score - first_score, ordered by inspection_date within slchd_establishment_key",
+        "improving": "score_delta < -9 (bottom quartile, n=1118 establishments with >=2 inspections)",
+        "worsening": "score_delta > 1 (top quartile)",
+        "stable": "-9 <= score_delta <= 1 (middle 50%)",
+        "insufficient_data": "fewer than 2 inspections"
+      }
+    },
+    "Hypothesis": {
+      "type": "agent_reasoning",
+      "description": "Candidate explanation the agent generates about an establishment.",
+      "values": ["safe_bet", "health_risk_concern", "improving_compliance", "declining_compliance", "repeat_critical_violator", "no_inspection_data_available", "well_reviewed", "reputation_inspection_mismatch", "limited_track_record"]
+    },
+    "Evidence": {
+      "type": "agent_reasoning",
+      "description": "A traceable fact or retrieved chunk cited for or against a Hypothesis.",
+      "source_type_values": ["sql_fact", "rag_chunk", "live_search"],
+      "direction_values": ["supports", "undermines"]
+    }
+  },
+  "relationships": [
+    { "name": "matchedToSLCHDListing", "from": "Establishment", "to": "SLCHDListing", "join_on": { "from_property": "slchd_establishment_key", "to_property": "slchd_establishment_key" }, "note": "many-to-one, nullable — only 139/8592 establishments set" },
+    { "name": "hasCategory", "from": "Establishment", "to": "Category", "via": "EstablishmentCategory", "join_on": { "from_property": "gmap_id", "to_property": "category_id" } },
+    { "name": "hasAttribute", "from": "Establishment", "to": "EstablishmentAttribute", "join_on": { "from_property": "gmap_id", "to_property": "gmap_id" } },
+    { "name": "hasHours", "from": "Establishment", "to": "OperatingHours", "join_on": { "from_property": "gmap_id", "to_property": "gmap_id" } },
+    { "name": "hasReview", "from": "Establishment", "to": "Review", "join_on": { "from_property": "gmap_id", "to_property": "gmap_id" } },
+    { "name": "hasInspection", "from": "SLCHDListing", "to": "Inspection", "join_on": { "from_property": "slchd_establishment_key", "to_property": "slchd_establishment_key" } },
+    { "name": "hasInspectionType", "from": "Inspection", "to": "InspectionType", "join_on": { "from_property": "inspection_type_id", "to_property": "inspection_type_id" } },
+    { "name": "hasViolation", "from": "Inspection", "to": "Violation", "join_on": { "from_property": "inspection_id", "to_property": "inspection_id" } },
+    { "name": "hasViolationCode", "from": "Violation", "to": "ViolationCode", "join_on": { "from_property": "violation_code_id", "to_property": "violation_code_id" } },
+    { "name": "hasViolationPublicHealthRationale", "from": "Violation", "to": "ViolationPublicHealthRationale", "join_on": { "from_property": "violation_phr", "to_property": "violation_phr" } },
+    { "name": "mapsToViolationType", "from": "ViolationPublicHealthRationale", "to": "ViolationType", "join_on": { "from_property": "violation_phr", "to_property": "violation_map.csv:violation_phr" } },
+    { "name": "hasInspectionTrend", "from": "SLCHDListing", "to": "InspectionTrend" },
+    { "name": "supportsHypothesis", "from": "Evidence", "to": "Hypothesis" },
+    { "name": "underminesHypothesis", "from": "Evidence", "to": "Hypothesis" }
+  ],
+  "hypothesis_evidence_map": {
+    "safe_bet": ["inspection_score low (0-3) and stable", "no critical ViolationCode on last 1-2 inspections", "InspectionTrend stable/improving", "avg_rating >= 4.3 (dataset median) with meaningful num_of_reviews"],
+    "health_risk_concern": ["ViolationCode.critical = true on most recent inspection", "ViolationType temperature_control or cross_contamination + critical", "inspection_score elevated on most recent visit", "violation_occurrences > 1 for the same code on one inspection"],
+    "improving_compliance": ["InspectionTrend improving", "critical-violation count decreasing over window", "Followup (type 2) after a prior high-score inspection, with a lower score"],
+    "declining_compliance": ["InspectionTrend worsening", "increasing critical-violation count or new critical codes", "inspection_score trending up over last 3 inspections"],
+    "repeat_critical_violator": ["same critical violation_code_id across multiple inspection_dates", "violation_cos = false on critical items", "Critical Item (type 7) or Followup (type 2) present in history"],
+    "no_inspection_data_available": ["Establishment.slchd_establishment_key is null — no matchedToSLCHDListing exists", "applies to 98.4% of establishments; state this explicitly rather than staying silent on inspection history"],
+    "well_reviewed": ["avg_rating >= 4.5 (75th percentile)", "num_of_reviews >= 225 (dataset median — a real sample backing the rating, not a handful of reviews)", "does not require an SLCHDListing match; usable for the 98.4% with no inspection data"],
+    "reputation_inspection_mismatch": ["avg_rating >= 4.5 and num_of_reviews >= 225 (well_reviewed)", "but ViolationCode.critical = true on the most recent inspection, or InspectionTrend worsening", "only computable when matchedToSLCHDListing exists"],
+    "limited_track_record": ["num_of_reviews <= 18 (10th percentile)", "not enough signal to support or undermine any other hypothesis with confidence"]
+  },
+  "data_quality_flags": {
+    "establishment_inspection_coverage": "Only 139/8592 establishments (1.6%) have a matched SLCHDListing. Don't imply inspection history for the rest.",
+    "zero_violation_inspections": "No violation rows for an inspection means clean, not missing data.",
+    "duplicate_scrape_violations": "173 inspections (2.5%) have a violation_code_id repeated within one inspection — likely duplicate/OCR-artifact scraping, not double citations. Per-inspection violation counts may be inflated for these.",
+    "geocode_gap": "71/1341 SLCHDListing rows (5.3%) have no lat/lon after Census + Nominatim geocoding.",
+    "composite_key_collisions": "slchd_establishment_key is a derived NAME|ADDRESS|CITY string, not a permit id — a renamed/re-registered same location isn't deduplicated across time.",
+    "own_scrape_source_has_no_violations": "SLCHDListing rows with source=own_scrape (96/1341) never captured violation line items, even where real inspections had violations.",
+    "asterisk_meaning_unconfirmed": "violation_codes.asterisk_count correlates with critical but its official Utah Food Code meaning was not independently verified."
+  }
+}

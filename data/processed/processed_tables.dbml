@@ -1,0 +1,185 @@
+// Column inventory for CSV tables under data/processed/
+
+Project processed_tables {
+  database_type: 'CSV'
+}
+
+Table establishment_keys {
+  establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']
+  name varchar
+  address varchar
+  city varchar
+  city_state_zip varchar
+  establishment_type varchar
+  source varchar
+
+  Note: 'establishment_keys.csv'
+}
+
+Table establishment_keys_geocoded {
+  establishment_key varchar [pk]
+  slchd_lat float
+  slchd_lon float
+  geocode_status varchar
+
+  Note: 'establishment_keys_geocoded.csv — Census batch geocode cache'
+}
+
+Table establishment_hours {
+  establishment_key varchar [not null]
+  day integer [not null, note: '0=Sun … 6=Sat']
+  open_min bigint [note: 'ms since midnight']
+  open_max bigint [note: 'ms since midnight; < open_min if overnight']
+
+  indexes {
+    (establishment_key, day) [pk]
+  }
+
+  Note: 'establishment_hours.csv — from meta.hours for SLCHD-matched places'
+}
+
+Table merged_inspections {
+  establishment_name varchar
+  establishment_type varchar
+  address varchar
+  city_state_zip varchar
+  contact_info varchar
+  rank integer
+  inspection_date varchar
+  inspection_type varchar
+  inspection_score integer
+  count_critical_violations integer
+  count_noncritical_violations integer
+  violation_code varchar
+  violation_description varchar
+  violation_critical varchar
+  violation_occurrences integer
+  violation_cos varchar
+  violation_phr varchar
+  source varchar
+  scraped_at varchar
+
+  Note: 'merged_food_inspections.csv — wide violation-level rows'
+}
+
+Table category {
+  category_id integer [pk]
+  category varchar
+
+  Note: 'category-Utah_food.csv'
+}
+
+Table meta {
+  name varchar
+  address varchar
+  gmap_id varchar [pk]
+  description varchar
+  latitude float
+  longitude float
+  avg_rating float
+  num_of_reviews integer
+  price varchar
+  hours varchar
+  MISC varchar
+  category_id_1 integer
+  category_id_2 integer
+  category_id_3 integer
+  category_id_4 integer
+  category_id_5 integer
+  category_id_6 integer
+  category_id_7 integer
+  category_id_8 integer
+  category_id_9 integer
+  category_id_10 integer
+  category_id_11 integer
+  category_id_12 integer
+  category_id_13 integer
+  category_id_14 integer
+
+  Note: 'meta-Utah_food.csv'
+}
+
+Table meta_matched {
+  name varchar
+  address varchar
+  gmap_id varchar [pk]
+  description varchar
+  latitude float
+  longitude float
+  avg_rating float
+  num_of_reviews integer
+  price varchar
+  hours varchar
+  MISC varchar
+  category_id_1 integer
+  category_id_2 integer
+  category_id_3 integer
+  category_id_4 integer
+  category_id_5 integer
+  category_id_6 integer
+  category_id_7 integer
+  category_id_8 integer
+  category_id_9 integer
+  category_id_10 integer
+  category_id_11 integer
+  category_id_12 integer
+  category_id_13 integer
+  category_id_14 integer
+  SLCHD_establishment_keys varchar [note: 'nullable; set when ER matched']
+
+  Note: 'meta-Utah_food_matched.csv — meta + SLCHD key'
+}
+
+Table meta_slchd_match_audit {
+  gmap_id varchar
+  SLCHD_establishment_keys varchar
+  meta_name varchar
+  slchd_name varchar
+  meta_address varchar
+  slchd_address varchar
+  name_sim float
+  name_jac float
+  addr_sim float
+  dist_m float [note: 'null for text_fallback']
+  score float
+  match_method varchar [note: 'geo | text_fallback']
+  meta_lat float
+  meta_lon float
+  slchd_lat float
+  slchd_lon float
+
+  Note: 'meta_slchd_match_audit.csv — ER score/distance audit'
+}
+
+Table review {
+  user_id varchar
+  name varchar
+  time bigint
+  rating float
+  text varchar
+  resp varchar
+  gmap_id varchar
+
+  Note: 'review-Utah_food.csv'
+}
+
+Table review_10 {
+  user_id varchar
+  name varchar
+  time bigint
+  rating float
+  text varchar
+  resp varchar
+  gmap_id varchar
+
+  Note: 'review-Utah_10_food.csv — 10-core subset'
+}
+
+Ref: establishment_keys_geocoded.establishment_key > establishment_keys.establishment_key
+Ref: establishment_hours.establishment_key > establishment_keys.establishment_key
+Ref: meta_matched.gmap_id > meta.gmap_id
+Ref: meta_matched.SLCHD_establishment_keys > establishment_keys.establishment_key
+Ref: meta_slchd_match_audit.gmap_id > meta.gmap_id
+Ref: meta_slchd_match_audit.SLCHD_establishment_keys > establishment_keys.establishment_key
+Ref: review.gmap_id > meta.gmap_id
+Ref: review_10.gmap_id > meta.gmap_id
