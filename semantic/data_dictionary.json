@@ -1,0 +1,198 @@
+{
+  "version": 2,
+  "description": "Column and enum glossary for NL / semantic query over db/food_health.duckdb. Keys are table.column. See ontology.json for concepts and relationships; this file is the flat lookup for a specific column.",
+  "references": {
+    "slchd_portal": {
+      "title": "Salt Lake County Health Department food inspection portal",
+      "notes": "Source of establishment_keys, inspections, violations, violation_codes."
+    },
+    "ucsd_google_local": {
+      "title": "UCSD Google Local dataset (Utah subset)",
+      "landing_page": "https://mcauleylab.ucsd.edu/public_datasets/gdrive/googlelocal/",
+      "notes": "Source of establishments, establishment_attributes, establishment_categories, gmap_hours, review, category."
+    },
+    "us_census_geocoder": {
+      "title": "US Census Bureau batch geocoder",
+      "notes": "Primary geocoder for establishment_keys.slchd_lat/slchd_lon."
+    },
+    "nominatim": {
+      "title": "OpenStreetMap Nominatim geocoder",
+      "notes": "Second-pass geocoder for addresses the Census geocoder couldn't match."
+    }
+  },
+  "columns": {
+    "establishment_keys.slchd_establishment_key": {
+      "description": "Primary key. Derived: upper(trim(name) || '|' || trim(address) || '|' || city). Not an official permit id.",
+      "reference": "slchd_portal"
+    },
+    "establishment_keys.establishment_type": {
+      "description": "SLCHD license category.",
+      "values": [
+        "Restaurants: non-plated", "Restaurants: plated", "Beverage Service: Coffee",
+        "Caterers, not restaurant connected", "Mobiles: Mobile Food Units (Trucks)",
+        "Commissary", "Beverage Service: Bars/Lounges", "Beverage Service: Juice/Smoothies",
+        "Mobiles: Food Carts", "Concessions: shaved ice only", "Concessions: potentially hazardous foods",
+        "Child Care Centers: Licensed"
+      ],
+      "reference": "slchd_portal"
+    },
+    "establishment_keys.source": {
+      "description": "Which of two independent scrapes produced this listing.",
+      "values": {
+        "friend_slc": "Relational scrape with full inspection + violation-level detail (1245/1341 listings).",
+        "own_scrape": "Establishment-info + inspection-summary scrape only, no violation line items (96/1341 listings)."
+      },
+      "reference": "slchd_portal"
+    },
+    "establishment_keys.slchd_lat": {
+      "description": "Geocoded latitude for the SLCHD address. Null for 71/1341 rows (no geocoder could resolve the address).",
+      "unit": "decimal degrees"
+    },
+    "establishment_keys.slchd_lon": {
+      "description": "Geocoded longitude for the SLCHD address. Null for 71/1341 rows.",
+      "unit": "decimal degrees"
+    },
+    "establishment_keys.geocode_status": {
+      "description": "Outcome of geocoding this row's address.",
+      "values": {
+        "Match": "Resolved by the Census batch geocoder.",
+        "Tie": "Census geocoder found multiple equally-plausible matches; kept but ambiguous.",
+        "Match_Nominatim": "Census geocoder found nothing; resolved by the Nominatim second pass.",
+        "No_Match": "Neither geocoder could resolve this address; slchd_lat/slchd_lon are null."
+      },
+      "reference": "us_census_geocoder"
+    },
+    "category.category_id": {
+      "description": "Primary key for a Google Places category tag.",
+      "reference": "ucsd_google_local"
+    },
+    "category.category": {
+      "description": "Category label text, e.g. 'Pizza restaurant', 'ATM'. Broader than cuisine — includes non-food venue/amenity tags picked up at mixed-use locations.",
+      "reference": "ucsd_google_local"
+    },
+    "establishments.gmap_id": {
+      "description": "Primary key. Google Maps place id.",
+      "reference": "ucsd_google_local"
+    },
+    "establishments.description": {
+      "description": "Google's short editorial blurb for the place. Null for ~48% of rows.",
+      "reference": "ucsd_google_local"
+    },
+    "establishments.geom": {
+      "description": "Point(longitude, latitude), DuckDB spatial GEOMETRY. Built at load time from meta.latitude/longitude by scripts/load_duckdb.py — data/final/establishments.csv carries plain latitude/longitude columns instead of geom, since CSV has no geometry type.",
+      "reference": "ucsd_google_local"
+    },
+    "establishments.avg_rating": {
+      "description": "Google average star rating for the place.",
+      "unit": "stars, 1-5",
+      "reference": "ucsd_google_local"
+    },
+    "establishments.num_of_reviews": {
+      "description": "Total review count backing avg_rating.",
+      "reference": "ucsd_google_local"
+    },
+    "establishments.price": {
+      "description": "Google price-level symbol, repeated per tier (e.g. '$', '$$$'). Null for ~35% of rows. A few rows use '₩' instead of '$' — a source scrape quirk, not a different currency; use symbol repeat-count as the tier signal.",
+      "reference": "ucsd_google_local"
+    },
+    "establishments.slchd_establishment_key": {
+      "description": "Nullable FK to establishment_keys.slchd_establishment_key, set only when entity resolution matched this Google Local place to an SLCHD listing (139/8592 rows). Null means no known inspection history — not an error.",
+      "reference": "slchd_portal"
+    },
+    "establishment_attributes.attribute": {
+      "description": "One Google-reported feature/amenity tag (e.g. 'Delivery', 'Wheelchair accessible entrance'). Free text, hundreds of distinct values, no fixed vocabulary. The outer grouping label Google provides (e.g. 'Service options', 'Accessibility') was dropped during cleaning — only the leaf value is kept.",
+      "reference": "ucsd_google_local"
+    },
+    "gmap_hours.day": {
+      "description": "Day of week for this hours span.",
+      "values": {
+        "0": "Sunday", "1": "Monday", "2": "Tuesday", "3": "Wednesday",
+        "4": "Thursday", "5": "Friday", "6": "Saturday"
+      }
+    },
+    "gmap_hours.open_min": {
+      "description": "Opening time.",
+      "unit": "milliseconds since midnight"
+    },
+    "gmap_hours.open_max": {
+      "description": "Closing time. If less than open_min, the span crosses midnight (e.g. opens 11AM, closes 1AM).",
+      "unit": "milliseconds since midnight"
+    },
+    "review.time": {
+      "description": "When the review was posted.",
+      "unit": "Unix epoch milliseconds",
+      "reference": "ucsd_google_local"
+    },
+    "review.rating": {
+      "description": "Star rating for this individual review — distinct from establishments.avg_rating, which is the place-level aggregate.",
+      "unit": "stars, 1-5",
+      "reference": "ucsd_google_local"
+    },
+    "review.resp": {
+      "description": "Owner response text, if the establishment replied to this review.",
+      "reference": "ucsd_google_local"
+    },
+    "inspection_types.inspection_type_id": {
+      "description": "Primary key, parsed from the leading number in the source string (e.g. '01 - Routine' -> 1). Values 4-6 don't occur in the data — a gap inherited from the source portal, not missing rows.",
+      "values": { "1": "Routine", "2": "Followup", "3": "Complaint Investigation", "7": "Critical Item" },
+      "reference": "slchd_portal"
+    },
+    "inspections.inspection_id": {
+      "description": "Primary key, surrogate (bigserial). Not present in the source data."
+    },
+    "inspections.slchd_establishment_key": {
+      "description": "FK to establishment_keys.slchd_establishment_key. Always set — every inspection belongs to a known SLCHD listing.",
+      "reference": "slchd_portal"
+    },
+    "inspections.inspection_type_id": {
+      "description": "Nullable FK to inspection_types.inspection_type_id. Null for 27 inspections where the source recorded no type.",
+      "reference": "slchd_portal"
+    },
+    "inspections.inspection_score": {
+      "description": "Total violation points for this inspection. 0 = clean. Higher = worse (confirmed: inspections with any cited violation average score 17.6 vs 1.7 for clean ones).",
+      "reference": "slchd_portal"
+    },
+    "violation_codes.violation_code_id": {
+      "description": "Primary key, surrogate (serial). Not present in the source data."
+    },
+    "violation_codes.code_text": {
+      "description": "Utah Food Code section reference with trailing asterisks stripped, e.g. '4.5.18'.",
+      "reference": "slchd_portal"
+    },
+    "violation_codes.asterisk_count": {
+      "description": "Count of trailing '*' on the original raw code (e.g. '4.5.18*' -> 1). Correlates with the critical flag but its official meaning per the Utah Food Code was not independently verified — treat as an observed pattern, not a confirmed rule.",
+      "values": [0, 1, 2],
+      "reference": "slchd_portal"
+    },
+    "violation_codes.critical": {
+      "description": "Whether citations of this code are critical. One fixed value per code — verified across all citations, no code has mixed critical/non-critical citations. (3 codes were found inconsistently labeled in the raw source and were normalized to critical=true; see data/processed/clean_processed.ipynb, 'Fix inconsistent violation criticality'.)",
+      "reference": "slchd_portal"
+    },
+    "violations.violation_id": {
+      "description": "Primary key, surrogate (bigserial). Not present in the source data."
+    },
+    "violations.inspection_id": {
+      "description": "FK to inspections.inspection_id. An inspection with zero citations has zero rows here — absence means clean, not missing data."
+    },
+    "violations.violation_code_id": {
+      "description": "FK to violation_codes.violation_code_id.",
+      "reference": "slchd_portal"
+    },
+    "violations.violation_description": {
+      "description": "Inspector's free-text note for this specific citation. Varies per occurrence even for the same code (median 8 distinct descriptions per code) — do not assume it's constant for a given violation_code_id.",
+      "reference": "slchd_portal"
+    },
+    "violations.violation_occurrences": {
+      "description": "Repeat count of this violation within the inspection. Usually 1.",
+      "reference": "slchd_portal"
+    },
+    "violations.violation_cos": {
+      "description": "Whether this violation was corrected on site during the inspection.",
+      "reference": "slchd_portal"
+    },
+    "violations.violation_phr": {
+      "description": "Public health rationale / rubric label (raw portal category text). 1:1 with violation_code_id for 234/237 codes; 3 codes have more than one observed phr. Join to semantic/violation_map.csv on this column to get the normalized violation_type bucket used for agent reasoning.",
+      "reference": "slchd_portal"
+    }
+  }
+}

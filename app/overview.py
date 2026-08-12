@@ -9,9 +9,9 @@ def render_overview(con):
 
     with col1:
         df_scores = con.execute("""
-            SELECT CAST(inspection_score AS DOUBLE) AS score
+            SELECT inspection_score AS score
             FROM inspections
-            WHERE inspection_score != '' AND inspection_score IS NOT NULL
+            WHERE inspection_score IS NOT NULL
         """).fetchdf()
         st.plotly_chart(
             px.histogram(df_scores, x="score", nbins=30, title="Inspection score distribution"),
@@ -21,8 +21,8 @@ def render_overview(con):
     with col2:
         df_types = con.execute("""
             SELECT violation_phr AS category, COUNT(*) AS n
-            FROM inspections
-            WHERE violation_code != '' AND violation_phr != ''
+            FROM violations
+            WHERE violation_phr IS NOT NULL AND violation_phr != ''
             GROUP BY 1 ORDER BY n DESC LIMIT 10
         """).fetchdf()
         st.plotly_chart(
@@ -34,11 +34,12 @@ def render_overview(con):
 
     with col3:
         df_trend = con.execute("""
-            SELECT strftime(strptime(inspection_date, '%m/%d/%Y'), '%Y') AS year,
-                   COUNT(*) FILTER (WHERE violation_code != '' AND violation_critical = 'True') AS critical,
-                   COUNT(*) FILTER (WHERE violation_code != '' AND violation_critical = 'False') AS noncritical
-            FROM inspections
-            WHERE inspection_date != ''
+            SELECT strftime(i.inspection_date, '%Y') AS year,
+                   COUNT(*) FILTER (WHERE vc.critical) AS critical,
+                   COUNT(*) FILTER (WHERE NOT vc.critical) AS noncritical
+            FROM inspections i
+            JOIN violations v ON v.inspection_id = i.inspection_id
+            JOIN violation_codes vc ON vc.violation_code_id = v.violation_code_id
             GROUP BY 1 ORDER BY 1
         """).fetchdf()
         df_trend_long = df_trend.melt(id_vars="year", value_vars=["critical", "noncritical"],
@@ -50,8 +51,10 @@ def render_overview(con):
 
     with col4:
         df_type = con.execute("""
-            SELECT establishment_type, COUNT(DISTINCT establishment_name || '|' || address) AS n
-            FROM inspections GROUP BY 1 ORDER BY n DESC LIMIT 10
+            SELECT establishment_type, COUNT(*) AS n
+            FROM establishment_keys
+            WHERE establishment_type IS NOT NULL
+            GROUP BY 1 ORDER BY n DESC LIMIT 10
         """).fetchdf()
         st.plotly_chart(
             px.bar(df_type, x="n", y="establishment_type", orientation="h", title="Establishments by type (top 10)"),

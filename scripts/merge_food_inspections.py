@@ -3,9 +3,9 @@ violation-level CSV:
 
   - data/processed/slc/{establishments,inspections,violations}.csv
     (relational export, joined here on establishment_key / inspection_date)
-  - food_inspections.csv
-    (raw scrapper.py output: establishment-info rows + inspection-summary
-    rows only, no per-violation detail)
+  - data/food_inspections.csv
+    (raw scripts/collectors/slchd/scrapper.py output: establishment-info
+    rows + inspection-summary rows only, no per-violation detail)
 
 Output: data/processed/merged_food_inspections.csv, one row per violation.
 Inspections with zero violations, and establishments with zero inspections,
@@ -17,7 +17,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 FRIEND_DIR = ROOT / "data" / "processed" / "slc"
-OWN_FILE = ROOT / "food_inspections.csv"
+OWN_FILE = ROOT / "data" / "food_inspections.csv"
 OUT_FILE = ROOT / "data" / "processed" / "merged_food_inspections.csv"
 
 FIELDNAMES = [

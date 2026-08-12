@@ -1,12 +1,14 @@
-"""DuckDB view over the merged inspection/violation CSV — the single data
-source for Variant 1 (ReAct + CSV only, no RAG, no reviews)."""
+"""Read-only DuckDB connection to db/food_health.duckdb — the normalized
+schema (establishments, establishment_keys, inspections, violations,
+violation_codes, review, category, ...) built by scripts/load_duckdb.py.
+Single data source for all three dashboard variants."""
 import threading
 from pathlib import Path
 
 import duckdb
 
 ROOT = Path(__file__).resolve().parent.parent
-CSV_PATH = ROOT / "data" / "processed" / "merged_food_inspections.csv"
+DB_PATH = ROOT / "db" / "food_health.duckdb"
 
 
 class _LockedResult:
@@ -58,17 +60,10 @@ class SafeConnection:
 
 
 def get_connection() -> SafeConnection:
-    if not CSV_PATH.exists():
+    if not DB_PATH.exists():
         raise FileNotFoundError(
-            f"{CSV_PATH} not found — run scripts/merge_food_inspections.py first."
+            f"{DB_PATH} not found — run scripts/load_duckdb.py first."
         )
-    con = duckdb.connect(database=":memory:")
-    # ALL_VARCHAR: DuckDB's type-sniffer otherwise infers e.g. contact_info as
-    # BIGINT (breaking formatted phone numbers) and inspection_score as
-    # BIGINT (breaking empty-string filters) - keep every column text and
-    # cast explicitly in queries, as documented in tools.SCHEMA_HELP.
-    con.execute(
-        f"CREATE VIEW inspections AS "
-        f"SELECT * FROM read_csv_auto('{CSV_PATH.as_posix()}', ALL_VARCHAR=TRUE)"
-    )
+    con = duckdb.connect(database=str(DB_PATH), read_only=True)
+    con.execute("INSTALL spatial; LOAD spatial;")
     return SafeConnection(con)

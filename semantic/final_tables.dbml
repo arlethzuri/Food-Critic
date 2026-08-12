@@ -1,0 +1,169 @@
+// Column inventory for CSV tables under data/final/
+// Produced by data/processed/clean_processed.ipynb
+// Loaded into db/food_health.duckdb by scripts/load_duckdb.py
+
+Project final_tables {
+  database_type: 'CSV'
+}
+
+Table establishment_keys {
+  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']
+  name varchar
+  address varchar
+  city varchar
+  city_state_zip varchar
+  establishment_type varchar
+  source varchar
+  slchd_lat float
+  slchd_lon float
+  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']
+
+  Note: 'establishment_keys.csv — Census geocode, Nominatim fallback for the rest'
+}
+
+Table establishment_keys_geocoded {
+  establishment_key varchar [pk]
+  slchd_lat float
+  slchd_lon float
+  geocode_status varchar
+
+  Note: 'establishment_keys_geocoded.csv — internal Census geocode cache, not a schema table. establishment_keys.csv is the deliverable.'
+}
+
+Table establishments {
+  gmap_id varchar [pk]
+  name varchar
+  address varchar
+  description varchar
+  latitude float
+  longitude float
+  avg_rating float
+  num_of_reviews integer
+  price varchar
+  slchd_establishment_key varchar [note: 'nullable; set when ER matched']
+
+  Note: 'establishments.csv — one row per Google Local place (all of meta, deduped on gmap_id). DuckDB loader builds geom from lat/lon.'
+}
+
+Table establishment_attributes {
+  gmap_id varchar [not null]
+  attribute varchar [not null]
+
+  indexes { (gmap_id, attribute) [pk] }
+
+  Note: 'establishment_attributes.csv — flattened meta.MISC leaf values'
+}
+
+Table establishment_categories {
+  gmap_id varchar [not null]
+  category_id integer [not null]
+
+  indexes { (gmap_id, category_id) [pk] }
+
+  Note: 'establishment_categories.csv — melted meta.category_id_1..14'
+}
+
+Table gmap_hours {
+  gmap_id varchar [not null]
+  day integer [not null, note: '0=Sun … 6=Sat']
+  open_min bigint [note: 'ms since midnight']
+  open_max bigint [note: 'ms since midnight; < open_min if overnight']
+
+  indexes { (gmap_id, day) [pk] }
+
+  Note: 'gmap_hours.csv — from meta.hours, all places with parsable hours'
+}
+
+Table meta_matched {
+  name varchar
+  address varchar
+  gmap_id varchar [pk]
+  description varchar
+  latitude float
+  longitude float
+  avg_rating float
+  num_of_reviews integer
+  price varchar
+  hours varchar [note: 'serialized Google hours blob']
+  MISC varchar
+  category_id_1 integer
+  category_id_2 integer
+  category_id_3 integer
+  category_id_4 integer
+  category_id_5 integer
+  category_id_6 integer
+  category_id_7 integer
+  category_id_8 integer
+  category_id_9 integer
+  category_id_10 integer
+  category_id_11 integer
+  category_id_12 integer
+  category_id_13 integer
+  category_id_14 integer
+  SLCHD_establishment_keys varchar [note: 'nullable; set when ER matched']
+
+  Note: 'meta-Utah_food_matched.csv — ER debug artifact (source for establishments/attributes/categories/gmap_hours above), not itself a schema table'
+}
+
+Table merged_inspections {
+  establishment_name varchar
+  establishment_type varchar
+  address varchar
+  city_state_zip varchar
+  contact_info varchar
+  rank integer
+  inspection_date varchar
+  inspection_type varchar
+  inspection_score integer
+  count_critical_violations integer
+  count_noncritical_violations integer
+  violation_code varchar
+  violation_description varchar
+  violation_critical varchar
+  violation_occurrences integer
+  violation_cos varchar
+  violation_phr varchar
+  source varchar
+  scraped_at varchar
+
+  Note: 'merged_food_inspections.csv — wide violation-level rows, source for inspections/violations/violation_codes below'
+}
+
+Table inspection_types {
+  inspection_type_id integer [pk, note: 'parsed leading number, e.g. "01 - Routine" -> 1']
+  description varchar
+}
+
+Table inspections {
+  inspection_id integer [pk]
+  slchd_establishment_key varchar [not null]
+  inspection_date varchar
+  inspection_type_id integer
+  inspection_score float
+}
+
+Table violation_codes {
+  violation_code_id integer [pk]
+  code_text varchar [note: 'base code, asterisks stripped, e.g. "4.5.18"']
+  asterisk_count integer [note: '0/1/2 trailing * in source']
+  critical boolean
+}
+
+Table violations {
+  violation_id integer [pk]
+  inspection_id integer [not null]
+  violation_code_id integer [not null]
+  violation_description varchar
+  violation_occurrences float
+  violation_cos varchar
+  violation_phr varchar
+}
+
+Ref: establishments.slchd_establishment_key > establishment_keys.slchd_establishment_key
+Ref: establishment_attributes.gmap_id > establishments.gmap_id
+Ref: establishment_categories.gmap_id > establishments.gmap_id
+Ref: gmap_hours.gmap_id > establishments.gmap_id
+Ref: inspections.slchd_establishment_key > establishment_keys.slchd_establishment_key
+Ref: inspections.inspection_type_id > inspection_types.inspection_type_id
+Ref: violations.inspection_id > inspections.inspection_id
+Ref: violations.violation_code_id > violation_codes.violation_code_id

@@ -44,6 +44,7 @@ PROVIDER_MODELS = {
         {"id": "gemini-3.1-pro-preview", "label": "Gemini 3.1 Pro (preview, tight free quota)", "tier": "paid"},
     ],
     "ollama": [
+        {"id": "gemma4:26b", "label": "Gemma 4 26B", "tier": "free"},
         {"id": "qwen2.5:7b", "label": "Qwen2.5 7B", "tier": "free"},
         {"id": "llama3.1:8b", "label": "Llama 3.1 8B", "tier": "free"},
         {"id": "qwen2.5:3b", "label": "Qwen2.5 3B (smaller, less reliable)", "tier": "free"},

@@ -18,7 +18,7 @@ content is the same rule as the PDF above.
 Re-running this script rebuilds the index from scratch each time (cheap:
 one PDF + one page, everything embeds locally, no API costs).
 
-Dependencies: pip install -r app/requirements.txt
+Dependencies: conda env update -f environment.yml --prune
 Usage: python3 app/rag/ingest.py
 """
 from __future__ import annotations

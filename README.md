@@ -1,5 +1,62 @@
 **sythesis of food agent proj (mvp)**
 
+## `ontology-update` branch — what changed
+
+Rebuilt the data pipeline into a normalized DuckDB schema (`db/food_health.duckdb`:
+establishments, inspections, violations, violation_codes, reviews, ...), added the
+semantic layer an LLM agent reads (`semantic/ontology.json` + `data_dictionary.json`),
+and rebuilt `app/` on top of both — a Streamlit UI matching `frontend/sketches/`
+(results/filters/map + chat, a Reasoning tab with strictness/timeline/evidence
+visualizations, a restaurant detail card), across all 3 research variants (V1 data-only,
+V2 +RAG, V3 +ontology hypothesis/evidence).
+
+## Setup
+
+```bash
+conda env create -f environment.yml   # or: conda env update -f environment.yml --prune
+conda activate food-health-viz
+```
+
+**Getting the data** — `data/processed/review-Utah_food.csv` (730MB) is too big for git;
+grab it from the shared Drive link, unzip, and place it at that exact path. Everything
+else needed to run the app is already in the repo.
+
+**Build the DB** (seconds, no internet):
+```bash
+python scripts/load_duckdb.py
+```
+
+**Set up an LLM provider:**
+```bash
+cp app/.env.example app/.env
+```
+Edit `app/.env` and fill in one provider — Groq (free key, default) or Google
+(free key), or set `LLM_PROVIDER=ollama` for a local model (no key, needs
+`ollama serve` running). Full details in `app/README.md`.
+
+**Run the app:**
+```bash
+streamlit run app/dashboard.py       # V1
+streamlit run app/dashboard_v2.py    # V2, needs: python3 app/rag/ingest.py first
+streamlit run app/dashboard_v3.py    # V3, needs the RAG index too
+```
+
+## Repo layout
+
+| Path | What it is |
+|---|---|
+| `data/processed/clean_processed.ipynb` | The pipeline: SLCHD ↔ Google Local entity resolution, geocoding, builds every table in `data/final/`. |
+| `data/final/` | Schema deliverable CSVs, loaded into `db/food_health.duckdb` by `scripts/load_duckdb.py`. |
+| `data/processed/`, `data/ucsd_google_local/` | Inputs to the pipeline above (SLCHD scrape output, Google Local raw export). |
+| `db/` | `food_health.duckdb` (built artifact — regenerate with `scripts/load_duckdb.py`) + `schema.dbml` (schema doc). |
+| `scripts/` | `load_duckdb.py` (build the DB), `merge_food_inspections.py`, `gen_establishment_keys.py`, `collectors/slchd/` (SLCHD scraper — historical, already run once). |
+| `semantic/` | `ontology.json` + `data_dictionary.json` (schema for an LLM agent), `violation_map.csv` (violation → normalized type, built by `build_violation_map.py`), `percentiles.json` (real percentile thresholds used by the ontology and the app's Strictness slider). |
+| `app/` | Streamlit dashboards (`dashboard*.py`) + LangChain agents (`agent*.py`) + UI components (`components/`) — see `app/README.md`. |
+| `frontend/` | UI sketches (`sketches/`) the app's layout is built from. |
+
+**Known gap, not yet reconciled:** `scripts/merge_food_inspections.py` reads
+`data/processed/slc/*.csv`, which no longer exists — `data/processed/merged_food_inspections.csv`
+is currently a static artifact, not regenerable from source until that input is restored or rebuilt.
 
 - *Research Questions*
 	- RQ1: Does an agent provided tooling, analytical guidance, and knowledge structure provide better suggestions for restaurants as opposed to an agent provided data only?
