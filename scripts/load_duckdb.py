@@ -6,7 +6,7 @@ pass through untouched so aren't duplicated into final/.
 
 Output: db/food_health.duckdb (overwritten on each run)
 
-  conda run -n food-health-viz python scripts/load_duckdb.py
+  .venv/bin/python scripts/load_duckdb.py
 """
 from __future__ import annotations
 

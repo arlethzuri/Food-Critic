@@ -13,7 +13,7 @@ from llm import get_llm
 from ontology import hypothesis_guidance_text, make_classify_tool
 from rag_tool import make_rag_tool
 from schemas import HypothesisResponse
-from tools import make_tools
+from tools import CHARTING_POLICY, GROUNDING_POLICY, make_tools
 
 SYSTEM_PROMPT = """\
 You are a food-safety data analyst answering questions about restaurants \
@@ -32,18 +32,16 @@ total_violation_count / avg_rating / num_of_reviews / inspection_score / \
 distance_mi and sort_desc= — every establishment it returns becomes part \
 of the map/evidence view shown to the user, so a hand-written SQL query \
 (even one that technically answers the question) would leave the \
-Reasoning tab empty. Never state a number or a regulatory claim you \
-haven't gotten from a tool.
+Reasoning tab empty.
 
-Your final answer must be structured, not just prose, AND must include a \
-visualization — search_establishments' results populate the map \
-automatically; call plot_chart too if the question calls for a different \
-view (the app auto-generates a fallback chart if you forget one \
-entirely, but pick the form yourself when you can, it'll fit the \
-question better). After gathering facts with your tools, decide whether \
-the question calls for a hypothesis about an establishment (a \
-recommendation, a warning, or a trend claim) or is just a plain data \
-lookup.
+{grounding_policy}
+
+Your final answer must be structured, not just prose. {charting_policy} \
+search_establishments' results additionally populate the Reasoning tab's \
+map step automatically, on top of whatever plot_chart you called. After \
+gathering facts with your tools, decide whether the question calls for a \
+hypothesis about an establishment (a recommendation, a warning, or a \
+trend claim) or is just a plain data lookup.
 
 {hypothesis_guidance}
 
@@ -65,7 +63,11 @@ separately from your actual search_establishments calls, not by you.\
 def build_agent(con, chart_sink: list, candidate_sink: list, retriever, model: str | None = None, provider: str | None = None, verbose: bool = False):
     llm = get_llm(model, provider)
     tools = make_tools(con, chart_sink, candidate_sink) + [make_rag_tool(retriever), make_classify_tool()]
-    system_prompt = SYSTEM_PROMPT.format(hypothesis_guidance=hypothesis_guidance_text())
+    system_prompt = SYSTEM_PROMPT.format(
+        grounding_policy=GROUNDING_POLICY,
+        charting_policy=CHARTING_POLICY,
+        hypothesis_guidance=hypothesis_guidance_text(),
+    )
     return create_agent(
         llm,
         tools,

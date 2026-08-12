@@ -13,7 +13,7 @@ whole city; retries back off on 429/504. Re-runs overwrite the CSV (OSM
 is a snapshot, not an incremental scrape).
 
 Dependencies:
-  requests (see environment.yml)
+  requests (see requirements.txt)
 
 Examples:
   python osm_slc_restaurants.py

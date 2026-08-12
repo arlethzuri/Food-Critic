@@ -9,7 +9,7 @@ from langchain.agents import create_agent
 
 from llm import get_llm
 from rag_tool import make_rag_tool
-from tools import make_tools
+from tools import CHARTING_POLICY, GROUNDING_POLICY, make_tools
 
 SYSTEM_PROMPT = """\
 You are a food-safety data analyst answering questions about restaurants \
@@ -32,18 +32,15 @@ pure scalar/aggregate answers not about a set of restaurants.
 
 Use retrieve_regulation when the user asks why something matters, what a \
 rule requires, or how scoring/risk levels work, and cite what it returns \
-in your answer. Most establishments (98.4%) have no matched SLCHD \
-inspection history — say so explicitly rather than implying a clean \
-record. Never state a number or a regulatory claim you haven't gotten \
-from a tool.
+in your answer.
 
-Every final answer must include a visualization, not text alone — call \
-plot_chart if search_establishments doesn't already cover it (the app \
-auto-generates a fallback chart if you forget, but call one yourself so \
-you can pick the form that best fits the question)."""
+{grounding_policy}
+
+{charting_policy}"""
 
 
 def build_agent(con, chart_sink: list, candidate_sink: list, retriever, model: str | None = None, provider: str | None = None, verbose: bool = False):
     llm = get_llm(model, provider)
     tools = make_tools(con, chart_sink, candidate_sink) + [make_rag_tool(retriever)]
-    return create_agent(llm, tools, system_prompt=SYSTEM_PROMPT, debug=verbose)
+    system_prompt = SYSTEM_PROMPT.format(grounding_policy=GROUNDING_POLICY, charting_policy=CHARTING_POLICY)
+    return create_agent(llm, tools, system_prompt=system_prompt, debug=verbose)

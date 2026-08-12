@@ -21,6 +21,35 @@ DATA_DICTIONARY = json.loads((ROOT / "semantic" / "data_dictionary.json").read_t
 
 METERS_PER_MILE = 1609.344
 
+# Single source of truth for the "always visualize" instruction, spliced
+# verbatim into all three variants' SYSTEM_PROMPT (agent.py/agent_v2.py/
+# agent_v3.py via .format(charting_policy=CHARTING_POLICY)) rather than
+# hand-duplicated in each — this is a controlled variable for the RQ1/RQ2
+# comparison (v1 vs v2 vs v3), so the charting *policy* text must be
+# byte-identical across variants; only the code-level fallback
+# (chat_utils._ensure_visualization, already shared) enforces it if the
+# model ignores this instruction anyway.
+CHARTING_POLICY = """\
+Every final answer must include a visualization, not text alone — call \
+plot_chart yourself whenever search_establishments' map isn't already the \
+right visual for the question. The app auto-generates a fallback chart if \
+you forget entirely, but call plot_chart yourself so you can pick the \
+chart form that actually fits the question, rather than relying on the \
+fallback's best guess. Cite the actual numbers you found in your final \
+answer, in addition to the chart — the chart backs up the claim, it \
+doesn't replace stating it."""
+
+# Same rationale as CHARTING_POLICY above — spliced verbatim into all
+# three prompts via .format(grounding_policy=GROUNDING_POLICY) so the
+# coverage caveat and citation rule can't drift or go missing in one
+# variant (v3's prompt was previously missing the 98.4%-uncovered caveat
+# entirely, an unintended asymmetry this closes).
+GROUNDING_POLICY = """\
+Most establishments (98.4%) have no matched SLCHD inspection history — \
+say so explicitly rather than implying a clean record. Never state a \
+number, fact, or regulatory claim you haven't gotten from an actual tool \
+result — ground every claim in what a tool actually returned."""
+
 
 def _run_select(con: SafeConnection, query: str):
     q = query.strip().rstrip(";")

@@ -7,6 +7,7 @@ Requires the RAG index to exist first: python3 app/rag/ingest.py
 Run with: streamlit run app/dashboard_v2.py
 """
 import logging
+import time
 
 # Silence Streamlit's file-watcher warnings from probing transformers'
 # lazy submodules (pulled in by sentence-transformers for RAG embeddings)
@@ -17,7 +18,7 @@ logging.getLogger("streamlit.watcher.local_sources_watcher").setLevel(logging.ER
 import streamlit as st
 
 from agent_v2 import build_agent
-from chat_utils import run_agent
+from chat_utils import log_failed_run, run_agent
 from components.baseline_search import search_baseline
 from components.filters import render_filters
 from components.map_view import render_map
@@ -111,10 +112,12 @@ with tab_explore:
         st.session_state.messages_v2.append({"role": "user", "content": prompt})
 
         chart_sink, candidate_sink = [], []
+        start = time.time()
         try:
             agent = build_agent(con, chart_sink, candidate_sink, retriever, model=model, provider=provider)
-            output, trace_text = run_agent(agent, prompt, chart_sink, candidate_sink)
+            output, trace_text = run_agent(agent, prompt, chart_sink, candidate_sink, variant="v2", provider=provider, model=model)
         except Exception as e:
+            log_failed_run(variant="v2", provider=provider, model=model, prompt=prompt, error=e, duration_seconds=time.time() - start)
             output = (
                 f"Something went wrong talking to the model: {e}\n\n"
                 "Check `app/.env` — is `LLM_PROVIDER` set and the matching API key "

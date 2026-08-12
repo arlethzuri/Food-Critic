@@ -13,7 +13,7 @@ a text Thought/Action/Observation scaffold anyway.
 from langchain.agents import create_agent
 
 from llm import get_llm
-from tools import make_tools
+from tools import CHARTING_POLICY, GROUNDING_POLICY, make_tools
 
 SYSTEM_PROMPT = """\
 You are a food-safety data analyst answering questions about restaurants \
@@ -35,18 +35,13 @@ restaurants (e.g. "what's the average score across all inspections"), \
 and get_inspection_history for a specific matched establishment's \
 inspection/violation record.
 
-Most establishments (98.4%) have no matched SLCHD inspection history — \
-say so explicitly rather than implying a clean record. Never guess a \
-number; ground every claim in a tool result.
+{grounding_policy}
 
-Every final answer must include a visualization, not text alone — call \
-plot_chart if search_establishments doesn't already cover it (the app \
-auto-generates a fallback chart if you forget, but call one yourself so \
-you can pick the form that best fits the question). Cite the actual \
-numbers you found in your final answer, in addition to the chart."""
+{charting_policy}"""
 
 
 def build_agent(con, chart_sink: list, candidate_sink: list, model: str | None = None, provider: str | None = None, verbose: bool = False):
     llm = get_llm(model, provider)
     tools = make_tools(con, chart_sink, candidate_sink)
-    return create_agent(llm, tools, system_prompt=SYSTEM_PROMPT, debug=verbose)
+    system_prompt = SYSTEM_PROMPT.format(grounding_policy=GROUNDING_POLICY, charting_policy=CHARTING_POLICY)
+    return create_agent(llm, tools, system_prompt=system_prompt, debug=verbose)

@@ -8,15 +8,30 @@ The timeline is built entirely from the actual tool-call trace — never
 from LLM narration — so it can't show a step the agent didn't really
 take. Step captions are generated from the tool name + args, not asked
 of the model.
+
+Every run is also logged to disk (results/frontend/, see log_run()) with
+full message/usage/cost detail — same record shape scripts/run_comparison.py
+writes to results/comparison/, so both sources concatenate cleanly for
+analysis regardless of whether a run came from the live app or the batch
+script.
 """
 import json
 import re
-from dataclasses import dataclass, field
+import time
+import traceback
+import uuid
+from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Literal
 
 import pandas as pd
 import plotly.express as px
 from langchain_core.messages import AIMessage, ToolMessage
+
+from model_registry import get_price
+
+RESULTS_DIR = Path(__file__).resolve().parent.parent / "results" / "frontend"
 
 # Tool calls that manipulate/filter the candidate pool and are worth a
 # timeline step. get_schema/get_column_glossary are excluded — they're
@@ -62,6 +77,243 @@ def _as_text(content) -> str:
                 parts.append(block.get("text", ""))
         return "".join(parts)
     return str(content)
+
+
+def _extract_usage(messages) -> dict:
+    """Sums token usage across every AIMessage's `.usage_metadata` — one
+    agent turn makes several LLM calls (each ReAct step), so the per-turn
+    cost is the sum across all of them, not just the final one. Confirmed
+    live that Groq and Gemini both populate `usage_metadata` with the
+    same standardized {input_tokens, output_tokens, total_tokens} shape
+    (LangChain's normalized field) — Ollama/older provider versions may
+    not populate it at all, handled as "unavailable" rather than 0."""
+    per_call = []
+    for msg in messages:
+        if isinstance(msg, AIMessage) and msg.usage_metadata:
+            per_call.append({
+                "input_tokens": msg.usage_metadata.get("input_tokens", 0),
+                "output_tokens": msg.usage_metadata.get("output_tokens", 0),
+                "total_tokens": msg.usage_metadata.get("total_tokens", 0),
+            })
+    if not per_call:
+        return {"available": False, "per_call": [], "input_tokens": None, "output_tokens": None, "total_tokens": None}
+    return {
+        "available": True,
+        "per_call": per_call,
+        "input_tokens": sum(c["input_tokens"] for c in per_call),
+        "output_tokens": sum(c["output_tokens"] for c in per_call),
+        "total_tokens": sum(c["total_tokens"] for c in per_call),
+    }
+
+
+def _estimate_cost(provider: str, model: str, usage: dict) -> float | None:
+    """USD estimate from usage['input_tokens']/['output_tokens'] and
+    model_registry's published per-model pricing. None (not 0) when the
+    model isn't priced there — an unpriced model logging as "free" would
+    be a silent lie, not a missing feature."""
+    if provider == "ollama":
+        return 0.0
+    if not usage.get("available"):
+        return None
+    price = get_price(provider, model)
+    if price is None:
+        return None
+    return round(
+        usage["input_tokens"] / 1_000_000 * price["input"]
+        + usage["output_tokens"] / 1_000_000 * price["output"],
+        6,
+    )
+
+
+def _serialize_messages(messages) -> list[dict]:
+    """Full-fidelity dump of every message in the run for offline
+    analysis — not just the human-readable trace built for the UI. Keeps
+    raw content too when it isn't a plain string (Gemini's content-block
+    list, incl. thought signatures) so nothing from a real response is
+    dropped for the sake of a clean string."""
+    out = []
+    for msg in messages:
+        entry: dict = {"type": type(msg).__name__, "content": _as_text(msg.content)}
+        if not isinstance(msg.content, str):
+            entry["raw_content"] = msg.content
+        if isinstance(msg, AIMessage):
+            entry["tool_calls"] = msg.tool_calls or []
+            entry["usage_metadata"] = msg.usage_metadata
+            entry["model_name"] = msg.response_metadata.get("model_name") if msg.response_metadata else None
+        if isinstance(msg, ToolMessage):
+            entry["tool_call_id"] = getattr(msg, "tool_call_id", None)
+            entry["name"] = getattr(msg, "name", None)
+        out.append(entry)
+    return out
+
+
+def _serialize_charts(chart_sink: list) -> list[dict]:
+    charts = []
+    for fig in chart_sink:
+        try:
+            charts.append(json.loads(fig.to_json()))
+        except Exception as e:
+            charts.append({"error": f"failed to serialize chart: {e}"})
+    return charts
+
+
+def _export_chart_images(stem_path: Path, chart_sink: list) -> list[str]:
+    """Renders each chart to a standalone PNG next to the JSON/txt for a
+    run (`{stem}_chart0.png`, `{stem}_chart1.png`, ...) — separate from
+    the JSON-embedded Plotly spec (_serialize_charts), for quickly
+    browsing/pasting a chart without re-rendering Plotly JSON. PNG over
+    PDF: faster to render (kaleido), viewable everywhere without a PDF
+    reader; swap format="pdf" here if print-quality vector output is
+    needed for the paper later. Returns the filenames written (relative,
+    not full paths); never raises — one bad figure just means one fewer
+    PNG, not a broken run."""
+    names = []
+    for i, fig in enumerate(chart_sink):
+        png_path = stem_path.parent / f"{stem_path.name}_chart{i}.png"
+        try:
+            fig.write_image(str(png_path), format="png", scale=2)
+            names.append(png_path.name)
+        except Exception as e:
+            print(f"[chat_utils] failed to export chart {i} as PNG (non-fatal): {e}")
+    return names
+
+
+def _format_transcript(record: dict) -> str:
+    """Plain-text rendering of a run record — everything a person would
+    want to read without opening the JSON: question, answer (narrative +
+    hypothesis/evidence for V3), reasoning trace, usage/cost. Defensive
+    with .get() throughout since scripts/run_comparison.py's records
+    carry a few extra/different keys than the frontend's."""
+    lines = [
+        f"Question: {record.get('question', '')}",
+        "",
+        f"Variant: {record.get('variant')} | Provider: {record.get('provider')} | Model: {record.get('model')}",
+        f"Timestamp: {record.get('timestamp', '')} | Duration: {record.get('duration_seconds')}s",
+        "",
+    ]
+    if not record.get("success"):
+        lines += ["--- FAILED ---", record.get("error") or "(no error message captured)"]
+        return "\n".join(lines)
+
+    lines.append("--- Answer ---")
+    structured = record.get("structured_response")
+    if structured:
+        lines.append(structured.get("narrative_answer", ""))
+        lines.append("")
+        lines.append(f"Hypothesis: {structured.get('hypothesis')} (confidence: {structured.get('confidence')})")
+        if structured.get("establishment_name"):
+            lines.append(f"Establishment: {structured['establishment_name']}")
+        for label, key in [("Supporting", "supporting_evidence"), ("Undermining", "undermining_evidence")]:
+            items = structured.get(key) or []
+            if items:
+                lines.append(f"\n{label} evidence:")
+                for e in items:
+                    lines.append(f"  - [{e.get('relates_to_concept')}] {e.get('summary')} ({e.get('source_ref')})")
+    else:
+        lines.append(record.get("output_text") or "")
+
+    lines += ["", "--- Reasoning trace ---", record.get("trace_text") or "(none)"]
+
+    usage = record.get("usage") or {}
+    if usage.get("available"):
+        cost = record.get("estimated_cost_usd")
+        cost_str = f", ~${cost:.4f}" if cost is not None else ", cost unknown (model not in pricing table)"
+        lines += ["", f"--- Usage: {usage.get('total_tokens')} tokens{cost_str} ---"]
+
+    return "\n".join(lines)
+
+
+def log_run(*, variant: str, provider: str, model: str, prompt: str, messages, chart_sink: list,
+            candidate_sink: list, trace_text: str, output_text: str, structured_dict: dict | None,
+            timeline: list, duration_seconds: float) -> None:
+    """Writes one full run record to results/frontend/ — same schema as
+    scripts/run_comparison.py's batch output (source differs) so both can
+    be loaded together with pandas.read_json(..., lines=True).
+
+    Deliberately swallows every exception: a logging failure must never
+    break the actual chat response the user is waiting on. Worst case on
+    disk trouble is a missing/partial log file, not a crashed dashboard.
+    """
+    try:
+        usage = _extract_usage(messages)
+        record = {
+            "source": "frontend",
+            "run_id": str(uuid.uuid4())[:8],
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "variant": variant,
+            "provider": provider,
+            "model": model,
+            "question": prompt,
+            "output_text": output_text,
+            "structured_response": structured_dict,
+            "trace_text": trace_text,
+            "timeline": timeline,
+            "messages": _serialize_messages(messages),
+            "charts": _serialize_charts(chart_sink),
+            "candidate_pool_raw": candidate_sink,
+            "duration_seconds": round(duration_seconds, 2),
+            "usage": usage,
+            "tokens_per_minute": (
+                round(usage["total_tokens"] / (duration_seconds / 60), 1)
+                if usage.get("available") and duration_seconds > 0 else None
+            ),
+            "estimated_cost_usd": _estimate_cost(provider, model, usage),
+            "success": True,
+            "error": None,
+        }
+        _write_record(record, chart_sink=chart_sink)
+    except Exception:
+        # Logging is best-effort only — print so it's visible in the
+        # Streamlit server's console without ever surfacing to the UI.
+        print(f"[chat_utils.log_run] failed to log run (non-fatal): {traceback.format_exc()}")
+
+
+def log_failed_run(*, variant: str, provider: str, model: str, prompt: str, error: Exception,
+                    duration_seconds: float) -> None:
+    """Companion to log_run() for the case build_agent()/agent.invoke()
+    itself raised (rate limit, bad API key, network error, ...) — the
+    dashboards' own try/except already turns this into a graceful chat
+    message so the UI never breaks, but that means log_run() is never
+    reached (it only runs after a successful invoke). Without this, a
+    failed run — arguably the most interesting kind for "don't miss
+    anything" — would vanish from the saved data entirely. Same
+    best-effort/never-raises contract as log_run()."""
+    try:
+        record = {
+            "source": "frontend", "run_id": str(uuid.uuid4())[:8],
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "variant": variant, "provider": provider, "model": model, "question": prompt,
+            "output_text": None, "structured_response": None, "trace_text": None,
+            "timeline": [], "messages": [], "charts": [], "candidate_pool_raw": [],
+            "duration_seconds": round(duration_seconds, 2),
+            "usage": {"available": False, "per_call": [], "input_tokens": None, "output_tokens": None, "total_tokens": None},
+            "tokens_per_minute": None,
+            "estimated_cost_usd": None,
+            "success": False,
+            "error": f"{type(error).__name__}: {error}",
+        }
+        _write_record(record)
+    except Exception:
+        print(f"[chat_utils.log_failed_run] failed to log failed run (non-fatal): {traceback.format_exc()}")
+
+
+def _write_record(record: dict, chart_sink: list | None = None) -> None:
+    """Writes the full JSON record + a line in all_runs.jsonl, plus two
+    plain-file sidecars next to it for anyone not working through JSON:
+    a .txt transcript (_format_transcript) and one .png per chart
+    (_export_chart_images). chart_image_files is computed and folded
+    into the record *before* the JSON is written, so the JSON itself
+    records which PNGs exist for it."""
+    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    stem = f"{record['timestamp'].replace(':', '-')}_{record['variant']}_{record['run_id']}"
+    stem_path = RESULTS_DIR / stem
+
+    record["chart_image_files"] = _export_chart_images(stem_path, chart_sink) if chart_sink else []
+
+    (RESULTS_DIR / f"{stem}.json").write_text(json.dumps(record, indent=2, default=str))
+    with open(RESULTS_DIR / "all_runs.jsonl", "a") as f:
+        f.write(json.dumps(record, default=str) + "\n")
+    (RESULTS_DIR / f"{stem}.txt").write_text(_format_transcript(record))
 
 
 def _build_trace(messages) -> str:
@@ -247,15 +499,25 @@ def _ensure_visualization(chart_sink: list, candidate_sink: list, messages) -> N
                 return
 
 
-def run_agent(agent, prompt: str, chart_sink: list, candidate_sink: list) -> tuple[str, str]:
+def run_agent(agent, prompt: str, chart_sink: list, candidate_sink: list, *,
+              variant: str = "unknown", provider: str = "unknown", model: str = "unknown") -> tuple[str, str]:
+    start = time.time()
     result = agent.invoke({"messages": [{"role": "user", "content": prompt}]})
+    duration = time.time() - start
     messages = result["messages"]
     output = _as_text(messages[-1].content)
     _ensure_visualization(chart_sink, candidate_sink, messages)
-    return output, _build_trace(messages)
+    trace_text = _build_trace(messages)
+    log_run(
+        variant=variant, provider=provider, model=model, prompt=prompt, messages=messages,
+        chart_sink=chart_sink, candidate_sink=candidate_sink, trace_text=trace_text,
+        output_text=output, structured_dict=None, timeline=[], duration_seconds=duration,
+    )
+    return output, trace_text
 
 
-def run_structured_agent(agent, prompt: str, chart_sink: list, candidate_sink: list):
+def run_structured_agent(agent, prompt: str, chart_sink: list, candidate_sink: list, *,
+                          variant: str = "unknown", provider: str = "unknown", model: str = "unknown"):
     """For agents built with response_format= (Variant 3). Returns
     (structured_response, trace_text, timeline) — structured_response is
     always a HypothesisResponse, never raw text.
@@ -278,7 +540,9 @@ def run_structured_agent(agent, prompt: str, chart_sink: list, candidate_sink: l
     """
     from schemas import CandidatePoolItem, HypothesisResponse
 
+    start = time.time()
     result = agent.invoke({"messages": [{"role": "user", "content": prompt}]})
+    duration = time.time() - start
     messages = result["messages"]
     structured = result.get("structured_response")
 
@@ -318,4 +582,12 @@ def run_structured_agent(agent, prompt: str, chart_sink: list, candidate_sink: l
         structured.candidate_pool = pool
 
     _ensure_visualization(chart_sink, candidate_sink, messages)
-    return structured, _build_trace(messages), _build_timeline(messages)
+    trace_text = _build_trace(messages)
+    timeline = _build_timeline(messages)
+    log_run(
+        variant=variant, provider=provider, model=model, prompt=prompt, messages=messages,
+        chart_sink=chart_sink, candidate_sink=candidate_sink, trace_text=trace_text,
+        output_text=structured.narrative_answer, structured_dict=structured.model_dump(),
+        timeline=[asdict(step) for step in timeline], duration_seconds=duration,
+    )
+    return structured, trace_text, timeline

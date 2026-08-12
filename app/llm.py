@@ -1,8 +1,8 @@
 """Shared LLM factory for both agent variants.
 
 Picks a chat model from `app/.env` so the agents don't require a local
-Ollama install. Set LLM_PROVIDER to "groq" (default), "google", or
-"ollama", plus the matching API key — see `.env.example`.
+Ollama install. Set LLM_PROVIDER to "groq" (default), "google", "openai",
+or "ollama", plus the matching API key — see `.env.example`.
 """
 import os
 
@@ -13,6 +13,7 @@ load_dotenv()
 DEFAULT_MODELS = {
     "groq": "llama-3.3-70b-versatile",
     "google": "gemini-2.5-flash",
+    "openai": "gpt-5.6-terra",
     "ollama": "qwen2.5:7b",
 }
 
@@ -59,6 +60,30 @@ def get_llm(model: str | None = None, provider: str | None = None, temperature: 
             google_api_key=api_key,
         )
 
+    if provider == "openai":
+        from langchain_openai import ChatOpenAI
+
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise RuntimeError(
+                "LLM_PROVIDER=openai but OPENAI_API_KEY is not set. Add it "
+                "to app/.env — get a key at https://platform.openai.com/api-keys "
+                "(unlike Groq/Google, this requires a funded billing account, "
+                "there's no free tier for API usage)."
+            )
+        return ChatOpenAI(
+            model=model or os.getenv("OPENAI_MODEL", DEFAULT_MODELS["openai"]),
+            temperature=temperature,
+            api_key=api_key,
+            # GPT-5.6's models default to a reasoning mode that OpenAI's
+            # chat-completions endpoint (what ChatOpenAI uses) rejects
+            # combined with function/tool calling — confirmed via a live
+            # 400 from all three tiers (luna/terra/sol) without this.
+            # "none" is what their error message itself names as the fix
+            # short of switching to the newer /v1/responses API.
+            reasoning_effort="none",
+        )
+
     if provider == "ollama":
         from langchain_ollama import ChatOllama
 
@@ -68,5 +93,5 @@ def get_llm(model: str | None = None, provider: str | None = None, temperature: 
         )
 
     raise ValueError(
-        f"Unknown LLM_PROVIDER={provider!r}; expected 'groq', 'google', or 'ollama'."
+        f"Unknown LLM_PROVIDER={provider!r}; expected 'groq', 'google', 'openai', or 'ollama'."
     )

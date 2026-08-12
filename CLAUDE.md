@@ -11,19 +11,19 @@ Agents and the user run Python in **one agreed environment**, not ad-hoc system 
 
 | Item | Value |
 |---|-----|
-| Spec file | `environment.yml` (repo root) |
-| Env name | *ask the user* |
-| Create | `conda env create -f environment.yml` |
-| Activate | `conda activate [ENV_NAME]` |
-| Update | `conda env update -f environment.yml --prune` |
+| Spec file | `requirements.txt` (repo root) |
+| Env dir | `.venv` (repo root, gitignored) |
+| Create | `python3 -m venv .venv` |
+| Activate | `source .venv/bin/activate` |
+| Install/Update | `pip install -r requirements.txt` |
 
-If `environment.yml` changes or a new package is required, **update the file in the same change** and tell the user to run the update command.
+If `requirements.txt` changes or a new package is required, **update the file in the same change** and tell the user to run the install command.
 
 ## Before running Python, notebooks, or tests
 
-1. **Use the canonical env** — run commands with `conda run -n [ENV_NAME] …` or after `conda activate [ENV_NAME]`. Do not use bare `/usr/bin/python3` or an unnamed env unless the user explicitly overrides.
-2. **Check the env exists** — `conda env list | grep [ENV_NAME]` (or equivalent).
-3. **Check required imports** — for the task at hand, verify packages from `environment.yml` import successfully in that env.
+1. **Use the canonical env** — run commands with `.venv/bin/python …` / `.venv/bin/pip …`, or after `source .venv/bin/activate`. Do not use bare `/usr/bin/python3` or a different env unless the user explicitly overrides.
+2. **Check the env exists** — `test -x .venv/bin/python` (or equivalent).
+3. **Check required imports** — for the task at hand, verify packages from `requirements.txt` import successfully in that env.
 4. **If anything is missing, stop and report** — do not silently substitute, skip execution, or add optional fallbacks (e.g. `try/except ImportError` around plots) to hide gaps.
 
 ## Required user message when blocked
@@ -33,36 +33,34 @@ Use this format so the user can fix the env once and both sides stay aligned:
 ```
 Environment blocked
 
-Canonical env: [ENV_NAME] (see environment.yml)
+Canonical env: .venv (see requirements.txt)
 
 Missing / problem:
 - <package or tool>: <why it's needed>
 - Error: <exact message, if any>
 
 Setup (run locally):
-conda env create -f environment.yml   # first time
-# or
-conda env update -f environment.yml --prune
-
-Then: conda activate [ENV_NAME]
+python3 -m venv .venv       # first time
+source .venv/bin/activate
+pip install -r requirements.txt
 
 I have not executed <notebook/script/test> until you confirm the env is ready.
 ```
 
 ## Notebooks (`**/*.ipynb`)
 
-- **Dependencies**: only use packages listed in `environment.yml`, or add them there first.
-- **After creating or materially editing a notebook**: execute it end-to-end in `[ENV_NAME]` (e.g. `conda run -n [ENV_NAME] jupyter nbconvert --execute …` or run all cells in that kernel).
+- **Dependencies**: only use packages listed in `requirements.txt`, or add them there first.
+- **After creating or materially editing a notebook**: execute it end-to-end in `.venv` (e.g. `.venv/bin/jupyter nbconvert --execute …` or run all cells in that kernel).
 - **If execution fails on missing deps**: stop, report using the template above, and do not claim the notebook "works."
 - **Do not** mark a notebook done without a successful run in the canonical env, unless execution is blocked and you reported why.
 
 ## Scripts and collectors
 
-Same rules: run with the canonical env; report missing deps; update `environment.yml` when adding imports.
+Same rules: run with the canonical env; report missing deps; update `requirements.txt` when adding imports.
 
 ## When the user names a different env
 
-Follow the user's override for that session, but still report any missing packages and prefer recording the final set in `environment.yml` so the contract stays single-source.
+Follow the user's override for that session, but still report any missing packages and prefer recording the final set in `requirements.txt` so the contract stays single-source.
 
 ---
 description: Don't volunteer long docs or narrate work like a blog post

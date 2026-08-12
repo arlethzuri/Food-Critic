@@ -13,8 +13,9 @@ V2 +RAG, V3 +ontology hypothesis/evidence).
 ## Setup
 
 ```bash
-conda env create -f environment.yml   # or: conda env update -f environment.yml --prune
-conda activate food-health-viz
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
 ```
 
 **Getting the data** — `data/processed/review-Utah_food.csv` (730MB) is too big for git;
