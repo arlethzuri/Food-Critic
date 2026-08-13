@@ -18,6 +18,7 @@ import streamlit as st
 from agent import build_agent
 from chat_utils import log_failed_run, run_agent
 from components.baseline_search import search_baseline
+from components.explore_state import clear_chat_results, record_chat_results, resolve_display_rows
 from components.filters import render_filters
 from components.map_view import render_map
 from components.restaurant_card import render_restaurant_card
@@ -54,17 +55,26 @@ with tab_explore:
     if "v1_selected_gmap_id" not in st.session_state:
         st.session_state.v1_selected_gmap_id = None
 
+    display_rows, chat_prompt = resolve_display_rows("v1", baseline_rows, filter_kwargs)
+
     col_results, col_map = st.columns([1.2, 3])
 
     with col_results:
-        st.caption(f"{len(baseline_rows)} result(s)")
+        if chat_prompt:
+            cap_col, clear_col = st.columns([5, 1])
+            cap_col.caption(f'{len(display_rows)} result(s) for: "{chat_prompt}"')
+            if clear_col.button("Clear", key="v1_clear_chat_results"):
+                clear_chat_results("v1")
+                st.rerun()
+        else:
+            st.caption(f"{len(display_rows)} result(s)")
         with st.container(height=560):
-            clicked = render_results_list(baseline_rows)
+            clicked = render_results_list(con, display_rows)
         if clicked:
             st.session_state.v1_selected_gmap_id = clicked
 
     with col_map:
-        render_map(baseline_rows, selected_gmap_id=st.session_state.v1_selected_gmap_id)
+        render_map(display_rows, selected_gmap_id=st.session_state.v1_selected_gmap_id)
         if st.session_state.v1_selected_gmap_id:
             render_restaurant_card(con, st.session_state.v1_selected_gmap_id)
 
@@ -74,11 +84,11 @@ with tab_explore:
     if "messages" not in st.session_state:
         st.session_state.messages = []
 
-    for msg in st.session_state.messages:
+    for i, msg in enumerate(st.session_state.messages):
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
-            for fig in msg.get("charts", []):
-                st.plotly_chart(fig, use_container_width=True)
+            for j, fig in enumerate(msg.get("charts", [])):
+                st.plotly_chart(fig, use_container_width=True, key=f"chat_chart_{i}_{j}")
             if msg.get("trace"):
                 with st.expander("Agent reasoning trace"):
                     st.text(msg["trace"])
@@ -102,6 +112,8 @@ with tab_explore:
                 "present (or, for Ollama, is `ollama serve` running)? See app/README.md."
             )
             trace_text = ""
+
+        record_chat_results("v1", prompt, candidate_sink)
 
         st.session_state.messages.append({
             "role": "assistant",

@@ -1,7 +1,7 @@
 """Variant 3 dashboard: results list + filters + map (Explore tab), a chat
 agent with RAG + the ontology-guided hypothesis/evidence pipeline
 (schemas.HypothesisResponse), and a dedicated Reasoning tab (View 2A/2B:
-strictness slider, timeline scrubber, map-step + evidence-glyph
+timeline scrubber, map-step + evidence-glyph
 visualizations, reasoning_view.py) that's always reachable — not
 conditionally swapped into the map, so it doesn't go missing depending on
 what the last chat question happened to trigger.
@@ -23,6 +23,7 @@ import streamlit as st
 from agent_v3 import build_agent
 from chat_utils import log_failed_run, run_structured_agent
 from components.baseline_search import search_baseline
+from components.explore_state import clear_chat_results, record_chat_results, resolve_display_rows
 from components.filters import render_filters
 from components.map_view import render_map
 from components.reasoning_view import render_reasoning_view
@@ -112,17 +113,26 @@ with tab_explore:
     filter_kwargs = render_filters("v3")
     baseline_rows = search_baseline(con, **filter_kwargs)
 
+    display_rows, chat_prompt = resolve_display_rows("v3", baseline_rows, filter_kwargs)
+
     col_results, col_map = st.columns([1.2, 3])
 
     with col_results:
-        st.caption(f"{len(baseline_rows)} result(s)")
+        if chat_prompt:
+            cap_col, clear_col = st.columns([5, 1])
+            cap_col.caption(f'{len(display_rows)} result(s) for: "{chat_prompt}"')
+            if clear_col.button("Clear", key="v3_clear_chat_results"):
+                clear_chat_results("v3")
+                st.rerun()
+        else:
+            st.caption(f"{len(display_rows)} result(s)")
         with st.container(height=560):
-            clicked = render_results_list(baseline_rows)
+            clicked = render_results_list(con, display_rows)
         if clicked:
             st.session_state.v3_selected_gmap_id = clicked
 
     with col_map:
-        render_map(baseline_rows, selected_gmap_id=st.session_state.v3_selected_gmap_id)
+        render_map(display_rows, selected_gmap_id=st.session_state.v3_selected_gmap_id)
         if st.session_state.v3_selected_gmap_id:
             last = st.session_state.v3_last_response
             response_for_card = last if isinstance(last, HypothesisResponse) else None
@@ -134,15 +144,15 @@ with tab_explore:
     if "messages_v3" not in st.session_state:
         st.session_state.messages_v3 = []
 
-    for msg in st.session_state.messages_v3:
+    for i, msg in enumerate(st.session_state.messages_v3):
         with st.chat_message(msg["role"]):
             structured = msg.get("structured")
             if isinstance(structured, HypothesisResponse):
                 render_structured(structured)
             else:
                 st.markdown(msg["content"])
-            for fig in msg.get("charts", []):
-                st.plotly_chart(fig, use_container_width=True)
+            for j, fig in enumerate(msg.get("charts", [])):
+                st.plotly_chart(fig, use_container_width=True, key=f"chat_chart_{i}_{j}")
             if msg.get("trace"):
                 with st.expander("Agent reasoning trace"):
                     st.text(msg["trace"])
@@ -177,6 +187,8 @@ with tab_explore:
             st.session_state.v3_last_timeline = timeline
         else:
             content_for_history = structured
+
+        record_chat_results("v3", prompt, candidate_sink)
 
         st.session_state.messages_v3.append({
             "role": "assistant",

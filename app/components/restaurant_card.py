@@ -1,5 +1,5 @@
 """Restaurant detail card (RESTAURANT_CARD_VIEW.JPG) — name/price/
-rating/address (no photo — no image data exists anywhere in the
+rating/address/hours (no photo — no image data exists anywhere in the
 pipeline, dropped per explicit decision), plus an expandable evidence
 section when the last agent hypothesis concerns this establishment.
 """
@@ -7,6 +7,7 @@ import json
 
 import streamlit as st
 
+from components.establishment_format import address_preview, star_rating, today_day_label, todays_hours_batch
 from components.reasoning_view import criteria_status
 from schemas import HypothesisResponse
 from tools import make_tools
@@ -31,10 +32,22 @@ def render_restaurant_card(con, gmap_id: str, last_response: HypothesisResponse 
 
     with st.container(border=True):
         st.markdown(f"### {row['name']}")
-        rating = f"{row['avg_rating']:.1f}★" if row.get("avg_rating") is not None else "No rating"
+
+        if row.get("avg_rating") is not None:
+            avg_rating = row["avg_rating"]
+            num_reviews = row.get("num_of_reviews")
+            reviews_text = f" ({num_reviews:,})" if num_reviews is not None else ""
+            rating_line = f"{avg_rating:.1f} {star_rating(avg_rating)}{reviews_text}"
+        else:
+            rating_line = "No rating"
         price = row.get("price") or "Price unknown"
-        st.markdown(f"{rating}  ·  {price}")
-        st.caption(f"📍 {row.get('address', '')}")
+        st.markdown(f"{rating_line}  ·  {price}")
+
+        st.caption(f"📍 {address_preview(row['name'], row.get('address', ''))}")
+
+        day_label = today_day_label()
+        hours_span = todays_hours_batch(con, [gmap_id]).get(gmap_id)
+        st.caption(f"🕐 {day_label}: {hours_span}" if hours_span else f"🕐 {day_label}: hours unknown")
 
         if not row.get("slchd_establishment_key"):
             st.caption("No matched SLCHD inspection history.")
@@ -52,7 +65,7 @@ def render_restaurant_card(con, gmap_id: str, last_response: HypothesisResponse 
             st.caption("No agent evidence for this establishment yet — ask about it in chat.")
             return
 
-        for label, value, target, status in criteria_status(candidate, strictness=0.7):
+        for label, value, target, status in criteria_status(candidate):
             icon = _STATUS_ICON[status]
             target_text = f" (target {target:.1f})" if target is not None else ""
             st.write(f"{icon} **{label}:** {value:.1f}{target_text}")

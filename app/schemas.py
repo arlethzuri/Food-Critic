@@ -33,8 +33,8 @@ class EvidenceItem(BaseModel):
 
 class CandidatePoolItem(BaseModel):
     """One establishment the agent considered, with the raw metric values
-    the UI needs to render it on the map and re-filter it locally as the
-    user drags the Strictness slider — no LLM re-query on drag."""
+    the UI needs to render it on the map and the evidence glyph, without
+    an LLM re-query."""
 
     gmap_id: str
     name: str

@@ -15,6 +15,7 @@ writes to results/comparison/, so both sources concatenate cleanly for
 analysis regardless of whether a run came from the live app or the batch
 script.
 """
+import copy
 import json
 import re
 import time
@@ -27,6 +28,7 @@ from typing import Any, Literal
 
 import pandas as pd
 import plotly.express as px
+import plotly.io as pio
 from langchain_core.messages import AIMessage, ToolMessage
 
 from model_registry import get_price
@@ -157,6 +159,25 @@ def _serialize_charts(chart_sink: list) -> list[dict]:
     return charts
 
 
+# Importing streamlit registers its own default Plotly template
+# (pio.templates.default = "streamlit"), whose colorway is a set of
+# near-black sentinel hex codes (#000001, #000002, ...) — Plotly Express
+# bakes the sentinel straight into each trace's marker.color at figure-
+# construction time (not just the layout template), and Streamlit's
+# frontend JS swaps those sentinels for real theme colors at display
+# time in the browser. kaleido has no such frontend, so it renders the
+# sentinels literally as solid black. Map each sentinel back to its
+# same-index color in the real "plotly" colorway for export.
+_SENTINEL_TO_REAL_COLOR = dict(zip(
+    pio.templates["streamlit"].layout.colorway,
+    pio.templates["plotly"].layout.colorway,
+)) if "streamlit" in pio.templates else {}
+
+
+def _real_color(value):
+    return _SENTINEL_TO_REAL_COLOR.get(value, value)
+
+
 def _export_chart_images(stem_path: Path, chart_sink: list) -> list[str]:
     """Renders each chart to a standalone PNG next to the JSON/txt for a
     run (`{stem}_chart0.png`, `{stem}_chart1.png`, ...) — separate from
@@ -166,12 +187,29 @@ def _export_chart_images(stem_path: Path, chart_sink: list) -> list[str]:
     reader; swap format="pdf" here if print-quality vector output is
     needed for the paper later. Returns the filenames written (relative,
     not full paths); never raises — one bad figure just means one fewer
-    PNG, not a broken run."""
+    PNG, not a broken run.
+
+    Works on a deepcopy so the original fig (still in chart_sink, about
+    to be displayed live via st.plotly_chart on a later rerun) keeps its
+    sentinel colors intact — Streamlit's own theming depends on them.
+    """
     names = []
     for i, fig in enumerate(chart_sink):
         png_path = stem_path.parent / f"{stem_path.name}_chart{i}.png"
         try:
-            fig.write_image(str(png_path), format="png", scale=2)
+            export_fig = copy.deepcopy(fig)
+            export_fig.update_layout(template="plotly")
+            for trace in export_fig.data:
+                marker = getattr(trace, "marker", None)
+                if marker is not None and marker.color is not None:
+                    if isinstance(marker.color, str):
+                        marker.color = _real_color(marker.color)
+                    else:
+                        marker.color = [_real_color(c) for c in marker.color]
+                line = getattr(trace, "line", None)
+                if line is not None and line.color is not None:
+                    line.color = _real_color(line.color)
+            export_fig.write_image(str(png_path), format="png", scale=2)
             names.append(png_path.name)
         except Exception as e:
             print(f"[chat_utils] failed to export chart {i} as PNG (non-fatal): {e}")

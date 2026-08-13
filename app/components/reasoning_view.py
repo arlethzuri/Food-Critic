@@ -1,11 +1,10 @@
 """View 2A/2B — the reasoning/evidence view. One screen, two focal states
-per the sketch (2A: map-centric step reasoning: strictness slider + a
-Timeline scrubber that re-renders the map at whichever tool-call step is
-selected; 2B: evidence-cards-centric: one glyph per candidate showing why
-it's in the answer). The Timeline scrubber switches between them, rather
-than the earlier true-animation idea — matches the sketch's own written
-fallback ("let user scroll thru agent's visual reasoning, could be
-instead").
+per the sketch (2A: map-centric step reasoning: a Timeline scrubber that
+re-renders the map at whichever tool-call step is selected; 2B:
+evidence-cards-centric: one glyph per candidate showing why it's in the
+answer). The Timeline scrubber switches between them, rather than the
+earlier true-animation idea — matches the sketch's own written fallback
+("let user scroll thru agent's visual reasoning, could be instead").
 
 Colors are the dataviz skill's reference palette (semantic/../references
 not vendored here — see palette.md): status colors for the evidence
@@ -37,12 +36,16 @@ STATUS_GOOD = "#0ca30c"
 STATUS_WARNING = "#fab219"
 STATUS_CRITICAL = "#d03b3b"
 
+# Where each criterion's "good" bar sits between the loose (p25/p10) and
+# exact (p90/p75) percentile bounds in percentiles.json — used to be a
+# user-adjustable Strictness slider; fixed at its old default (0.7) since
+# the slider's effect wasn't legible to users, but the underlying
+# percentile-based bounds are still real data, not invented numbers.
+_THRESHOLD_POSITION = 0.7
 
-def _scale_thresholds(strictness: float, low: float, high: float) -> float:
-    """Interpolate a threshold between a loose (strictness=0) and exact
-    (strictness=1) bound. `low`/`high` are real percentiles from
-    percentiles.json, not invented numbers."""
-    return low + strictness * (high - low)
+
+def _scale_threshold(low: float, high: float) -> float:
+    return low + _THRESHOLD_POSITION * (high - low)
 
 
 def render_reasoning_view(response: HypothesisResponse, timeline: list[ReasoningStep]):
@@ -50,12 +53,6 @@ def render_reasoning_view(response: HypothesisResponse, timeline: list[Reasoning
         st.caption("Plain data lookup — no specific hypothesis formed, showing the tool-call trace below.")
     else:
         st.caption(f"Hypothesis: **{response.hypothesis.replace('_', ' ')}**  ·  confidence: {response.confidence}")
-
-    strictness = st.slider(
-        "Strictness", 0.0, 1.0, 0.7, 0.05,
-        help="How exactly results must fit the metrics — re-ranks the candidates below "
-        "against percentile-based bounds, no re-query of the agent.",
-    )
 
     map_steps = [s for s in timeline if s.kind == "map" and s.rows]
     if not map_steps and response.candidate_pool:
@@ -91,7 +88,7 @@ def render_reasoning_view(response: HypothesisResponse, timeline: list[Reasoning
                 st.write(f"{icon} {step.caption}")
 
     st.markdown("**Evidence — why each candidate is in this answer**")
-    ranked = _rank_by_strictness(response.candidate_pool, strictness)
+    ranked = _rank_candidates(response.candidate_pool)
     if not ranked:
         st.caption("No candidates in this answer's pool.")
         return
@@ -99,7 +96,7 @@ def render_reasoning_view(response: HypothesisResponse, timeline: list[Reasoning
     cols = st.columns(min(3, len(ranked)))
     for i, candidate in enumerate(ranked[:6]):
         with cols[i % len(cols)]:
-            _render_evidence_glyph(candidate, strictness)
+            _render_evidence_glyph(candidate)
 
 
 def _render_map_step(step: ReasoningStep):
@@ -117,17 +114,17 @@ def _render_map_step(step: ReasoningStep):
     st.caption(step.caption)
 
 
-def criteria_status(candidate: CandidatePoolItem, strictness: float) -> list[tuple[str, float, float, str]]:
+def criteria_status(candidate: CandidatePoolItem) -> list[tuple[str, float, float, str]]:
     """One (label, value, target, status) row per criterion with a real
-    value, status in {good, warning, critical} against a strictness-scaled
-    bound (real percentiles interpolated via _scale_thresholds). Shared by
-    the ranker and the glyph so a candidate's rank always matches what its
+    value, status in {good, warning, critical} against a fixed
+    percentile-based bound (see _THRESHOLD_POSITION). Shared by the
+    ranker and the glyph so a candidate's rank always matches what its
     own glyph shows — ranking on a different formula than the visible
     colors would be misleading."""
     r = PERCENTILES["avg_rating"]
     n = PERCENTILES["num_of_reviews"]
-    rating_bar = _scale_thresholds(strictness, r["p25"], r["p90"])
-    review_bar = _scale_thresholds(strictness, n["p10"], n["p75"])
+    rating_bar = _scale_threshold(r["p25"], r["p90"])
+    review_bar = _scale_threshold(n["p10"], n["p75"])
 
     def status(value: float, target: float) -> str:
         if value >= target:
@@ -144,15 +141,14 @@ def criteria_status(candidate: CandidatePoolItem, strictness: float) -> list[tup
     return rows
 
 
-def _rank_by_strictness(pool: list[CandidatePoolItem], strictness: float) -> list[CandidatePoolItem]:
-    """Best-first by (criteria passed at this strictness, then margin
-    above target) — ties the ranking to the same pass/fail judgment the
-    glyph renders, so order and color never disagree. Doesn't drop
-    anyone; Strictness re-ranks, it doesn't re-query."""
+def _rank_candidates(pool: list[CandidatePoolItem]) -> list[CandidatePoolItem]:
+    """Best-first by (criteria passed, then margin above target) — ties
+    the ranking to the same pass/fail judgment the glyph renders, so
+    order and color never disagree."""
     _STATUS_RANK = {"good": 2, "warning": 1, "critical": 0}
 
     def score(c: CandidatePoolItem) -> tuple[int, float]:
-        rows = criteria_status(c, strictness)
+        rows = criteria_status(c)
         if not rows:
             return (0, 0.0)
         passed = sum(_STATUS_RANK[status] for *_, status in rows)
@@ -162,7 +158,7 @@ def _rank_by_strictness(pool: list[CandidatePoolItem], strictness: float) -> lis
     return sorted(pool, key=score, reverse=True)
 
 
-def _render_evidence_glyph(candidate: CandidatePoolItem, strictness: float):
+def _render_evidence_glyph(candidate: CandidatePoolItem):
     STATUS_COLOR = {"good": STATUS_GOOD, "warning": STATUS_WARNING, "critical": STATUS_CRITICAL}
     with st.container(border=True):
         st.markdown(f"**{candidate.name}**")
@@ -173,7 +169,7 @@ def _render_evidence_glyph(candidate: CandidatePoolItem, strictness: float):
             street = candidate.address.split(",")[1].strip() if candidate.address.count(",") >= 2 else candidate.address
             st.caption(street)
 
-        rows = criteria_status(candidate, strictness)
+        rows = criteria_status(candidate)
         if candidate.distance_mi is not None:
             rows.append(("Distance (mi)", candidate.distance_mi, None, "good"))
 

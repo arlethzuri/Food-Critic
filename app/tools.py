@@ -98,7 +98,7 @@ def make_tools(con: SafeConnection, chart_sink: list, candidate_sink: list):
 
     candidate_sink collects every establishment search_establishments
     returns, in call order — this is the source for HypothesisResponse's
-    candidate_pool (map + Strictness slider in the UI)."""
+    candidate_pool (map + evidence view in the UI)."""
 
     @tool
     def get_schema() -> str:
