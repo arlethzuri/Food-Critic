@@ -98,20 +98,23 @@ with tab_explore:
     prompt = st.chat_input("Ask a question about restaurant safety...")
     if prompt:
         st.session_state.messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
 
         chart_sink, candidate_sink = [], []
         start = time.time()
-        try:
-            agent = build_agent(con, chart_sink, candidate_sink, model=model, provider=provider)
-            output, trace_text = run_agent(agent, prompt, chart_sink, candidate_sink, variant="v1", provider=provider, model=model)
-        except Exception as e:
-            log_failed_run(variant="v1", provider=provider, model=model, prompt=prompt, error=e, duration_seconds=time.time() - start)
-            output = (
-                f"Something went wrong talking to the model: {e}\n\n"
-                "Check `app/.env` — is `LLM_PROVIDER` set and the matching API key "
-                "present (or, for Ollama, is `ollama serve` running)? See app/README.md."
-            )
-            trace_text = ""
+        with st.chat_message("assistant"), st.spinner("Querying the data and building an answer..."):
+            try:
+                agent = build_agent(con, chart_sink, candidate_sink, model=model, provider=provider)
+                output, trace_text = run_agent(agent, prompt, chart_sink, candidate_sink, variant="v1", provider=provider, model=model)
+            except Exception as e:
+                log_failed_run(variant="v1", provider=provider, model=model, prompt=prompt, error=e, duration_seconds=time.time() - start)
+                output = (
+                    f"Something went wrong talking to the model: {e}\n\n"
+                    "Check `app/.env` — is `LLM_PROVIDER` set and the matching API key "
+                    "present (or, for Ollama, is `ollama serve` running)? See app/README.md."
+                )
+                trace_text = ""
 
         record_chat_results("v1", prompt, candidate_sink)
 

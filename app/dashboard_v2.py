@@ -120,20 +120,23 @@ with tab_explore:
     )
     if prompt and retriever is not None:
         st.session_state.messages_v2.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
 
         chart_sink, candidate_sink = [], []
         start = time.time()
-        try:
-            agent = build_agent(con, chart_sink, candidate_sink, retriever, model=model, provider=provider)
-            output, trace_text = run_agent(agent, prompt, chart_sink, candidate_sink, variant="v2", provider=provider, model=model)
-        except Exception as e:
-            log_failed_run(variant="v2", provider=provider, model=model, prompt=prompt, error=e, duration_seconds=time.time() - start)
-            output = (
-                f"Something went wrong talking to the model: {e}\n\n"
-                "Check `app/.env` — is `LLM_PROVIDER` set and the matching API key "
-                "present (or, for Ollama, is `ollama serve` running)? See app/README.md."
-            )
-            trace_text = ""
+        with st.chat_message("assistant"), st.spinner("Querying the data and regulations, building an answer..."):
+            try:
+                agent = build_agent(con, chart_sink, candidate_sink, retriever, model=model, provider=provider)
+                output, trace_text = run_agent(agent, prompt, chart_sink, candidate_sink, variant="v2", provider=provider, model=model)
+            except Exception as e:
+                log_failed_run(variant="v2", provider=provider, model=model, prompt=prompt, error=e, duration_seconds=time.time() - start)
+                output = (
+                    f"Something went wrong talking to the model: {e}\n\n"
+                    "Check `app/.env` — is `LLM_PROVIDER` set and the matching API key "
+                    "present (or, for Ollama, is `ollama serve` running)? See app/README.md."
+                )
+                trace_text = ""
 
         record_chat_results("v2", prompt, candidate_sink)
 

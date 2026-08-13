@@ -165,21 +165,24 @@ with tab_explore:
     )
     if prompt and retriever is not None:
         st.session_state.messages_v3.append({"role": "user", "content": prompt, "structured": None})
+        with st.chat_message("user"):
+            st.markdown(prompt)
 
         chart_sink, candidate_sink = [], []
         start = time.time()
-        try:
-            agent = build_agent(con, chart_sink, candidate_sink, retriever, model=model, provider=provider)
-            structured, trace_text, timeline = run_structured_agent(agent, prompt, chart_sink, candidate_sink, variant="v3", provider=provider, model=model)
-        except Exception as e:
-            log_failed_run(variant="v3", provider=provider, model=model, prompt=prompt, error=e, duration_seconds=time.time() - start)
-            structured = (
-                f"Something went wrong talking to the model: {e}\n\n"
-                "Check `app/.env` — is `LLM_PROVIDER` set and the matching API key "
-                "present (or, for Ollama, is `ollama serve` running)? See app/README.md."
-            )
-            trace_text = ""
-            timeline = []
+        with st.chat_message("assistant"), st.spinner("Gathering evidence and forming a hypothesis..."):
+            try:
+                agent = build_agent(con, chart_sink, candidate_sink, retriever, model=model, provider=provider)
+                structured, trace_text, timeline = run_structured_agent(agent, prompt, chart_sink, candidate_sink, variant="v3", provider=provider, model=model)
+            except Exception as e:
+                log_failed_run(variant="v3", provider=provider, model=model, prompt=prompt, error=e, duration_seconds=time.time() - start)
+                structured = (
+                    f"Something went wrong talking to the model: {e}\n\n"
+                    "Check `app/.env` — is `LLM_PROVIDER` set and the matching API key "
+                    "present (or, for Ollama, is `ollama serve` running)? See app/README.md."
+                )
+                trace_text = ""
+                timeline = []
 
         if isinstance(structured, HypothesisResponse):
             content_for_history = structured.narrative_answer
