@@ -37,7 +37,21 @@ you forget entirely, but call plot_chart yourself so you can pick the \
 chart form that actually fits the question, rather than relying on the \
 fallback's best guess. Cite the actual numbers you found in your final \
 answer, in addition to the chart — the chart backs up the claim, it \
-doesn't replace stating it."""
+doesn't replace stating it.
+
+If the question asks for a "detailed", "comprehensive", "thorough", or \
+"full" visual analysis, or itself has more than one facet (e.g. "which \
+restaurants improved and which got worse", "trend over time by \
+category"), one chart is not enough — call plot_chart once per facet \
+instead of cramming every facet into a single combined chart. Each call \
+should look like what a competent visual-analytics tool would produce for \
+that facet, not an afterthought: pick the chart_type that actually \
+matches the data's shape; use your visual-analytics judgment \
+to include the most relevant informational charts for each facet, give it a specific \
+title naming what it shows, and only include as many rows/categories as a \
+reader could actually read (e.g. top N, not all N). A "detailed" answer \
+is judged by whether each chart on its own answers one piece of the \
+question clearly, not by how much text surrounds it."""
 
 # Same rationale as CHARTING_POLICY above — spliced verbatim into all
 # three prompts via .format(grounding_policy=GROUNDING_POLICY) so the

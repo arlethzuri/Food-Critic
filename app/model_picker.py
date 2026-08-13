@@ -23,7 +23,7 @@ def render_model_picker(key_prefix: str) -> tuple[str, str]:
 
     Returns (provider, model_id) to pass straight to build_agent(...).
     """
-    col_free, col_provider, col_model, col_warn = st.columns([1, 1, 1.5, 2])
+    col_free, col_provider, col_model = st.columns([1, 1, 1.5])
 
     with col_free:
         free_only = st.checkbox(
@@ -67,10 +67,5 @@ def render_model_picker(key_prefix: str) -> tuple[str, str]:
             format_func=lambda mid: next(m["label"] for m in shown if m["id"] == mid),
             key=f"{key_prefix}_{provider}_{free_only}_model",
         )
-
-    tier = next(m["tier"] for m in shown if m["id"] == model_id)
-    if tier == "paid":
-        with col_warn:
-            st.caption("⚠️ Paid, or a free key works but with a tight daily quota — check the provider's pricing page.")
 
     return provider, model_id

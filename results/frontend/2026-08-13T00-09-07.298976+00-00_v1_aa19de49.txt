@@ -1,0 +1,174 @@
+Question: Which restaurants Has the number of critical violations  gone up and which has gone down over the last 5 years? Show me a detailed visual analysis
+
+Variant: v1 | Provider: openai | Model: gpt-5.6-terra
+Timestamp: 2026-08-13T00:09:07.298976+00:00 | Duration: 18.78s
+
+--- Answer ---
+### Critical-violation trend analysis — last 5 years
+
+The chart compares each establishment’s **first and most recent calendar year with inspection data within the past five years**. It includes only locations with data in at least two years, and counts cited violations whose code is marked **critical**.
+
+#### Largest increases
+| Restaurant | Location | First year → latest year | Critical violations | Change |
+|---|---|---:|---:|---:|
+| **Sagato Bakery & Cafe** | Midvale | 2022 → 2026 | 2 → 24 | **+22** |
+| **Ramen Ichizu** | Salt Lake City | 2025 → 2026 | 4 → 15 | **+11** |
+| Granatos Gourmet Market | Salt Lake City airport | 2022 → 2025 | 0 → 6 | **+6** |
+| IKEA Draper | Draper | 2021 → 2025 | 1 → 7 | **+6** |
+| Seven Eleven #27330B | Salt Lake City | 2022 → 2025 | 1 → 6 | **+5** |
+| Applebees West Valley | West Valley City | 2022 → 2026 | 0 → 4 | **+4** |
+| Burger King | Salt Lake City airport | 2023 → 2025 | 0 → 4 | **+4** |
+| Dees Restaurant | Salt Lake City | 2021 → 2025 | 2 → 6 | **+4** |
+| Sodexo Live @ MAEC Kitchen | Sandy | 2022 → 2026 | 2 → 6 | **+4** |
+| Texas Roadhouse | Taylorsville | 2022 → 2025 | 10 → 14 | **+4** |
+
+#### Largest decreases
+| Restaurant | Location | First year → latest year | Critical violations | Change |
+|---|---|---:|---:|---:|
+| **Brighton Molly Green** | Cottonwood Heights | 2022 → 2026 | 22 → 0 | **−22** |
+| **Jersey Mikes Subs** | Herriman | 2022 → 2026 | 19 → 0 | **−19** |
+| **Cafe Rio** | West Valley City | 2022 → 2026 | 22 → 4 | **−18** |
+| **Penny Anns Cafe** | Salt Lake City | 2022 → 2026 | 16 → 1 | **−15** |
+| **Chilis Southwest Grill #2** | Midvale | 2021 → 2026 | 14 → 0 | **−14** |
+| Heritage Convenience Store | Salt Lake City | 2022 → 2026 | 12 → 0 | **−12** |
+| McDonalds #5688 | Taylorsville | 2022 → 2026 | 12 → 0 | **−12** |
+| Saola | Cottonwood Heights | 2022 → 2026 | 12 → 0 | **−12** |
+| Olive Garden #1565 | Sandy | 2022 → 2026 | 12 → 1 | **−11** |
+| Barbacoa | Salt Lake City | 2022 → 2026 | 10 → 0 | **−10** |
+
+### How to interpret the visual
+- **Positive bars** indicate more critical-violation citations in the latest observed year than in the first observed year.
+- **Negative bars** indicate fewer citations.
+- This is an **endpoint comparison**, not a continuous annual trend: some locations’ latest available inspection year is 2025 rather than 2026.
+- A change in citations does **not by itself establish current food-safety conditions**; inspection timing and the number of inspections can differ by establishment.
+
+--- Reasoning trace ---
+Action: get_schema({})
+
+Observation: Project food_health_viz {
+  database_type: 'DuckDB'
+}
+
+Table establishment_keys {
+  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']
+  name varchar [not null]
+  address varchar [not null]
+  city varchar [not null]
+  city_state_zip varchar
+  establishment_type varchar
+  source varchar [note: 'friend_slc | own_scrape']
+  slchd_lat double
+  slchd_lon double
+  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']
+
+  Note: 'SLCHD establishment list, one row per portal listing.'
+}
+
+Table category {
+  category_id integer [pk]
+  category varchar
+}
+
+Table establishments {
+  gmap_id varchar [pk]
+  name varchar
+  address varchar
+  description varchar
+  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']
+  avg_rating double
+  num_of_reviews integer
+  price varchar
+  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']
+
+  Note: 'One row per Google Local place — all restaurants, not just SLCHD-matched.'
+}
+
+Table establishment_attributes {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  attribute varchar [not null]
+
+  indexes { (gmap_id, attribute) [pk] }
+
+  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. "Service options") dropped.'
+}
+
+Table establishment_categories {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  category_id integer [ref: > category.category_id, not null]
+
+  indexes { (gmap_id, category_id) [pk] }
+}
+
+Table gmap_hours {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  day integer [not null, note: '0=Sun … 6=Sat']
+  open_min bigint
+  open_max bigint
+
+  indexes { (gmap_id, day) [pk] }
+
+  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'
+}
+
+Table review {
+  user_id varchar
+  name varchar
+  time bigint
+  rating double
+  text varchar
+  resp varchar
+  gmap_id varchar [ref: > establishments.gmap_id]
+}
+
+Table inspection_types {
+  inspection_type_id integer [pk, note: 'parsed leading number, e.g. "01 - Routine" -> 1']
+  description varchar [note: 'e.g. "Routine"']
+}
+
+Table inspections {
+  inspection_id bigint [pk, increment]
+  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]
+  inspection_date date [not null]
+  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable — 27 rows have no type']
+  inspection_score integer
+
+  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'
+}
+
+Table violation_codes {
+  violation_code_id integer [pk, increment]
+  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. "4.5.18"']
+  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']
+  critical boolean [not null]
+}
+
+Table violations {
+  violation_id bigint [pk, increment]
+  inspection_id bigint [ref: > inspections.inspection_id, not null]
+  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]
+  violation_description varchar [note: 'per-occurrence free text']
+  violation_occurrences integer
+  violation_cos boolean [note: 'corrected on site']
+  violation_phr varchar [note: 'public health rationale']
+
+  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'
+}
+
+
+Action: get_column_glossary({'table_dot_column': 'violation_codes.critical'})
+
+Observation: {"description": "Whether citations of this code are critical. One fixed value per code \u2014 verified across all citations, no code has mixed critical/non-critical citations. (3 codes were found inconsistently labeled in the raw source and were normalized to critical=true; see data/processed/clean_processed.ipynb, 'Fix inconsistent violation criticality'.)", "reference": "slchd_portal"}
+
+Action: run_sql({'query': "WITH annual AS (\n  SELECT\n    i.slchd_establishment_key,\n    EXTRACT(YEAR FROM i.inspection_date)::INTEGER AS year,\n    SUM(CASE WHEN vc.critical THEN COALESCE(v.violation_occurrences, 1) ELSE 0 END) AS critical_violations\n  FROM inspections i\n  LEFT JOIN violations v ON v.inspection_id = i.inspection_id\n  LEFT JOIN violation_codes vc ON vc.violation_code_id = v.violation_code_id\n  WHERE i.inspection_date >= CURRENT_DATE - INTERVAL '5 years'\n  GROUP BY 1, 2\n), endpoints AS (\n  SELECT\n    slchd_establishment_key,\n    MIN(year) AS first_year,\n    MAX(year) AS last_year,\n    ARG_MIN(critical_violations, year) AS first_year_critical,\n    ARG_MAX(critical_violations, year) AS last_year_critical\n  FROM annual\n  GROUP BY 1\n  HAVING COUNT(*) >= 2\n), changes AS (\n  SELECT\n    e.slchd_establishment_key,\n    k.name,\n    k.address,\n    k.city,\n    e.first_year,\n    e.last_year,\n    e.first_year_critical,\n    e.last_year_critical,\n    e.last_year_critical - e.first_year_critical AS change\n  FROM endpoints e\n  JOIN establishment_keys k USING (slchd_establishment_key)\n  WHERE e.last_year_critical <> e.first_year_critical\n)\nSELECT * FROM changes\nORDER BY change DESC, name\nLIMIT 50"})
+
+Observation: {"row_count": 50, "truncated": false, "rows": [{"slchd_establishment_key": "SAGATO BAKERY & CAFE|44 W 7200 S|MIDVALE", "name": "SAGATO BAKERY & CAFE", "address": "44 W 7200 S", "city": "MIDVALE", "first_year": 2022, "last_year": 2026, "first_year_critical": 2.0, "last_year_critical": 24.0, "change": 22.0}, {"slchd_establishment_key": "RAMEN ICHIZU|915 S WASHINGTON ST|SALT LAKE CITY", "name": "RAMEN ICHIZU", "address": "915 S WASHINGTON ST", "city": "SALT LAKE CITY", "first_year": 2025, "last_year": 2026, "first_year_critical": 4.0, "last_year_critical": 15.0, "change": 11.0}, {"slchd_establishment_key": "GRANATOS GOURMET MARKET|4051 W TERMINAL DR|SALT LAKE CITY", "name": "GRANATOS GOURMET MARKET", "address": "4051 W TERMINAL DR", "city": "SALT LAKE CITY", "first_year": 2022, "last_year": 2025, "first_year_critical": 0.0, "last_year_critical": 6.0, "change": 6.0}, {"slchd_establishment_key": "IKEA DRAPER|13312 S PONY EXPRESS RD|DRAPER", "name": "IKEA DRAPER", "address": "13312 S PONY EXPRESS RD", "city": "DRAPER", "first_year": 2021, "last_year": 2025, "first_year_critical": 1.0, "last_year_critical": 7.0, "change": 6.0}, {"slchd_establishment_key": "SEVEN ELEVEN #27330B|1285 N REDWOOD RD|SALT LAKE CITY", "name": "SEVEN ELEVEN #27330B", "address": "1285 N REDWOOD RD", "city": "SALT LAKE CITY", "first_year": 2022, "last_year": 2025, "first_year_critical": 1.0, "last_year_critical": 6.0, "change": 5.0}, {"slchd_establishment_key": "APPLEBEES WEST VALLEY|2175 W CITY CENTER CT|WEST VALLEY CITY", "name": "APPLEBEES WEST VALLEY", "address": "2175 W CITY CENTER CT", "city": "WEST VALLEY CITY", "first_year": 2022, "last_year": 2026, "first_year_critical": 0.0, "last_year_critical": 4.0, "change": 4.0}, {"slchd_establishment_key": "BURGER KING|3920 W TERMINAL DR|SALT LAKE CITY", "name": "BURGER KING", "address": "3920 W TERMINAL DR", "city": "SALT LAKE CITY", "first_year": 2023, "last_year": 2025, "first_year_critical": 0.0, "last_year_critical": 4.0, "change": 4.0}, {"slchd_establishment_key": "DEES RESTAURANT|2085 S REDWOOD RD|SALT LAKE CITY", "name": "DEES RESTAURANT", "address": "2085 S REDWOOD RD", "city": "SALT LAKE CITY", "first_year": 2021, "last_year": 2025, "first_year_critical": 2.0, "last_year_critical": 6.0, "change": 4.0}, {"slchd_establishment_key": "SODEXO LIVE @ MAEC KITCHEN|9575 S STATE ST|SANDY", "name": "SODEXO LIVE @ MAEC KITCHEN", "address": "9575 S STATE ST", "city": "SANDY", "first_year": 2022, "last_year": 2026, "first_year_critical": 2.0, "last_year_critical": 6.0, "change": 4.0}, {"slchd_establishment_key": "TEXAS ROADHOUSE|1904 W 5400 S|TAYLORSVILLE", "name": "TEXAS ROADHOUSE", "address": "1904 W 5400 S", "city": "TAYLORSVILLE", "first_year": 2022, "last_year": 2025, "first_year_critical": 10.0, "last_year_critical": 14.0, "change": 4.0}, {"slchd_establishment_key": "WINCO|11969 S CARLSBAD WY|HERRIMAN", "name": "WINCO", "address": "11969 S CARLSBAD WY", "city": "HERRIMAN", "first_year": 2023, "last_year": 2026, "first_year_critical": 1.0, "last_year_critical": 5.0, "change": 4.0}, {"slchd_establishment_key": "ANGELAS CATERING|3804 S HIGHLAND DR|MILLCREEK TS", "name": "ANGELAS CATERING", "address": "3804 S HIGHLAND DR", "city": "MILLCREEK TS", "first_year": 2022, "last_year": 2026, "first_year_critical": 0.0, "last_year_critical": 3.0, "change": 3.0}, {"slchd_establishment_key": "BON APPETIT @ WGU|4001 S 700 E|MILLCREEK", "name": "BON APPETIT @ WGU", "address": "4001 S 700 E", "city": "MILLCREEK", "first_year": 2022, "last_year": 2026, "first_year_critical": 2.0, "last_year_critical": 5.0, "change": 3.0}, {"slchd_establishment_key": "J DAWGS 513/DELTA CENTER|301 W SOUTH TEMPLE ST|SALT LAKE CITY", "name": "J DAWGS 513/DELTA CENTER", "address": "301 W SOUTH TEMPLE ST", "city": "SALT LAKE CITY", "first_year": 2024, "last_year": 2025, "first_year_critical": 1.0, "last_year_critical": 4.0, "change": 3.0}, {"slchd_establishment_key": "MOUNTAIN AMERICA CREDIT UNION CAIRNS CAFE|9800 S MONROE ST|SANDY", "name": "MOUNTAIN AMERICA CREDIT UNION CAIRNS CAFE", "address": "9800 S MONROE ST", "city": "SANDY", "first_year": 2022, "last_year": 2026, "first_year_critical": 3.0, "last_year_critical": 6.0, "change": 3.0}, {"slchd_establishment_key": "PANDA EXPRESS|12051 S HERRIMAN MAIN ST|HERRIMAN", "name": "PANDA EXPRESS", "address": "12051 S HERRIMAN MAIN ST", "city": "HERRIMAN", "first_year": 2024, "last_year": 2026, "first_year_critical": 0.0, "last_year_critical": 3.0, "change": 3.0}, {"slchd_establishment_key": "TAQUERIA 27 HOLLADAY|4670 S HOLLADAY VILLAGE PLZ|HOLLADAY", "name": "TAQUERIA 27 HOLLADAY", "address": "4670 S HOLLADAY VILLAGE PLZ", "city": "HOLLADAY", "first_year": 2023, "last_year": 2026, "first_year_critical": 0.0, "last_year_critical": 3.0, "change": 3.0}, {"slchd_establishment_key": "VOLUNTEERS OF AMERICA RECOVERY ON RDWD|1875 S REDWOOD RD|SALT LAKE CITY", "name": "VOLUNTEERS OF AMERICA RECOVERY ON RDWD", "address": "1875 S REDWOOD RD", "city": "SALT LAKE CITY", "first_year": 2023, "last_year": 2025, "first_year_critical": 3.0, "last_year_critical": 6.0, "change": 3.0}, {"slchd_establishment_key": "ALTA LODGE - RESTAURANT|10230 E LITTLE COTTONWOOD CYN|ALTA", "name": "ALTA LODGE - RESTAURANT", "address": "10230 E LITTLE COTTONWOOD CYN", "city": "ALTA", "first_year": 2022, "last_year": 2026, "first_year_critical": 1.0, "last_year_critical": 3.0, "change": 2.0}, {"slchd_establishment_key": "ALTA WATSON SHELTER - BALDY BREWS|10700 E LITTLE COTTONWOOD CYN|ALTA", "name": "ALTA WATSON SHELTER - BALDY BREWS", "address": "10700 E LITTLE COTTONWOOD CYN", "city": "ALTA", "first_year": 2022, "last_year": 2025, "first_year_critical": 0.0, "last_year_critical": 2.0, "change": 2.0}, {"slchd_establishment_key": "ARBYS #436|25 N REDWOOD RD|SALT LAKE CITY", "name": "ARBYS #436", "address": "25 N REDWOOD RD", "city": "SALT LAKE CITY", "first_year": 2022, "last_year": 2025, "first_year_critical": 0.0, "last_year_critical": 2.0, "change": 2.0}, {"slchd_establishment_key": "ARBYS #8541|7121 S BINGHAM JUNCTION|MIDVALE", "name": "ARBYS #8541", "address": "7121 S BINGHAM JUNCTION", "city": "MIDVALE", "first_year": 2022, "last_year": 2025, "first_year_critical": 0.0, "last_year_critical": 2.0, "change": 2.0}, {"slchd_establishment_key": "ARBYS 1187|2284 E 3900 S|HOLLADAY", "name": "ARBYS 1187", "address": "2284 E 3900 S", "city": "HOLLADAY", "first_year": 2021, "last_year": 2026, "first_year_critical": 0.0, "last_year_critical": 2.0, "change": 2.0}, {"slchd_establishment_key": "ARIGATO SUSHI|1769 W 7000 S|WEST JORDAN", "name": "ARIGATO SUSHI", "address": "1769 W 7000 S", "city": "WEST JORDAN", "first_year": 2024, "last_year": 2026, "first_year_critical": 1.0, "last_year_critical": 3.0, "change": 2.0}, {"slchd_establishment_key": "ARIVO CAFE|4770 S 5600 W|KEARNS", "name": "ARIVO CAFE", "address": "4770 S 5600 W", "city": "KEARNS", "first_year": 2023, "last_year": 2026, "first_year_critical": 0.0, "last_year_critical": 2.0, "change": 2.0}, {"slchd_establishment_key": "CAFE RIO|1664 W TOWNE CENTER DR|SOUTH JORDAN", "name": "CAFE RIO", "address": "1664 W TOWNE CENTER DR", "city": "SOUTH JORDAN", "first_year": 2023, "last_year": 2026, "first_year_critical": 2.0, "last_year_critical": 4.0, "change": 2.0}, {"slchd_establishment_key": "EUREST|533 S 400 W|SALT LAKE CITY", "name": "EUREST", "address": "533 S 400 W", "city": "SALT LAKE CITY", "first_year": 2025, "last_year": 2026, "first_year_critical": 0.0, "last_year_critical": 2.0, "change": 2.0}, {"slchd_establishment_key": "FAIRFIELD BY MARRIOTT|6433 S HIGHLAND DR|HOLLADAY", "name": "FAIRFIELD BY MARRIOTT", "address": "6433 S HIGHLAND DR", "city": "HOLLADAY", "first_year": 2023, "last_year": 2025, "first_year_critical": 2.0, "last_year_critical": 4.0, "change": 2.0}, {"slchd_establishment_key": "GOOD2GO STORES|5075 W HERRIMAN BLVD|HERRIMAN", "name": "GOOD2GO STORES", "address": "5075 W HERRIMAN BLVD", "city": "HERRIMAN", "first_year": 2023, "last_year": 2026, "first_year_critical": 0.0, "last_year_critical": 2.0, "change": 2.0}, {"slchd_establishment_key": "HARMONS WEST|3955 W 3500 S|WEST VALLEY CITY", "name": "HARMONS WEST", "address": "3955 W 3500 S", "city": "WEST VALLEY CITY", "first_year": 2021, "last_year": 2026, "first_year_critical": 0.0, "last_year_critical": 2.0, "change": 2.0}, {"slchd_establishment_key": "KAHLERT VILLAGE CAFE/GSE|250 S 1850 E|SALT LAKE CITY", "name": "KAHLERT VILLAGE CAFE/GSE", "address": "250 S 1850 E", "city": "SALT LAKE CITY", "first_year": 2022, "last_year": 2025, "first_year_critical": 0.0, "last_year_critical": 2.0, "change": 2.0}, {"slchd_establishment_key": "LDS RIVERTON OFFICE BUILDING CAFETERIA|3740 W MARKET CENTER DR|RIVERTON", "name": "LDS RIVERTON OFFICE BUILDING CAFETERIA", "address": "3740 W MARKET CENTER DR", "city": "RIVERTON", "first_year": 2021, "last_year": 2026, "first_year_critical": 1.0, "last_year_critical": 3.0, "change": 2.0}, {"slchd_establishment_key": "LUX EVENTS INC|1578 S 300 W|SALT LAKE CITY", "name": "LUX EVENTS INC", "address": "1578 S 300 W", "city": "SALT LAKE CITY", "first_year": 2022, "last_year": 2025, "first_year_critical": 3.0, "last_year_critical": 5.0, "change": 2.0}, {"slchd_establishment_key": "NEIGHBORHOOD HOUSE UTAH|1050 W 500 S|SALT LAKE CITY", "name": "NEIGHBORHOOD HOUSE UTAH", "address": "1050 W 500 S", "city": "SALT LAKE CITY", "first_year": 2021, "last_year": 2026, "first_year_critical": 1.0, "last_year_critical": 3.0, "change": 2.0}, {"slchd_establishment_key": "ON TIME COMMISSARY|1051 S 300 W|SALT LAKE CITY", "name": "ON TIME COMMISSARY", "address": "1051 S 300 W", "city": "SALT LAKE CITY", "first_year": 2022, "last_year": 2026, "first_year_critical": 0.0, "last_year_critical": 2.0, "change": 2.0}, {"slchd_establishment_key": "PAPA JOHNS PIZZA #1565|1844 E FORT UNION BLVD|COTTONWOOD HEIGHTS", "name": "PAPA JOHNS PIZZA #1565", "address": "1844 E FORT UNION BLVD", "city": "COTTONWOOD HEIGHTS", "first_year": 2022, "last_year": 2025, "first_year_critical": 1.0, "last_year_critical": 3.0, "change": 2.0}, {"slchd_establishment_key": "SLUICE BOX|12000 BIG COTTONWOOD CANYON RD|SALT LAKE CITY", "name": "SLUICE BOX", "address": "12000 BIG COTTONWOOD CANYON RD", "city": "SALT LAKE CITY", "first_year": 2025, "last_year": 2026, "first_year_critical": 0.0, "last_year_critical": 2.0, "change": 2.0}, {"slchd_establishment_key": "SNOWBIRD RESORT - AERIE LOUNGE|9320 S CLIFF LODGE DR|SANDY", "name": "SNOWBIRD RESORT - AERIE LOUNGE", "address": "9320 S CLIFF LODGE DR", "city": "SANDY", "first_year": 2022, "last_year": 2026, "first_year_critical": 0.0, "last_year_critical": 2.0, "change": 2.0}, {"slchd_establishment_key": "SUBWAY #3790|9015 S REDWOOD RD|WEST JORDAN", "name": "SUBWAY #3790", "address": "9015 S REDWOOD RD", "city": "WEST JORDAN", "first_year": 2022, "last_year": 2025, "first_year_critical": 0.0, "last_year_critical": 2.0, "change": 2.0}, {"slchd_establishment_key": "TASTE OF THE CARIBBEAN|2943 E 3300 S|SALT LAKE CITY", "name": "TASTE OF THE CARIBBEAN", "address": "2943 E 3300 S", "city": "SALT LAKE CITY", "first_year": 2022, "last_year": 2025, "first_year_critical": 0.0, "last_year_critical": 2.0, "change": 2.0}, {"slchd_establishment_key": "WALMART|3590 W SOUTH JORDAN PKWY|SOUTH JORDAN", "name": "WALMART", "address": "3590 W SOUTH JORDAN PKWY", "city": "SOUTH JORDAN", "first_year": 2021, "last_year": 2025, "first_year_critical": 0.0, "last_year_critical": 2.0, "change": 2.0}, {"slchd_establishment_key": "WHOLE FOODS MARKET|544 S 700 E|SALT LAKE CITY", "name": "WHOLE FOODS MARKET", "address": "544 S 700 E", "city": "SALT LAKE CITY", "first_year": 2021, "last_year": 2026, "first_year_critical": 1.0, "last_year_critical": 3.0, "change": 2.0}, {"slchd_establishment_key": "2 ROW BREWING|73 W 7200 S|MIDVALE", "name": "2 ROW BREWING", "address": "73 W 7200 S", "city": "MIDVALE", "first_year": 2024, "last_year": 2025, "first_year_critical": 4.0, "last_year_critical": 5.0, "change": 1.0}, {"slchd_establishment_key": "801 CATERING|14587 S 790 W|BLUFFDALE", "name": "801 CATERING", "address": "14587 S 790 W", "city": "BLUFFDALE", "first_year": 2022, "last_year": 2026, "first_year_critical": 1.0, "last_year_critical": 2.0, "change": 1.0}, {"slchd_establishment_key": "9UP NIGHT MARKET|3232 S 400 E|SOUTH SALT LAKE", "name": "9UP NIGHT MARKET", "address": "3232 S 400 E", "city": "SOUTH SALT LAKE", "first_year": 2023, "last_year": 2025, "first_year_critical": 0.0, "last_year_critical": 1.0, "change": 1.0}, {"slchd_establishment_key": "ABOUTEA|3424 S STATE ST|SOUTH SALT LAKE", "name": "ABOUTEA", "address": "3424 S STATE ST", "city": "SOUTH SALT LAKE", "first_year": 2022, "last_year": 2025, "first_year_critical": 1.0, "last_year_critical": 2.0, "change": 1.0}, {"slchd_establishment_key": "ALOHA SURF SHACK|1980 E 2700 S|SALT LAKE CITY", "name": "ALOHA SURF SHACK", "address": "1980 E 2700 S", "city": "SALT LAKE CITY", "first_year": 2022, "last_year": 2025, "first_year_critical": 0.0, "last_year_critical": 1.0, "change": 1.0}, {"slchd_establishment_key": "ALTA VIEW SPECIALTY CLINIC|9450 S 1300 E|SANDY", "name": "ALTA VIEW SPECIALTY CLINIC", "address": "9450 S 1300 E", "city": "SANDY", "first_year": 2022, "last_year": 2026, "first_year_critical": 2.0, "last_year_critical": 3.0, "change": 1.0}, {"slchd_establishment_key": "ALTA WATSON SHELTER - COLLINS GRILL|10700 E LITTLE COTTONWOOD CYN|ALTA", "name": "ALTA WATSON SHELTER - COLLINS GRILL", "address": "10700 E LITTLE COTTONWOOD CYN", "city": "ALTA", "first_year": 2022, "last_year": 2025, "first_year_critical": 1.0, "last_year_critical": 2.0, "change": 1.0}, {"slchd_establishment_key": "ANTOJITOS MEXICANOS EL CABRITO|956 W 1000 N|SALT LAKE CITY", "name": "ANTOJITOS MEXICANOS EL CABRITO", "address": "956 W 1000 N", "city": "SALT LAKE CITY", "first_year": 2022, "last_year": 2024, "first_year_critical": 0.0, "last_year_critical": 1.0, "change": 1.0}]}
+
+Action: plot_chart({'chart_type': 'bar', 'query': "WITH annual AS (\n  SELECT i.slchd_establishment_key, EXTRACT(YEAR FROM i.inspection_date)::INTEGER AS year,\n         SUM(CASE WHEN vc.critical THEN COALESCE(v.violation_occurrences,1) ELSE 0 END) AS critical_violations\n  FROM inspections i LEFT JOIN violations v ON v.inspection_id=i.inspection_id\n  LEFT JOIN violation_codes vc ON vc.violation_code_id=v.violation_code_id\n  WHERE i.inspection_date >= CURRENT_DATE - INTERVAL '5 years'\n  GROUP BY 1,2\n), endpoints AS (\n  SELECT slchd_establishment_key, MIN(year) first_year, MAX(year) last_year,\n         ARG_MIN(critical_violations,year) first_critical, ARG_MAX(critical_violations,year) last_critical\n  FROM annual GROUP BY 1 HAVING COUNT(*)>=2\n), ranked AS (\n  SELECT k.name || ' — ' || k.city AS restaurant, e.first_year, e.last_year, e.first_critical, e.last_critical,\n         e.last_critical-e.first_critical AS change,\n         CASE WHEN e.last_critical>e.first_critical THEN 'Increased' ELSE 'Decreased' END AS direction\n  FROM endpoints e JOIN establishment_keys k USING(slchd_establishment_key)\n  WHERE e.last_critical<>e.first_critical\n), top_changes AS (\n  SELECT * FROM ranked QUALIFY ROW_NUMBER() OVER (PARTITION BY direction ORDER BY CASE WHEN direction='Increased' THEN change ELSE -change END DESC, restaurant)<=10\n)\nSELECT restaurant, direction, change FROM top_changes ORDER BY direction, change DESC", 'title': 'Largest endpoint changes in annual critical-violation citations (last five years)', 'x': 'restaurant', 'y': 'change', 'color': 'direction'})
+
+Observation: Chart created: 'Largest endpoint changes in annual critical-violation citations (last five years)' (bar, 20 rows). It will be shown to the user below your answer.
+
+Action: run_sql({'query': "WITH annual AS (\n  SELECT i.slchd_establishment_key, EXTRACT(YEAR FROM i.inspection_date)::INTEGER AS year,\n         SUM(CASE WHEN vc.critical THEN COALESCE(v.violation_occurrences,1) ELSE 0 END) AS critical_violations\n  FROM inspections i LEFT JOIN violations v ON v.inspection_id=i.inspection_id\n  LEFT JOIN violation_codes vc ON vc.violation_code_id=v.violation_code_id\n  WHERE i.inspection_date >= CURRENT_DATE - INTERVAL '5 years'\n  GROUP BY 1,2\n), endpoints AS (\n  SELECT slchd_establishment_key, MIN(year) first_year, MAX(year) last_year,\n         ARG_MIN(critical_violations,year) first_critical, ARG_MAX(critical_violations,year) last_critical\n  FROM annual GROUP BY 1 HAVING COUNT(*)>=2\n), ranked AS (\n  SELECT k.name, k.address, k.city, e.first_year, e.last_year, e.first_critical, e.last_critical,\n         e.last_critical-e.first_critical AS change,\n         CASE WHEN e.last_critical>e.first_critical THEN 'Up' ELSE 'Down' END AS direction\n  FROM endpoints e JOIN establishment_keys k USING(slchd_establishment_key)\n  WHERE e.last_critical<>e.first_critical\n), top_changes AS (\n  SELECT * FROM ranked QUALIFY ROW_NUMBER() OVER (PARTITION BY direction ORDER BY CASE WHEN direction='Up' THEN change ELSE -change END DESC, name)<=10\n)\nSELECT * FROM top_changes ORDER BY direction, change DESC, name"})
+
+Observation: {"row_count": 20, "truncated": false, "rows": [{"name": "BARBACOA", "address": "1335 S 700 W", "city": "SALT LAKE CITY", "first_year": 2022, "last_year": 2026, "first_critical": 10.0, "last_critical": 0.0, "change": -10.0, "direction": "Down"}, {"name": "OLIVE GARDEN #1565", "address": "10590 S STATE ST", "city": "SANDY", "first_year": 2022, "last_year": 2026, "first_critical": 12.0, "last_critical": 1.0, "change": -11.0, "direction": "Down"}, {"name": "HERITAGE CONVENIENCE STORE", "address": "151 S CONNOR", "city": "SALT LAKE CITY", "first_year": 2022, "last_year": 2026, "first_critical": 12.0, "last_critical": 0.0, "change": -12.0, "direction": "Down"}, {"name": "MCDONALDS #5688", "address": "3900 W 5400 S", "city": "TAYLORSVILLE", "first_year": 2022, "last_year": 2026, "first_critical": 12.0, "last_critical": 0.0, "change": -12.0, "direction": "Down"}, {"name": "SAOLA", "address": "7307 S CANYON CENTER PKWY", "city": "COTTONWOOD HEIGHTS", "first_year": 2022, "last_year": 2026, "first_critical": 12.0, "last_critical": 0.0, "change": -12.0, "direction": "Down"}, {"name": "CHILIS SOUTHWEST GRILL #2", "address": "1070 E FORT UNION BLVD", "city": "MIDVALE", "first_year": 2021, "last_year": 2026, "first_critical": 14.0, "last_critical": 0.0, "change": -14.0, "direction": "Down"}, {"name": "PENNY ANNS CAFE", "address": "1810 S MAIN ST", "city": "SALT LAKE CITY", "first_year": 2022, "last_year": 2026, "first_critical": 16.0, "last_critical": 1.0, "change": -15.0, "direction": "Down"}, {"name": "CAFE RIO", "address": "5567 W HIGH MARKET DR", "city": "WEST VALLEY CITY", "first_year": 2022, "last_year": 2026, "first_critical": 22.0, "last_critical": 4.0, "change": -18.0, "direction": "Down"}, {"name": "JERSEY MIKES SUBS", "address": "5510 W 13400 S", "city": "HERRIMAN", "first_year": 2022, "last_year": 2026, "first_critical": 19.0, "last_critical": 0.0, "change": -19.0, "direction": "Down"}, {"name": "BRIGHTON MOLLY GREEN", "address": "12601 E BIG COTTONWOODCYN RD", "city": "COTTONWOOD HEIGHTS", "first_year": 2022, "last_year": 2026, "first_critical": 22.0, "last_critical": 0.0, "change": -22.0, "direction": "Down"}, {"name": "SAGATO BAKERY & CAFE", "address": "44 W 7200 S", "city": "MIDVALE", "first_year": 2022, "last_year": 2026, "first_critical": 2.0, "last_critical": 24.0, "change": 22.0, "direction": "Up"}, {"name": "RAMEN ICHIZU", "address": "915 S WASHINGTON ST", "city": "SALT LAKE CITY", "first_year": 2025, "last_year": 2026, "first_critical": 4.0, "last_critical": 15.0, "change": 11.0, "direction": "Up"}, {"name": "GRANATOS GOURMET MARKET", "address": "4051 W TERMINAL DR", "city": "SALT LAKE CITY", "first_year": 2022, "last_year": 2025, "first_critical": 0.0, "last_critical": 6.0, "change": 6.0, "direction": "Up"}, {"name": "IKEA DRAPER", "address": "13312 S PONY EXPRESS RD", "city": "DRAPER", "first_year": 2021, "last_year": 2025, "first_critical": 1.0, "last_critical": 7.0, "change": 6.0, "direction": "Up"}, {"name": "SEVEN ELEVEN #27330B", "address": "1285 N REDWOOD RD", "city": "SALT LAKE CITY", "first_year": 2022, "last_year": 2025, "first_critical": 1.0, "last_critical": 6.0, "change": 5.0, "direction": "Up"}, {"name": "APPLEBEES WEST VALLEY", "address": "2175 W CITY CENTER CT", "city": "WEST VALLEY CITY", "first_year": 2022, "last_year": 2026, "first_critical": 0.0, "last_critical": 4.0, "change": 4.0, "direction": "Up"}, {"name": "BURGER KING", "address": "3920 W TERMINAL DR", "city": "SALT LAKE CITY", "first_year": 2023, "last_year": 2025, "first_critical": 0.0, "last_critical": 4.0, "change": 4.0, "direction": "Up"}, {"name": "DEES RESTAURANT", "address": "2085 S REDWOOD RD", "city": "SALT LAKE CITY", "first_year": 2021, "last_year": 2025, "first_critical": 2.0, "last_critical": 6.0, "change": 4.0, "direction": "Up"}, {"name": "SODEXO LIVE @ MAEC KITCHEN", "address": "9575 S STATE ST", "city": "SANDY", "first_year": 2022, "last_year": 2026, "first_critical": 2.0, "last_critical": 6.0, "change": 4.0, "direction": "Up"}, {"name": "TEXAS ROADHOUSE", "address": "1904 W 5400 S", "city": "TAYLORSVILLE", "first_year": 2022, "last_year": 2025, "first_critical": 10.0, "last_critical": 14.0, "change": 4.0, "direction": "Up"}]}
+
+--- Usage: 37139 tokens, ~$0.0943 ---
