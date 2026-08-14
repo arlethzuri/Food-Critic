@@ -538,9 +538,18 @@ def _ensure_visualization(chart_sink: list, candidate_sink: list, messages) -> N
 
 
 def run_agent(agent, prompt: str, chart_sink: list, candidate_sink: list, *,
-              variant: str = "unknown", provider: str = "unknown", model: str = "unknown") -> tuple[str, str]:
+              variant: str = "unknown", provider: str = "unknown", model: str = "unknown",
+              thread_id: str | None = None) -> tuple[str, str]:
+    """thread_id is only meaningful for an agent built with a checkpointer
+    (agent_memory.py / agent_v2_memory.py / agent_v3_memory.py) — it tells
+    LangGraph which persisted conversation to append this turn to and
+    replay back into context, so the model sees prior turns without the
+    caller having to resend them. None (the default, used by the plain
+    agent.py/agent_v2.py/agent_v3.py) omits config entirely, matching the
+    original no-memory behavior exactly."""
     start = time.time()
-    result = agent.invoke({"messages": [{"role": "user", "content": prompt}]})
+    config = {"configurable": {"thread_id": thread_id}} if thread_id else None
+    result = agent.invoke({"messages": [{"role": "user", "content": prompt}]}, config=config)
     duration = time.time() - start
     messages = result["messages"]
     output = _as_text(messages[-1].content)
@@ -555,7 +564,8 @@ def run_agent(agent, prompt: str, chart_sink: list, candidate_sink: list, *,
 
 
 def run_structured_agent(agent, prompt: str, chart_sink: list, candidate_sink: list, *,
-                          variant: str = "unknown", provider: str = "unknown", model: str = "unknown"):
+                          variant: str = "unknown", provider: str = "unknown", model: str = "unknown",
+                          thread_id: str | None = None):
     """For agents built with response_format= (Variant 3). Returns
     (structured_response, trace_text, timeline) — structured_response is
     always a HypothesisResponse, never raw text.
@@ -579,7 +589,8 @@ def run_structured_agent(agent, prompt: str, chart_sink: list, candidate_sink: l
     from schemas import CandidatePoolItem, HypothesisResponse
 
     start = time.time()
-    result = agent.invoke({"messages": [{"role": "user", "content": prompt}]})
+    config = {"configurable": {"thread_id": thread_id}} if thread_id else None
+    result = agent.invoke({"messages": [{"role": "user", "content": prompt}]}, config=config)
     duration = time.time() - start
     messages = result["messages"]
     structured = result.get("structured_response")
