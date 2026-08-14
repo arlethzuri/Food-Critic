@@ -23,6 +23,11 @@ call:
   checked against a live key and work for tool-calling, but only with
   `reasoning_effort="none"` (see llm.py) — omit that and every one of
   them 400s on any request with tools attached.
+- Anthropic's API has no free tier either — same as OpenAI, every model
+  tagged "paid". Prices are Anthropic's first-party API rates (checked
+  2026-08); Sonnet 5 is currently at introductory pricing ($2/$10 per 1M,
+  through 2026-08-31) rather than its standard $3/$15 — priced here at
+  the rate that's actually live.
 
 `price` is USD per 1M tokens, {"input": x, "output": y}, from each
 provider's published pricing page (2026-08) — omitted (not $0) when not
@@ -38,6 +43,7 @@ PROVIDER_LABELS = {
     "groq": "Groq",
     "google": "Google (Gemini)",
     "openai": "OpenAI",
+    "anthropic": "Anthropic (Claude)",
     "ollama": "Ollama (local)",
 }
 
@@ -78,6 +84,14 @@ PROVIDER_MODELS = {
          "price": {"input": 2.00, "output": 12.00}},
         {"id": "gpt-5.6-sol", "label": "GPT-5.6 Sol (flagship, most expensive)", "tier": "paid",
          "price": {"input": 5.00, "output": 30.00}},
+    ],
+    "anthropic": [
+        {"id": "claude-sonnet-5", "label": "Claude Sonnet 5 (balanced cost/quality)", "tier": "paid",
+         "price": {"input": 2.00, "output": 10.00}},
+        {"id": "claude-haiku-4-5", "label": "Claude Haiku 4.5 (cheapest, fastest)", "tier": "paid",
+         "price": {"input": 1.00, "output": 5.00}},
+        {"id": "claude-opus-5", "label": "Claude Opus 5 (strongest reasoning, most expensive)", "tier": "paid",
+         "price": {"input": 5.00, "output": 25.00}},
     ],
     "ollama": [
         {"id": "gemma4:26b", "label": "Gemma 4 26B", "tier": "free", "price": {"input": 0.0, "output": 0.0}},

@@ -2,7 +2,7 @@
 
 Picks a chat model from `app/.env` so the agents don't require a local
 Ollama install. Set LLM_PROVIDER to "groq" (default), "google", "openai",
-or "ollama", plus the matching API key — see `.env.example`.
+"anthropic", or "ollama", plus the matching API key — see `.env.example`.
 """
 import os
 
@@ -14,6 +14,7 @@ DEFAULT_MODELS = {
     "groq": "llama-3.3-70b-versatile",
     "google": "gemini-2.5-flash",
     "openai": "gpt-5.6-terra",
+    "anthropic": "claude-sonnet-5",
     "ollama": "qwen2.5:7b",
 }
 
@@ -84,6 +85,22 @@ def get_llm(model: str | None = None, provider: str | None = None, temperature: 
             reasoning_effort="none",
         )
 
+    if provider == "anthropic":
+        from langchain_anthropic import ChatAnthropic
+
+        api_key = os.getenv("ANTHROPIC_API_KEY")
+        if not api_key:
+            raise RuntimeError(
+                "LLM_PROVIDER=anthropic but ANTHROPIC_API_KEY is not set. Add it "
+                "to app/.env — get a key at https://console.anthropic.com/settings/keys "
+                "(requires a funded account, no free tier for API usage)."
+            )
+        return ChatAnthropic(
+            model=model or os.getenv("ANTHROPIC_MODEL", DEFAULT_MODELS["anthropic"]),
+            temperature=temperature,
+            api_key=api_key,
+        )
+
     if provider == "ollama":
         from langchain_ollama import ChatOllama
 
@@ -93,5 +110,5 @@ def get_llm(model: str | None = None, provider: str | None = None, temperature: 
         )
 
     raise ValueError(
-        f"Unknown LLM_PROVIDER={provider!r}; expected 'groq', 'google', 'openai', or 'ollama'."
+        f"Unknown LLM_PROVIDER={provider!r}; expected 'groq', 'google', 'openai', 'anthropic', or 'ollama'."
     )
