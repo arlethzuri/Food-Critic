@@ -595,6 +595,21 @@ def run_structured_agent(agent, prompt: str, chart_sink: list, candidate_sink: l
     messages = result["messages"]
     structured = result.get("structured_response")
 
+    # candidate_sink accumulates every search_establishments call's rows
+    # across the whole turn (tools.py extends it per call, not per-question)
+    # — a broad search followed by a narrower follow-up can return the same
+    # establishment twice. Dedupe by gmap_id (first occurrence wins) before
+    # building the pool: reasoning_view.py keys each evidence glyph by
+    # gmap_id alone, and a duplicate CandidatePoolItem crashes Streamlit
+    # with StreamlitDuplicateElementKey rather than just double-rendering.
+    seen_gmap_ids: set[str] = set()
+    deduped_candidates = []
+    for row in candidate_sink:
+        gid = row.get("gmap_id")
+        if gid and gid not in seen_gmap_ids:
+            seen_gmap_ids.add(gid)
+            deduped_candidates.append(row)
+
     # search_establishments' row shape (tools.py) uses
     # most_recent_inspection_score for clarity to the LLM;
     # CandidatePoolItem's field is inspection_score — map explicitly rather
@@ -616,8 +631,7 @@ def run_structured_agent(agent, prompt: str, chart_sink: list, candidate_sink: l
             critical_violation_count=row.get("critical_violation_count"),
             total_violation_count=row.get("total_violation_count"),
         )
-        for row in candidate_sink
-        if row.get("gmap_id")
+        for row in deduped_candidates
     ]
 
     if structured is None:
