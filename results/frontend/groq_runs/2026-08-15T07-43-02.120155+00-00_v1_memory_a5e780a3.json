@@ -1,0 +1,939 @@
+{
+  "source": "frontend",
+  "run_id": "a5e780a3",
+  "timestamp": "2026-08-15T07:43:02.120155+00:00",
+  "variant": "v1_memory",
+  "provider": "groq",
+  "model": "llama-3.3-70b-versatile",
+  "question": "I\u2019m in the mood for breakfast, but don\u2019t feel like traveling far out of Rose Park. What do you recommend? I don\u2019t like sweet breakfasts.",
+  "output_text": "Based on the search results, the top-rated breakfast establishments in Rose Park are:\n\n1. Maxi's Deli, Catering, Espresso Bar - 4.4/5 stars\n2. Perkins Restaurant & Bakery - 3.8/5 stars\n3. McDonald's - 3.5/5 stars\n4. Uinta Brewing Company - 2.6/5 stars\n\nPlease note that these ratings are based on the average rating of each establishment and may not reflect the most up-to-date information. It's always a good idea to check current ratings and reviews before visiting a restaurant.",
+  "structured_response": null,
+  "trace_text": "Action: search_establishments({'category_contains': 'breakfast', 'limit': 10, 'near_lat': 40.791, 'near_lon': -112.003, 'radius_mi': 1, 'sort_by': 'avg_rating', 'sort_desc': True})\n\nObservation: {\"row_count\": 0, \"rows\": []}\n\nAction: search_establishments({'category_contains': 'breakfast', 'limit': 10, 'near_lat': 40.791, 'near_lon': -112.003, 'radius_mi': 2, 'sort_by': 'avg_rating', 'sort_desc': True})\n\nObservation: {\"row_count\": 4, \"rows\": [{\"gmap_id\": \"0x8752f2e05073a509:0x2ac4766e707154a1\", \"name\": \"Maxi's Deli, Catering, Espresso Bar\", \"address\": \"Maxi's Deli, Catering, Espresso Bar, 1957 S 4650 W, Salt Lake City, UT 84104\", \"latitude\": 40.7284396, \"longitude\": -112.0016049, \"avg_rating\": 4.4, \"num_of_reviews\": 318, \"price\": \"$$\", \"slchd_establishment_key\": null, \"distance_mi\": 1.6222664806441112, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x8752f23daa699b59:0x327650328ae0dbdc\", \"name\": \"Perkins Restaurant & Bakery\", \"address\": \"Perkins Restaurant & Bakery, 230 North Admiral Byrd Rd, Salt Lake City, UT 84116\", \"latitude\": 40.7733433, \"longitude\": -112.0218214, \"avg_rating\": 3.8, \"num_of_reviews\": 618, \"price\": \"$$\", \"slchd_establishment_key\": null, \"distance_mi\": 1.3784788124561917, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x8752f3de5f8a40f1:0xb0597e01cfa52b6d\", \"name\": \"McDonald's\", \"address\": \"McDonald's, 776 N Terminal Dr, Salt Lake City, UT 84116\", \"latitude\": 40.7870637, \"longitude\": -111.9825315, \"avg_rating\": 3.5, \"num_of_reviews\": 585, \"price\": \"$\", \"slchd_establishment_key\": null, \"distance_mi\": 1.4178995090920357, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x8752f318f1933cab:0x9744e1598fa8fd7\", \"name\": \"Uinta Brewing Company\", \"address\": \"Uinta Brewing Company, Near Gate, Salt Lake City International Airport,Concourse B, 776 N Terminal Dr #17, Salt Lake City, UT 84122\", \"latitude\": 40.7889419, \"longitude\": -111.9869582, \"avg_rating\": 2.6, \"num_of_reviews\": 16, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": 1.1096600730972694, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}]}\n\nAction: plot_chart({'chart_type': 'bar', 'query': \"SELECT name, avg_rating FROM establishments WHERE category_contains = 'breakfast' AND near_lat = 40.791 AND near_lon = -112.003 AND radius_mi = 2\", 'title': 'Top Rated Breakfast Establishments in Rose Park', 'x': 'name', 'y': 'avg_rating'})\n\nObservation: SQL error: Binder Error: Referenced column \"category_contains\" not found in FROM clause!\nCandidate bindings: \"avg_rating\", \"description\", \"name\", \"num_of_reviews\", \"geom\"\n\nLINE 1: SELECT name, avg_rating FROM establishments WHERE category_contains = 'breakfast' AND near_lat = 40.791 AND...\n                                                          ^\n\nAction: plot_chart({'chart_type': 'bar', 'query': \"SELECT name, avg_rating FROM establishments WHERE name LIKE '%breakfast%' AND latitude > 40.7 AND latitude < 40.9 AND longitude > -112.1 AND longitude < -111.9\", 'title': 'Top Rated Breakfast Establishments in Rose Park', 'x': 'name', 'y': 'avg_rating'})\n\nObservation: SQL error: Binder Error: Referenced column \"latitude\" not found in FROM clause!\nCandidate bindings: \"gmap_id\", \"slchd_establishment_key\", \"avg_rating\", \"price\", \"address\"\n\nLINE 1: ...ting FROM establishments WHERE name LIKE '%breakfast%' AND latitude > 40.7 AND latitude < 40.9 AND longitude > -112...\n                                                                      ^\n\nAction: plot_chart({'chart_type': 'bar', 'query': \"SELECT name, avg_rating FROM establishments WHERE name LIKE '%breakfast%' AND address LIKE '%Salt Lake City%'\", 'title': 'Top Rated Breakfast Establishments in Rose Park', 'x': 'name', 'y': 'avg_rating'})\n\nObservation: Query returned no rows, nothing to plot.\n\nAction: search_establishments({'category_contains': 'breakfast', 'limit': 10, 'near_lat': 40.791, 'near_lon': -112.003, 'radius_mi': 2, 'sort_by': 'avg_rating', 'sort_desc': True})\n\nObservation: {\"row_count\": 4, \"rows\": [{\"gmap_id\": \"0x8752f2e05073a509:0x2ac4766e707154a1\", \"name\": \"Maxi's Deli, Catering, Espresso Bar\", \"address\": \"Maxi's Deli, Catering, Espresso Bar, 1957 S 4650 W, Salt Lake City, UT 84104\", \"latitude\": 40.7284396, \"longitude\": -112.0016049, \"avg_rating\": 4.4, \"num_of_reviews\": 318, \"price\": \"$$\", \"slchd_establishment_key\": null, \"distance_mi\": 1.6222664806441112, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x8752f23daa699b59:0x327650328ae0dbdc\", \"name\": \"Perkins Restaurant & Bakery\", \"address\": \"Perkins Restaurant & Bakery, 230 North Admiral Byrd Rd, Salt Lake City, UT 84116\", \"latitude\": 40.7733433, \"longitude\": -112.0218214, \"avg_rating\": 3.8, \"num_of_reviews\": 618, \"price\": \"$$\", \"slchd_establishment_key\": null, \"distance_mi\": 1.3784788124561917, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x8752f3de5f8a40f1:0xb0597e01cfa52b6d\", \"name\": \"McDonald's\", \"address\": \"McDonald's, 776 N Terminal Dr, Salt Lake City, UT 84116\", \"latitude\": 40.7870637, \"longitude\": -111.9825315, \"avg_rating\": 3.5, \"num_of_reviews\": 585, \"price\": \"$\", \"slchd_establishment_key\": null, \"distance_mi\": 1.4178995090920357, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x8752f318f1933cab:0x9744e1598fa8fd7\", \"name\": \"Uinta Brewing Company\", \"address\": \"Uinta Brewing Company, Near Gate, Salt Lake City International Airport,Concourse B, 776 N Terminal Dr #17, Salt Lake City, UT 84122\", \"latitude\": 40.7889419, \"longitude\": -111.9869582, \"avg_rating\": 2.6, \"num_of_reviews\": 16, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": 1.1096600730972694, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}]}",
+  "timeline": [],
+  "messages": [
+    {
+      "type": "HumanMessage",
+      "content": "I\u2019m in the mood for breakfast, but don\u2019t feel like traveling far out of Rose Park. What do you recommend? I don\u2019t like sweet breakfasts."
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "search_establishments",
+          "args": {
+            "category_contains": "breakfast",
+            "limit": 10,
+            "near_lat": 40.791,
+            "near_lon": -112.003,
+            "radius_mi": 1,
+            "sort_by": "avg_rating",
+            "sort_desc": true
+          },
+          "id": "s7nx8a8gh",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 2912,
+        "output_tokens": 62,
+        "total_tokens": 2974
+      },
+      "model_name": "llama-3.3-70b-versatile"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 0, \"rows\": []}",
+      "tool_call_id": "s7nx8a8gh",
+      "name": "search_establishments"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "search_establishments",
+          "args": {
+            "category_contains": "breakfast",
+            "limit": 10,
+            "near_lat": 40.791,
+            "near_lon": -112.003,
+            "radius_mi": 2,
+            "sort_by": "avg_rating",
+            "sort_desc": true
+          },
+          "id": "5rttpg1gz",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 2996,
+        "output_tokens": 62,
+        "total_tokens": 3058
+      },
+      "model_name": "llama-3.3-70b-versatile"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 4, \"rows\": [{\"gmap_id\": \"0x8752f2e05073a509:0x2ac4766e707154a1\", \"name\": \"Maxi's Deli, Catering, Espresso Bar\", \"address\": \"Maxi's Deli, Catering, Espresso Bar, 1957 S 4650 W, Salt Lake City, UT 84104\", \"latitude\": 40.7284396, \"longitude\": -112.0016049, \"avg_rating\": 4.4, \"num_of_reviews\": 318, \"price\": \"$$\", \"slchd_establishment_key\": null, \"distance_mi\": 1.6222664806441112, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x8752f23daa699b59:0x327650328ae0dbdc\", \"name\": \"Perkins Restaurant & Bakery\", \"address\": \"Perkins Restaurant & Bakery, 230 North Admiral Byrd Rd, Salt Lake City, UT 84116\", \"latitude\": 40.7733433, \"longitude\": -112.0218214, \"avg_rating\": 3.8, \"num_of_reviews\": 618, \"price\": \"$$\", \"slchd_establishment_key\": null, \"distance_mi\": 1.3784788124561917, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x8752f3de5f8a40f1:0xb0597e01cfa52b6d\", \"name\": \"McDonald's\", \"address\": \"McDonald's, 776 N Terminal Dr, Salt Lake City, UT 84116\", \"latitude\": 40.7870637, \"longitude\": -111.9825315, \"avg_rating\": 3.5, \"num_of_reviews\": 585, \"price\": \"$\", \"slchd_establishment_key\": null, \"distance_mi\": 1.4178995090920357, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x8752f318f1933cab:0x9744e1598fa8fd7\", \"name\": \"Uinta Brewing Company\", \"address\": \"Uinta Brewing Company, Near Gate, Salt Lake City International Airport,Concourse B, 776 N Terminal Dr #17, Salt Lake City, UT 84122\", \"latitude\": 40.7889419, \"longitude\": -111.9869582, \"avg_rating\": 2.6, \"num_of_reviews\": 16, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": 1.1096600730972694, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}]}",
+      "tool_call_id": "5rttpg1gz",
+      "name": "search_establishments"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "plot_chart",
+          "args": {
+            "chart_type": "bar",
+            "query": "SELECT name, avg_rating FROM establishments WHERE category_contains = 'breakfast' AND near_lat = 40.791 AND near_lon = -112.003 AND radius_mi = 2",
+            "title": "Top Rated Breakfast Establishments in Rose Park",
+            "x": "name",
+            "y": "avg_rating"
+          },
+          "id": "xtkv1dxt0",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 3750,
+        "output_tokens": 84,
+        "total_tokens": 3834
+      },
+      "model_name": "llama-3.3-70b-versatile"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "SQL error: Binder Error: Referenced column \"category_contains\" not found in FROM clause!\nCandidate bindings: \"avg_rating\", \"description\", \"name\", \"num_of_reviews\", \"geom\"\n\nLINE 1: SELECT name, avg_rating FROM establishments WHERE category_contains = 'breakfast' AND near_lat = 40.791 AND...\n                                                          ^",
+      "tool_call_id": "xtkv1dxt0",
+      "name": "plot_chart"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "plot_chart",
+          "args": {
+            "chart_type": "bar",
+            "query": "SELECT name, avg_rating FROM establishments WHERE name LIKE '%breakfast%' AND latitude > 40.7 AND latitude < 40.9 AND longitude > -112.1 AND longitude < -111.9",
+            "title": "Top Rated Breakfast Establishments in Rose Park",
+            "x": "name",
+            "y": "avg_rating"
+          },
+          "id": "4qkmmkb0y",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 3915,
+        "output_tokens": 89,
+        "total_tokens": 4004
+      },
+      "model_name": "llama-3.3-70b-versatile"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "SQL error: Binder Error: Referenced column \"latitude\" not found in FROM clause!\nCandidate bindings: \"gmap_id\", \"slchd_establishment_key\", \"avg_rating\", \"price\", \"address\"\n\nLINE 1: ...ting FROM establishments WHERE name LIKE '%breakfast%' AND latitude > 40.7 AND latitude < 40.9 AND longitude > -112...\n                                                                      ^",
+      "tool_call_id": "4qkmmkb0y",
+      "name": "plot_chart"
+    },
+    {
+      "type": "AIMessage",
+      "content": "Based on the search results, I recommend Maxi's Deli, Catering, Espresso Bar for breakfast in Rose Park. It has a high average rating of 4.4 and is within a 2-mile radius of the area. \n\nHere is a bar chart showing the top-rated breakfast establishments in Rose Park: \n\n",
+      "tool_calls": [
+        {
+          "name": "plot_chart",
+          "args": {
+            "chart_type": "bar",
+            "query": "SELECT name, avg_rating FROM establishments WHERE name LIKE '%breakfast%' AND address LIKE '%Salt Lake City%'",
+            "title": "Top Rated Breakfast Establishments in Rose Park",
+            "x": "name",
+            "y": "avg_rating"
+          },
+          "id": "z315pzams",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 4096,
+        "output_tokens": 134,
+        "total_tokens": 4230
+      },
+      "model_name": "llama-3.3-70b-versatile"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "Query returned no rows, nothing to plot.",
+      "tool_call_id": "z315pzams",
+      "name": "plot_chart"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "search_establishments",
+          "args": {
+            "category_contains": "breakfast",
+            "limit": 10,
+            "near_lat": 40.791,
+            "near_lon": -112.003,
+            "radius_mi": 2,
+            "sort_by": "avg_rating",
+            "sort_desc": true
+          },
+          "id": "vwekch6kv",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 4184,
+        "output_tokens": 62,
+        "total_tokens": 4246
+      },
+      "model_name": "llama-3.3-70b-versatile"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 4, \"rows\": [{\"gmap_id\": \"0x8752f2e05073a509:0x2ac4766e707154a1\", \"name\": \"Maxi's Deli, Catering, Espresso Bar\", \"address\": \"Maxi's Deli, Catering, Espresso Bar, 1957 S 4650 W, Salt Lake City, UT 84104\", \"latitude\": 40.7284396, \"longitude\": -112.0016049, \"avg_rating\": 4.4, \"num_of_reviews\": 318, \"price\": \"$$\", \"slchd_establishment_key\": null, \"distance_mi\": 1.6222664806441112, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x8752f23daa699b59:0x327650328ae0dbdc\", \"name\": \"Perkins Restaurant & Bakery\", \"address\": \"Perkins Restaurant & Bakery, 230 North Admiral Byrd Rd, Salt Lake City, UT 84116\", \"latitude\": 40.7733433, \"longitude\": -112.0218214, \"avg_rating\": 3.8, \"num_of_reviews\": 618, \"price\": \"$$\", \"slchd_establishment_key\": null, \"distance_mi\": 1.3784788124561917, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x8752f3de5f8a40f1:0xb0597e01cfa52b6d\", \"name\": \"McDonald's\", \"address\": \"McDonald's, 776 N Terminal Dr, Salt Lake City, UT 84116\", \"latitude\": 40.7870637, \"longitude\": -111.9825315, \"avg_rating\": 3.5, \"num_of_reviews\": 585, \"price\": \"$\", \"slchd_establishment_key\": null, \"distance_mi\": 1.4178995090920357, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x8752f318f1933cab:0x9744e1598fa8fd7\", \"name\": \"Uinta Brewing Company\", \"address\": \"Uinta Brewing Company, Near Gate, Salt Lake City International Airport,Concourse B, 776 N Terminal Dr #17, Salt Lake City, UT 84122\", \"latitude\": 40.7889419, \"longitude\": -111.9869582, \"avg_rating\": 2.6, \"num_of_reviews\": 16, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": 1.1096600730972694, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}]}",
+      "tool_call_id": "vwekch6kv",
+      "name": "search_establishments"
+    },
+    {
+      "type": "AIMessage",
+      "content": "Based on the search results, the top-rated breakfast establishments in Rose Park are:\n\n1. Maxi's Deli, Catering, Espresso Bar - 4.4/5 stars\n2. Perkins Restaurant & Bakery - 3.8/5 stars\n3. McDonald's - 3.5/5 stars\n4. Uinta Brewing Company - 2.6/5 stars\n\nPlease note that these ratings are based on the average rating of each establishment and may not reflect the most up-to-date information. It's always a good idea to check current ratings and reviews before visiting a restaurant.",
+      "tool_calls": [],
+      "usage_metadata": {
+        "input_tokens": 4938,
+        "output_tokens": 124,
+        "total_tokens": 5062
+      },
+      "model_name": "llama-3.3-70b-versatile"
+    }
+  ],
+  "charts": [
+    {
+      "data": [
+        {
+          "customdata": {
+            "dtype": "f8",
+            "bdata": "mpmZmZmZEUBAjkGCPV1EQNtAcEsaAFzAZmZmZmZmDkBVCsvp/GJEQJbWlYVlAVzAAAAAAAAADEAzr9mAvmREQIzyzMvh/lvAzczMzMzMBEDYeFUM/GREQDjhuVIq/1vAmpmZmZmZEUBAjkGCPV1EQNtAcEsaAFzAZmZmZmZmDkBVCsvp/GJEQJbWlYVlAVzAAAAAAAAADEAzr9mAvmREQIzyzMvh/lvAzczMzMzMBEDYeFUM/GREQDjhuVIq/1vA",
+            "shape": "8, 3"
+          },
+          "hovertemplate": "<b>%{hovertext}</b><br><br>avg_rating=%{customdata[0]:.1f}<extra></extra>",
+          "hovertext": [
+            "Maxi's Deli, Catering, Espresso Bar",
+            "Perkins Restaurant & Bakery",
+            "McDonald's",
+            "Uinta Brewing Company",
+            "Maxi's Deli, Catering, Espresso Bar",
+            "Perkins Restaurant & Bakery",
+            "McDonald's",
+            "Uinta Brewing Company"
+          ],
+          "lat": {
+            "dtype": "f8",
+            "bdata": "QI5Bgj1dREBVCsvp/GJEQDOv2YC+ZERA2HhVDPxkREBAjkGCPV1EQFUKy+n8YkRAM6/ZgL5kREDYeFUM/GREQA=="
+          },
+          "legendgroup": "",
+          "lon": {
+            "dtype": "f8",
+            "bdata": "20BwSxoAXMCW1pWFZQFcwIzyzMvh/lvAOOG5Uir/W8DbQHBLGgBcwJbWlYVlAVzAjPLMy+H+W8A44blSKv9bwA=="
+          },
+          "marker": {
+            "color": "#000001"
+          },
+          "mode": "markers",
+          "name": "",
+          "showlegend": false,
+          "subplot": "map",
+          "type": "scattermap"
+        }
+      ],
+      "layout": {
+        "template": {
+          "data": {
+            "candlestick": [
+              {
+                "decreasing": {
+                  "line": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "line": {
+                    "color": "#000032"
+                  }
+                },
+                "type": "candlestick"
+              }
+            ],
+            "contourcarpet": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contourcarpet"
+              }
+            ],
+            "contour": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contour"
+              }
+            ],
+            "heatmap": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "heatmap"
+              }
+            ],
+            "histogram2d": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "histogram2d"
+              }
+            ],
+            "icicle": [
+              {
+                "textfont": {
+                  "color": "white"
+                },
+                "type": "icicle"
+              }
+            ],
+            "sankey": [
+              {
+                "textfont": {
+                  "color": "#000036"
+                },
+                "type": "sankey"
+              }
+            ],
+            "scatter": [
+              {
+                "marker": {
+                  "line": {
+                    "width": 0
+                  }
+                },
+                "type": "scatter"
+              }
+            ],
+            "table": [
+              {
+                "cells": {
+                  "fill": {
+                    "color": "#000038"
+                  },
+                  "font": {
+                    "color": "#000037"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "header": {
+                  "fill": {
+                    "color": "#000040"
+                  },
+                  "font": {
+                    "color": "#000036"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "type": "table"
+              }
+            ],
+            "waterfall": [
+              {
+                "connector": {
+                  "line": {
+                    "color": "#000036",
+                    "width": 2
+                  }
+                },
+                "decreasing": {
+                  "marker": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "marker": {
+                    "color": "#000032"
+                  }
+                },
+                "totals": {
+                  "marker": {
+                    "color": "#000034"
+                  }
+                },
+                "type": "waterfall"
+              }
+            ]
+          },
+          "layout": {
+            "coloraxis": {
+              "colorscale": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorscale": {
+              "diverging": [
+                [
+                  0.0,
+                  "#000021"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000022"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000023"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000024"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000025"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000026"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000027"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000028"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000029"
+                ],
+                [
+                  1.0,
+                  "#000030"
+                ]
+              ],
+              "sequential": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ],
+              "sequentialminus": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorway": [
+              "#000001",
+              "#000002",
+              "#000003",
+              "#000004",
+              "#000005",
+              "#000006",
+              "#000007",
+              "#000008",
+              "#000009",
+              "#000010"
+            ]
+          }
+        },
+        "map": {
+          "domain": {
+            "x": [
+              0.0,
+              1.0
+            ],
+            "y": [
+              0.0,
+              1.0
+            ]
+          },
+          "center": {
+            "lat": 40.769447125,
+            "lon": -111.998229
+          },
+          "zoom": 9
+        },
+        "legend": {
+          "tracegroupgap": 0
+        },
+        "margin": {
+          "t": 0,
+          "l": 0,
+          "r": 0,
+          "b": 0
+        },
+        "height": 420,
+        "mapbox": {
+          "center": {
+            "lat": 40.769447125,
+            "lon": -111.998229
+          },
+          "zoom": 9
+        },
+        "showlegend": false
+      }
+    }
+  ],
+  "candidate_pool_raw": [
+    {
+      "gmap_id": "0x8752f2e05073a509:0x2ac4766e707154a1",
+      "name": "Maxi's Deli, Catering, Espresso Bar",
+      "address": "Maxi's Deli, Catering, Espresso Bar, 1957 S 4650 W, Salt Lake City, UT 84104",
+      "latitude": 40.7284396,
+      "longitude": -112.0016049,
+      "avg_rating": 4.4,
+      "num_of_reviews": 318,
+      "price": "$$",
+      "slchd_establishment_key": null,
+      "distance_mi": 1.6222664806441112,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    },
+    {
+      "gmap_id": "0x8752f23daa699b59:0x327650328ae0dbdc",
+      "name": "Perkins Restaurant & Bakery",
+      "address": "Perkins Restaurant & Bakery, 230 North Admiral Byrd Rd, Salt Lake City, UT 84116",
+      "latitude": 40.7733433,
+      "longitude": -112.0218214,
+      "avg_rating": 3.8,
+      "num_of_reviews": 618,
+      "price": "$$",
+      "slchd_establishment_key": null,
+      "distance_mi": 1.3784788124561917,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    },
+    {
+      "gmap_id": "0x8752f3de5f8a40f1:0xb0597e01cfa52b6d",
+      "name": "McDonald's",
+      "address": "McDonald's, 776 N Terminal Dr, Salt Lake City, UT 84116",
+      "latitude": 40.7870637,
+      "longitude": -111.9825315,
+      "avg_rating": 3.5,
+      "num_of_reviews": 585,
+      "price": "$",
+      "slchd_establishment_key": null,
+      "distance_mi": 1.4178995090920357,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    },
+    {
+      "gmap_id": "0x8752f318f1933cab:0x9744e1598fa8fd7",
+      "name": "Uinta Brewing Company",
+      "address": "Uinta Brewing Company, Near Gate, Salt Lake City International Airport,Concourse B, 776 N Terminal Dr #17, Salt Lake City, UT 84122",
+      "latitude": 40.7889419,
+      "longitude": -111.9869582,
+      "avg_rating": 2.6,
+      "num_of_reviews": 16,
+      "price": null,
+      "slchd_establishment_key": null,
+      "distance_mi": 1.1096600730972694,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    },
+    {
+      "gmap_id": "0x8752f2e05073a509:0x2ac4766e707154a1",
+      "name": "Maxi's Deli, Catering, Espresso Bar",
+      "address": "Maxi's Deli, Catering, Espresso Bar, 1957 S 4650 W, Salt Lake City, UT 84104",
+      "latitude": 40.7284396,
+      "longitude": -112.0016049,
+      "avg_rating": 4.4,
+      "num_of_reviews": 318,
+      "price": "$$",
+      "slchd_establishment_key": null,
+      "distance_mi": 1.6222664806441112,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    },
+    {
+      "gmap_id": "0x8752f23daa699b59:0x327650328ae0dbdc",
+      "name": "Perkins Restaurant & Bakery",
+      "address": "Perkins Restaurant & Bakery, 230 North Admiral Byrd Rd, Salt Lake City, UT 84116",
+      "latitude": 40.7733433,
+      "longitude": -112.0218214,
+      "avg_rating": 3.8,
+      "num_of_reviews": 618,
+      "price": "$$",
+      "slchd_establishment_key": null,
+      "distance_mi": 1.3784788124561917,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    },
+    {
+      "gmap_id": "0x8752f3de5f8a40f1:0xb0597e01cfa52b6d",
+      "name": "McDonald's",
+      "address": "McDonald's, 776 N Terminal Dr, Salt Lake City, UT 84116",
+      "latitude": 40.7870637,
+      "longitude": -111.9825315,
+      "avg_rating": 3.5,
+      "num_of_reviews": 585,
+      "price": "$",
+      "slchd_establishment_key": null,
+      "distance_mi": 1.4178995090920357,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    },
+    {
+      "gmap_id": "0x8752f318f1933cab:0x9744e1598fa8fd7",
+      "name": "Uinta Brewing Company",
+      "address": "Uinta Brewing Company, Near Gate, Salt Lake City International Airport,Concourse B, 776 N Terminal Dr #17, Salt Lake City, UT 84122",
+      "latitude": 40.7889419,
+      "longitude": -111.9869582,
+      "avg_rating": 2.6,
+      "num_of_reviews": 16,
+      "price": null,
+      "slchd_establishment_key": null,
+      "distance_mi": 1.1096600730972694,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    }
+  ],
+  "duration_seconds": 4.73,
+  "usage": {
+    "available": true,
+    "per_call": [
+      {
+        "input_tokens": 2912,
+        "output_tokens": 62,
+        "total_tokens": 2974
+      },
+      {
+        "input_tokens": 2996,
+        "output_tokens": 62,
+        "total_tokens": 3058
+      },
+      {
+        "input_tokens": 3750,
+        "output_tokens": 84,
+        "total_tokens": 3834
+      },
+      {
+        "input_tokens": 3915,
+        "output_tokens": 89,
+        "total_tokens": 4004
+      },
+      {
+        "input_tokens": 4096,
+        "output_tokens": 134,
+        "total_tokens": 4230
+      },
+      {
+        "input_tokens": 4184,
+        "output_tokens": 62,
+        "total_tokens": 4246
+      },
+      {
+        "input_tokens": 4938,
+        "output_tokens": 124,
+        "total_tokens": 5062
+      }
+    ],
+    "input_tokens": 26791,
+    "output_tokens": 617,
+    "total_tokens": 27408
+  },
+  "tokens_per_minute": 347981.8,
+  "estimated_cost_usd": 0.016294,
+  "success": true,
+  "error": null,
+  "chart_image_files": [
+    "2026-08-15T07-43-02.120155+00-00_v1_memory_a5e780a3_chart0.png"
+  ]
+}

@@ -1,0 +1,111 @@
+{
+  "source": "frontend",
+  "run_id": "6e1a0f5b",
+  "timestamp": "2026-08-15T07:34:50.558751+00:00",
+  "variant": "v1_memory",
+  "provider": "groq",
+  "model": "llama-3.3-70b-versatile",
+  "question": "What does the issue category \"cold holding\" mean?",
+  "output_text": "The issue category \"cold holding\" refers to the practice of storing perishable foods at a temperature below 40\u00b0F (4\u00b0C) to prevent bacterial growth and foodborne illness. In the context of restaurant inspections, \"cold holding\" violations may occur when foods are not stored at the proper temperature, potentially leading to contamination and health risks.",
+  "structured_response": null,
+  "trace_text": "Action: get_column_glossary({'table_dot_column': 'issue_categories.cold_holding'})\n\nObservation: No glossary entry for 'issue_categories.cold_holding' \u2014 it's probably self-explanatory from get_schema.\n\nAction: get_schema({})\n\nObservation: Project food_health_viz {\n  database_type: 'DuckDB'\n}\n\nTable establishment_keys {\n  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']\n  name varchar [not null]\n  address varchar [not null]\n  city varchar [not null]\n  city_state_zip varchar\n  establishment_type varchar\n  source varchar [note: 'friend_slc | own_scrape']\n  slchd_lat double\n  slchd_lon double\n  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']\n\n  Note: 'SLCHD establishment list, one row per portal listing.'\n}\n\nTable category {\n  category_id integer [pk]\n  category varchar\n}\n\nTable establishments {\n  gmap_id varchar [pk]\n  name varchar\n  address varchar\n  description varchar\n  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']\n  avg_rating double\n  num_of_reviews integer\n  price varchar\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']\n\n  Note: 'One row per Google Local place \u2014 all restaurants, not just SLCHD-matched.'\n}\n\nTable establishment_attributes {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  attribute varchar [not null]\n\n  indexes { (gmap_id, attribute) [pk] }\n\n  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. \"Service options\") dropped.'\n}\n\nTable establishment_categories {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  category_id integer [ref: > category.category_id, not null]\n\n  indexes { (gmap_id, category_id) [pk] }\n}\n\nTable gmap_hours {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  day integer [not null, note: '0=Sun \u2026 6=Sat']\n  open_min bigint\n  open_max bigint\n\n  indexes { (gmap_id, day) [pk] }\n\n  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'\n}\n\nTable review {\n  user_id varchar\n  name varchar\n  time bigint\n  rating double\n  text varchar\n  resp varchar\n  gmap_id varchar [ref: > establishments.gmap_id]\n}\n\nTable inspection_types {\n  inspection_type_id integer [pk, note: 'parsed leading number, e.g. \"01 - Routine\" -> 1']\n  description varchar [note: 'e.g. \"Routine\"']\n}\n\nTable inspections {\n  inspection_id bigint [pk, increment]\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]\n  inspection_date date [not null]\n  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable \u2014 27 rows have no type']\n  inspection_score integer\n\n  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'\n}\n\nTable violation_codes {\n  violation_code_id integer [pk, increment]\n  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. \"4.5.18\"']\n  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']\n  critical boolean [not null]\n}\n\nTable violations {\n  violation_id bigint [pk, increment]\n  inspection_id bigint [ref: > inspections.inspection_id, not null]\n  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]\n  violation_description varchar [note: 'per-occurrence free text']\n  violation_occurrences integer\n  violation_cos boolean [note: 'corrected on site']\n  violation_phr varchar [note: 'public health rationale']\n\n  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'\n}\n",
+  "timeline": [],
+  "messages": [
+    {
+      "type": "HumanMessage",
+      "content": "What does the issue category \"cold holding\" mean?"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "get_column_glossary",
+          "args": {
+            "table_dot_column": "issue_categories.cold_holding"
+          },
+          "id": "xeazaxvfs",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 2890,
+        "output_tokens": 24,
+        "total_tokens": 2914
+      },
+      "model_name": "llama-3.3-70b-versatile"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "No glossary entry for 'issue_categories.cold_holding' \u2014 it's probably self-explanatory from get_schema.",
+      "tool_call_id": "xeazaxvfs",
+      "name": "get_column_glossary"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "get_schema",
+          "args": {},
+          "id": "tbpwmjm8t",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 2949,
+        "output_tokens": 8,
+        "total_tokens": 2957
+      },
+      "model_name": "llama-3.3-70b-versatile"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "Project food_health_viz {\n  database_type: 'DuckDB'\n}\n\nTable establishment_keys {\n  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']\n  name varchar [not null]\n  address varchar [not null]\n  city varchar [not null]\n  city_state_zip varchar\n  establishment_type varchar\n  source varchar [note: 'friend_slc | own_scrape']\n  slchd_lat double\n  slchd_lon double\n  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']\n\n  Note: 'SLCHD establishment list, one row per portal listing.'\n}\n\nTable category {\n  category_id integer [pk]\n  category varchar\n}\n\nTable establishments {\n  gmap_id varchar [pk]\n  name varchar\n  address varchar\n  description varchar\n  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']\n  avg_rating double\n  num_of_reviews integer\n  price varchar\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']\n\n  Note: 'One row per Google Local place \u2014 all restaurants, not just SLCHD-matched.'\n}\n\nTable establishment_attributes {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  attribute varchar [not null]\n\n  indexes { (gmap_id, attribute) [pk] }\n\n  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. \"Service options\") dropped.'\n}\n\nTable establishment_categories {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  category_id integer [ref: > category.category_id, not null]\n\n  indexes { (gmap_id, category_id) [pk] }\n}\n\nTable gmap_hours {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  day integer [not null, note: '0=Sun \u2026 6=Sat']\n  open_min bigint\n  open_max bigint\n\n  indexes { (gmap_id, day) [pk] }\n\n  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'\n}\n\nTable review {\n  user_id varchar\n  name varchar\n  time bigint\n  rating double\n  text varchar\n  resp varchar\n  gmap_id varchar [ref: > establishments.gmap_id]\n}\n\nTable inspection_types {\n  inspection_type_id integer [pk, note: 'parsed leading number, e.g. \"01 - Routine\" -> 1']\n  description varchar [note: 'e.g. \"Routine\"']\n}\n\nTable inspections {\n  inspection_id bigint [pk, increment]\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]\n  inspection_date date [not null]\n  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable \u2014 27 rows have no type']\n  inspection_score integer\n\n  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'\n}\n\nTable violation_codes {\n  violation_code_id integer [pk, increment]\n  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. \"4.5.18\"']\n  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']\n  critical boolean [not null]\n}\n\nTable violations {\n  violation_id bigint [pk, increment]\n  inspection_id bigint [ref: > inspections.inspection_id, not null]\n  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]\n  violation_description varchar [note: 'per-occurrence free text']\n  violation_occurrences integer\n  violation_cos boolean [note: 'corrected on site']\n  violation_phr varchar [note: 'public health rationale']\n\n  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'\n}\n",
+      "tool_call_id": "tbpwmjm8t",
+      "name": "get_schema"
+    },
+    {
+      "type": "AIMessage",
+      "content": "The issue category \"cold holding\" refers to the practice of storing perishable foods at a temperature below 40\u00b0F (4\u00b0C) to prevent bacterial growth and foodborne illness. In the context of restaurant inspections, \"cold holding\" violations may occur when foods are not stored at the proper temperature, potentially leading to contamination and health risks.",
+      "tool_calls": [],
+      "usage_metadata": {
+        "input_tokens": 3838,
+        "output_tokens": 69,
+        "total_tokens": 3907
+      },
+      "model_name": "llama-3.3-70b-versatile"
+    }
+  ],
+  "charts": [],
+  "candidate_pool_raw": [],
+  "duration_seconds": 1.69,
+  "usage": {
+    "available": true,
+    "per_call": [
+      {
+        "input_tokens": 2890,
+        "output_tokens": 24,
+        "total_tokens": 2914
+      },
+      {
+        "input_tokens": 2949,
+        "output_tokens": 8,
+        "total_tokens": 2957
+      },
+      {
+        "input_tokens": 3838,
+        "output_tokens": 69,
+        "total_tokens": 3907
+      }
+    ],
+    "input_tokens": 9677,
+    "output_tokens": 101,
+    "total_tokens": 9778
+  },
+  "tokens_per_minute": 348022.5,
+  "estimated_cost_usd": 0.005789,
+  "success": true,
+  "error": null,
+  "chart_image_files": []
+}

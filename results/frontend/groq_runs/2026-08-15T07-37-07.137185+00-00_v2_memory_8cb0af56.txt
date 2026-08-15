@@ -1,0 +1,206 @@
+Question: Show me detailed visual analytics and statistics of inspection scores across all establishments.
+
+Variant: v2_memory | Provider: groq | Model: llama-3.3-70b-versatile
+Timestamp: 2026-08-15T07:37:07.137185+00:00 | Duration: 7.45s
+
+--- Answer ---
+There are 7798 establishments with inspection scores. The average inspection score is 10.29, with a maximum score of 297 and a minimum score of 0. The inspection score distribution is shown in the histogram. The top 10 inspection types by average inspection score are shown in the bar chart. The average inspection score over time is shown in the line chart.
+
+--- Reasoning trace ---
+Action: search_establishments({'limit': 50, 'require_inspection_data': True, 'sort_by': 'inspection_score', 'sort_desc': True})
+
+Action: plot_chart({'chart_type': 'histogram', 'query': 'SELECT inspection_score FROM establishments WHERE slchd_establishment_key IS NOT NULL', 'title': 'Inspection Score Distribution', 'x': 'inspection_score'})
+
+Action: plot_chart({'chart_type': 'bar', 'query': 'SELECT category, AVG(inspection_score) AS avg_inspection_score FROM establishments WHERE slchd_establishment_key IS NOT NULL GROUP BY category ORDER BY avg_inspection_score DESC LIMIT 10', 'title': 'Top 10 Categories by Average Inspection Score', 'x': 'category', 'y': 'avg_inspection_score'})
+
+Action: plot_chart({'chart_type': 'line', 'query': 'SELECT date, AVG(inspection_score) AS avg_inspection_score FROM inspections GROUP BY date ORDER BY date', 'title': 'Average Inspection Score Over Time', 'x': 'date', 'y': 'avg_inspection_score'})
+
+Action: run_sql({'query': 'SELECT COUNT(*) AS num_establishments, AVG(inspection_score) AS avg_inspection_score, MAX(inspection_score) AS max_inspection_score, MIN(inspection_score) AS min_inspection_score FROM establishments WHERE slchd_establishment_key IS NOT NULL'})
+
+Observation: {"row_count": 50, "rows": [{"gmap_id": "0x87528a6e4de1fead:0xb1bd2c15b2d6621d", "name": "Arctic Circle", "address": "Arctic Circle, 3919 S 700 E, Murray, UT 84107", "latitude": 40.6865396, "longitude": -111.8709717, "avg_rating": 4.1, "num_of_reviews": 1274, "price": "$", "slchd_establishment_key": "ARCTIC CIRCLE 202|3919 S 700 E|MILLCREEK TS", "distance_mi": null, "most_recent_inspection_score": 19, "critical_violation_count": 18, "total_violation_count": 60}, {"gmap_id": "0x87528edb8071719b:0xb34437f22c7b5873", "name": "Arctic Circle", "address": "Arctic Circle, 3365 W 7800 S, West Jordan, UT 84088", "latitude": 40.6090528, "longitude": -111.9700581, "avg_rating": 3.9, "num_of_reviews": 898, "price": "$", "slchd_establishment_key": "ARCTIC CIRCLE 111|3365 W 7800 S|WEST JORDAN", "distance_mi": null, "most_recent_inspection_score": 19, "critical_violation_count": 27, "total_violation_count": 95}, {"gmap_id": "0x87528e358e42f1d1:0xa956db3f6ff0411e", "name": "Arctic Circle", "address": "Arctic Circle, 8677 S 5600 W, West Jordan, UT 84081", "latitude": 40.593326999999995, "longitude": -112.0236405, "avg_rating": 3.9, "num_of_reviews": 698, "price": "$", "slchd_establishment_key": "ARCTIC CIRCLE 127|8677 S 5600 W|WEST JORDAN", "distance_mi": null, "most_recent_inspection_score": 16, "critical_violation_count": 27, "total_violation_count": 63}, {"gmap_id": "0x8752871414bb3a4b:0x8d7dcfb0beb572c1", "name": "Arctic Circle", "address": "Arctic Circle, 208 E 12300 S, Draper, UT 84020", "latitude": 40.526289, "longitude": -111.885488, "avg_rating": 4.0, "num_of_reviews": 420, "price": "$", "slchd_establishment_key": "ARCTIC CIRCLE 116|208 E 12300 S|DRAPER", "distance_mi": null, "most_recent_inspection_score": 16, "critical_violation_count": 24, "total_violation_count": 85}, {"gmap_id": "0x8752f53b13b95555:0x94cec18382378f12", "name": "SLC Eatery", "address": "SLC Eatery, 1017 S Main St, Salt Lake City, UT 84111", "latitude": 40.7468933, "longitude": -111.8906507, "avg_rating": 4.6, "num_of_reviews": 228, "price": null, "slchd_establishment_key": "SLC EATERY|1017 S MAIN ST|SALT LAKE CITY", "distance_mi": null, "most_recent_inspection_score": 14, "critical_violation_count": 14, "total_violation_count": 55}, {"gmap_id": "0x87528d4c77ad88c5:0xfc24747515b7cb24", "name": "Village Inn", "address": "Village Inn, 4824 W 3500 S, West Valley City, UT 84120", "latitude": 40.697023, "longitude": -112.006333, "avg_rating": 3.9, "num_of_reviews": 1337, "price": "$", "slchd_establishment_key": "VILLAGE INN RESTAURANT|4834 W 3500 S|WEST VALLEY CITY", "distance_mi": null, "most_recent_inspection_score": 14, "critical_violation_count": 18, "total_violation_count": 70}, {"gmap_id": "0x87528bfb9df074cf:0x548b15973c8842cf", "name": "Texas Roadhouse", "address": "Texas Roadhouse, 1904 W 5400 S, Taylorsville, UT 84129", "latitude": 40.654219999999995, "longitude": -111.94307, "avg_rating": 4.4, "num_of_reviews": 5210, "price": "$$", "slchd_establishment_key": "TEXAS ROADHOUSE|1904 W 5400 S|TAYLORSVILLE", "distance_mi": null, "most_recent_inspection_score": 14, "critical_violation_count": 38, "total_violation_count": 113}, {"gmap_id": "0x875289d4b4f73f89:0x7c191ee393f7ae4b", "name": "Chick-fil-A", "address": "Chick-fil-A, 1088 Fort Union Blvd, Midvale, UT 84047", "latitude": 40.6233121, "longitude": -111.8614456, "avg_rating": 4.3, "num_of_reviews": 1536, "price": "$", "slchd_establishment_key": "CHICK FIL A|1088 E FORT UNION BLVD|MIDVALE", "distance_mi": null, "most_recent_inspection_score": 14, "critical_violation_count": 5, "total_violation_count": 10}, {"gmap_id": "0x875289607798bc43:0xd6795328c6f3d4fb", "name": "Vessel Kitchen", "address": "Vessel Kitchen, 1146 E Fort Union Blvd, Midvale, UT 84047", "latitude": 40.6240281, "longitude": -111.8601902, "avg_rating": 4.5, "num_of_reviews": 368, "price": "$$", "slchd_establishment_key": "VESSEL KITCHEN|1146 E FORT UNION BLVD|MIDVALE", "distance_mi": null, "most_recent_inspection_score": 13, "critical_violation_count": 28, "total_violation_count": 85}, {"gmap_id": "0x875287112eb7ef65:0xf9c4d401ecd8a2d", "name": "Cafe Rio Mexican Grill", "address": "Cafe Rio Mexican Grill, 12362 Minuteman Dr, Draper, UT 84020", "latitude": 40.5257882, "longitude": -111.8889913, "avg_rating": 3.3, "num_of_reviews": 1163, "price": "$$", "slchd_establishment_key": "CAFE RIO MEXICAN GRILL|12362 S MINUTEMAN DR|DRAPER", "distance_mi": null, "most_recent_inspection_score": 13, "critical_violation_count": 19, "total_violation_count": 61}, {"gmap_id": "0x87528d752dfbe75d:0xf6cda477b56241c9", "name": "Ab's Drive-In", "address": "Ab's Drive-In, 4591 S 5600 W, West Valley City, UT 84120", "latitude": 40.670424, "longitude": -112.024233, "avg_rating": 4.1, "num_of_reviews": 895, "price": "$", "slchd_establishment_key": "AB'S DRIVE IN|4591 S 5600 W|WEST VALLEY CITY", "distance_mi": null, "most_recent_inspection_score": 13, "critical_violation_count": 23, "total_violation_count": 59}, {"gmap_id": "0x87528b61af7fbffb:0xa62abe818a78bd8a", "name": "Cracker Barrel Old Country Store", "address": "Cracker Barrel Old Country Store, 2283 City Center Ct, West Valley City, UT 84119", "latitude": 40.6990631, "longitude": -111.9502929, "avg_rating": 4.3, "num_of_reviews": 3651, "price": "$$", "slchd_establishment_key": "CRACKER BARREL OLD COUNTRY|2283 W CITY CENTER CT|WEST VALLEY CITY", "distance_mi": null, "most_recent_inspection_score": 13, "critical_violation_count": 15, "total_violation_count": 79}, {"gmap_id": "0x87528b6161c18005:0xb3dbdde5d924dac5", "name": "K-Recipe", "address": "K-Recipe, 3390 State St #34, South Salt Lake, UT 84115", "latitude": 40.6977993, "longitude": -111.889649, "avg_rating": 5.0, "num_of_reviews": 34, "price": null, "slchd_establishment_key": "K RECIPE|3390 S STATE ST|SOUTH SALT LAKE", "distance_mi": null, "most_recent_inspection_score": 13, "critical_violation_count": 21, "total_violation_count": 36}, {"gmap_id": "0x8752f569300ab7a9:0x1e21f25f4fb30532", "name": "IHOP", "address": "IHOP, 635 E 400 S, Salt Lake City, UT 84102", "latitude": 40.7609618, "longitude": -111.8727416, "avg_rating": 3.8, "num_of_reviews": 794, "price": "$", "slchd_establishment_key": "IHOP RESTAURANT|635 E 400 S|SALT LAKE CITY", "distance_mi": null, "most_recent_inspection_score": 13, "critical_violation_count": 5, "total_violation_count": 37}, {"gmap_id": "0x875289383918d7bd:0x5ee7b5612721fc72", "name": "Panda Express", "address": "Panda Express, 6910 S Redwood Rd space a, West Jordan, UT 84084", "latitude": 40.6256105, "longitude": -111.9392172, "avg_rating": 3.5, "num_of_reviews": 342, "price": "$", "slchd_establishment_key": "PANDA EXPRESS|6910 S REDWOOD RD|WEST JORDAN", "distance_mi": null, "most_recent_inspection_score": 12, "critical_violation_count": 5, "total_violation_count": 41}, {"gmap_id": "0x8752f5271c2f3f9d:0xbe7b86ad9b0711f9", "name": "El Pollo Loco", "address": "El Pollo Loco, 1110 S 300 W, Salt Lake City, UT 84101", "latitude": 40.744274, "longitude": -111.90009, "avg_rating": 4.3, "num_of_reviews": 1127, "price": "$", "slchd_establishment_key": "EL POLLO LOCO #3821|1120 S 300 W|SALT LAKE CITY", "distance_mi": null, "most_recent_inspection_score": 12, "critical_violation_count": 14, "total_violation_count": 45}, {"gmap_id": "0x8752627fb878b6c5:0x16bb4a49a9437de1", "name": "Noodles and Company", "address": "Noodles and Company, 6901 S 1300 E, Midvale, UT 84047", "latitude": 40.6256822, "longitude": -111.8544982, "avg_rating": 3.9, "num_of_reviews": 608, "price": "$", "slchd_establishment_key": "NOODLES & COMPANY|6901 S 1300 E|MIDVALE", "distance_mi": null, "most_recent_inspection_score": 12, "critical_violation_count": 9, "total_violation_count": 47}, {"gmap_id": "0x8752f55a5c49d8a5:0x4210bb42daae3a21", "name": "Coffee Garden", "address": "Coffee Garden, 878 E 900 S, Salt Lake City, UT 84105", "latitude": 40.7495455, "longitude": -111.8658347, "avg_rating": 4.5, "num_of_reviews": 1084, "price": "$", "slchd_establishment_key": "COFFEE GARDEN|878 E 900 S|SALT LAKE CITY", "distance_mi": null, "most_recent_inspection_score": 11, "critical_violation_count": 7, "total_violation_count": 30}, {"gmap_id": "0x8752861a5598a809:0x2bf79ddef1ada513", "name": "Del Taco", "address": "Del Taco, 1651 S Jordan Pkwy, South Jordan, UT 84095", "latitude": 40.561944, "longitude": -111.937222, "avg_rating": 4.1, "num_of_reviews": 578, "price": "$", "slchd_establishment_key": "DEL TACO|1651 W SOUTH JORDAN PKWY|SOUTH JORDAN", "distance_mi": null, "most_recent_inspection_score": 11, "critical_violation_count": 25, "total_violation_count": 78}, {"gmap_id": "0x87528aa6ac400001:0x1bdfac699bb05de9", "name": "MOD Pizza", "address": "MOD Pizza, 1010 E 2100 S C, Salt Lake City, UT 84106", "latitude": 40.72517, "longitude": -111.86242, "avg_rating": 4.4, "num_of_reviews": 532, "price": "$", "slchd_establishment_key": "MOD PIZZA|1010 E 2100 S|SALT LAKE CITY", "distance_mi": null, "most_recent_inspection_score": 11, "critical_violation_count": 2, "total_violation_count": 4}, {"gmap_id": "0x875262a88fd1f89f:0xa00c293ce0ce8e81", "name": "Del Taco", "address": "Del Taco, 8580 S 1300 E, Sandy, UT 84094", "latitude": 40.5956352, "longitude": -111.8537041, "avg_rating": 3.8, "num_of_reviews": 998, "price": "$", "slchd_establishment_key": "DEL TACO #273|8580 S 1300 E|SANDY", "distance_mi": null, "most_recent_inspection_score": 11, "critical_violation_count": 19, "total_violation_count": 51}, {"gmap_id": "0x87528c5a1f56ab1f:0xe100724fd8da5af3", "name": "Sonic Drive-In", "address": "Sonic Drive-In, 4561 4000 W, West Valley City, UT 84120", "latitude": 40.6709989, "longitude": -111.9860244, "avg_rating": 3.6, "num_of_reviews": 1014, "price": "$", "slchd_establishment_key": "SONIC DRIVE IN|4561 S 4000 W|WEST VALLEY CITY", "distance_mi": null, "most_recent_inspection_score": 11, "critical_violation_count": 10, "total_violation_count": 39}, {"gmap_id": "0x875287c5c38d2b5d:0x96a4d707bfd31dd", "name": "Sonic Drive-In", "address": "Sonic Drive-In, 10225 State St, Sandy, UT 84070", "latitude": 40.5657186, "longitude": -111.8901514, "avg_rating": 3.6, "num_of_reviews": 978, "price": "$", "slchd_establishment_key": "SONIC DRIVE IN|10225 S STATE ST|SANDY", "distance_mi": null, "most_recent_inspection_score": 11, "critical_violation_count": 7, "total_violation_count": 38}, {"gmap_id": "0x8752f5413ef14ea5:0xc5e3b2c2dfc2bfb7", "name": "The Bagel Project", "address": "The Bagel Project, 779 S 500 E, Salt Lake City, UT 84102", "latitude": 40.752162, "longitude": -111.87642, "avg_rating": 4.5, "num_of_reviews": 545, "price": "$$", "slchd_establishment_key": "BAGEL PROJECT|779 S 500 E|SALT LAKE CITY", "distance_mi": null, "most_recent_inspection_score": 11, "critical_violation_count": 11, "total_violation_count": 46}, {"gmap_id": "0x8752f53db6626f03:0x33dd97535d182238", "name": "Taco Time", "address": "Taco Time, 810 S State St, Salt Lake City, UT 84111", "latitude": 40.7514575, "longitude": -111.8887262, "avg_rating": 4.2, "num_of_reviews": 853, "price": "$", "slchd_establishment_key": "TACO TIME|810 S STATE ST|SALT LAKE CITY", "distance_mi": null, "most_recent_inspection_score": 10, "critical_violation_count": 25, "total_violation_count": 75}, {"gmap_id": "0x875287b80273212d:0xea3f6fc309457a70", "name": "Lee Sushi", "address": "Lee Sushi, 71 W 10600 S, Sandy, UT 84070", "latitude": 40.5583239, "longitude": -111.8927873, "avg_rating": 4.6, "num_of_reviews": 382, "price": "$", "slchd_establishment_key": "LEE SUSHI|71 W 10600 S|SANDY", "distance_mi": null, "most_recent_inspection_score": 10, "critical_violation_count": 28, "total_violation_count": 72}, {"gmap_id": "0x875288fe77730141:0xf6e226107ffedd5e", "name": "Old Towne Tavern", "address": "Old Towne Tavern, 7662 S Main St, Midvale, UT 84047", "latitude": 40.611996, "longitude": -111.910568, "avg_rating": 4.4, "num_of_reviews": 206, "price": "$", "slchd_establishment_key": "OLD TOWNE TAVERN|7662 S MAIN ST|MIDVALE", "distance_mi": null, "most_recent_inspection_score": 10, "critical_violation_count": 30, "total_violation_count": 62}, {"gmap_id": "0x87528a0c5743b6cf:0x4391e502cef85f35", "name": "Stella Grill", "address": "Stella Grill, 4291 S 900 E, Millcreek, UT 84124", "latitude": 40.6782156, "longitude": -111.8652192, "avg_rating": 4.5, "num_of_reviews": 825, "price": "$$", "slchd_establishment_key": "STELLA GRILL|4291 S 900 E|MILLCREEK TS", "distance_mi": null, "most_recent_inspection_score": 10, "critical_violation_count": 38, "total_violation_count": 123}, {"gmap_id": "0x8752f56937c20fb9:0x832e03e48d64c7b6", "name": "Cafe Zupas", "address": "Cafe Zupas, 613 E 400 S, Salt Lake City, UT 84102", "latitude": 40.7616039, "longitude": -111.8735813, "avg_rating": 4.3, "num_of_reviews": 1178, "price": "$", "slchd_establishment_key": "CAFE ZUPAS|613 E 400 S|SALT LAKE CITY", "distance_mi": null, "most_recent_inspection_score": 10, "critical_violation_count": 23, "total_violation_count": 88}, {"gmap_id": "0x8752f322c2cf122d:0x9841c5dbc474f881", "name": "Quiznos", "address": "Quiznos, 1775 S 4130 W Ste D, Salt Lake City, UT 84104", "latitude": 40.7316471, "longitude": -111.9894656, "avg_rating": 3.9, "num_of_reviews": 333, "price": "$", "slchd_establishment_key": "QUIZNOS|1775 S 4130 W|SALT LAKE CITY", "distance_mi": null, "most_recent_inspection_score": 9, "critical_violation_count": 7, "total_violation_count": 25}, {"gmap_id": "0x8752601ebc78f39d:0x2d4396deb77610d1", "name": "The Dodo Restaurant", "address": "The Dodo Restaurant, 1355 E 2100 S, Salt Lake City, UT 84105", "latitude": 40.7261306, "longitude": -111.8520806, "avg_rating": 4.5, "num_of_reviews": 2267, "price": "$$", "slchd_establishment_key": "DODO RESTAURANT|1355 E 2100 S|SALT LAKE CITY", "distance_mi": null, "most_recent_inspection_score": 9, "critical_violation_count": 6, "total_violation_count": 54}, {"gmap_id": "0x87528f6de6509329:0xc9fec531cbc282b8", "name": "Bad Ass Coffee of Hawaii", "address": "Bad Ass Coffee of Hawaii, 7794 South Gardner Stop Way, Ste.1, West Jordan, UT 84088", "latitude": 40.609317999999995, "longitude": -111.927376, "avg_rating": 4.7, "num_of_reviews": 108, "price": null, "slchd_establishment_key": "BAD ASS COFFEE OF HAWAII|7794 S GARDNER STOP WY|WEST JORDAN", "distance_mi": null, "most_recent_inspection_score": 9, "critical_violation_count": 5, "total_violation_count": 17}, {"gmap_id": "0x87528aa0c961fcd5:0xd8ba42d090d54d87", "name": "Panda Express", "address": "Panda Express, 1126 E 2100 S suite b, Salt Lake City, UT 84106", "latitude": 40.7246437, "longitude": -111.8585357, "avg_rating": 3.9, "num_of_reviews": 1178, "price": "$", "slchd_establishment_key": "PANDA EXPRESS|1126 E 2100 S|SALT LAKE CITY", "distance_mi": null, "most_recent_inspection_score": 9, "critical_violation_count": 9, "total_violation_count": 41}, {"gmap_id": "0x8752f502d4955f25:0x2ef8f24551648c89", "name": "Tin Angel at the Eccles Theater", "address": "Tin Angel at the Eccles Theater, 131 S Main St, Salt Lake City, UT 84111", "latitude": 40.7663764, "longitude": -111.8906042, "avg_rating": 4.5, "num_of_reviews": 494, "price": "$$", "slchd_establishment_key": "TIN ANGEL AT THE ECCLES THEATER|131 S MAIN ST|SALT LAKE CITY", "distance_mi": null, "most_recent_inspection_score": 9, "critical_violation_count": 10, "total_violation_count": 24}, {"gmap_id": "0x875260425b86e507:0xe6bbfb33e116d6fe", "name": "Little Caesars Pizza", "address": "Little Caesars Pizza, 2301 E 2100 S, Salt Lake City, UT 84109", "latitude": 40.726044, "longitude": -111.82465, "avg_rating": 4.0, "num_of_reviews": 177, "price": "$", "slchd_establishment_key": "LITTLE CAESARS PIZZA|2301 E 2100 S|SALT LAKE CITY", "distance_mi": null, "most_recent_inspection_score": 9, "critical_violation_count": 17, "total_violation_count": 66}, {"gmap_id": "0x8752f5688be55555:0x7deda6a48a1ff2d6", "name": "Chipotle Mexican Grill", "address": "Chipotle Mexican Grill, 734 E 400 S, Salt Lake City, UT 84102", "latitude": 40.7602682, "longitude": -111.8700658, "avg_rating": 4.1, "num_of_reviews": 447, "price": "$", "slchd_establishment_key": "CHIPOTLE MEXICAN GRILL|734 E 400 S|SALT LAKE CITY", "distance_mi": null, "most_recent_inspection_score": 9, "critical_violation_count": 8, "total_violation_count": 19}, {"gmap_id": "0x8752876b2571906f:0x3902b74c70a4af1f", "name": "Chick-fil-A", "address": "Chick-fil-A, 357 E 12300 S, Draper, UT 84020", "latitude": 40.527175799999995, "longitude": -111.8808076, "avg_rating": 4.5, "num_of_reviews": 1663, "price": "$", "slchd_establishment_key": "CHICK FIL A|357 E 12300 S|DRAPER", "distance_mi": null, "most_recent_inspection_score": 9, "critical_violation_count": 11, "total_violation_count": 55}, {"gmap_id": "0x8752f50f1636aaab:0xde7ba2f1ca0f9bc4", "name": "Tin Angel at the Eccles Theater", "address": "Tin Angel at the Eccles Theater, 131 S Main St, Salt Lake City, UT 84111", "latitude": 40.7662965, "longitude": -111.8908318, "avg_rating": 4.2, "num_of_reviews": 6, "price": null, "slchd_establishment_key": "TIN ANGEL AT THE ECCLES THEATER|131 S MAIN ST|SALT LAKE CITY", "distance_mi": null, "most_recent_inspection_score": 9, "critical_violation_count": 10, "total_violation_count": 24}, {"gmap_id": "0x8752f5105ca66f13:0x912951781e127bfb", "name": "Apollo Burger", "address": "Apollo Burger, 379 S Main St, Salt Lake City, UT 84111", "latitude": 40.760847299999995, "longitude": -111.8908449, "avg_rating": 4.2, "num_of_reviews": 763, "price": null, "slchd_establishment_key": "APOLLO BURGER|379 S MAIN ST|SALT LAKE CITY", "distance_mi": null, "most_recent_inspection_score": 9, "critical_violation_count": 18, "total_violation_count": 61}, {"gmap_id": "0x87528b9cbd96b67d:0xd6913de11d8be13", "name": "Little Caesars Pizza", "address": "Little Caesars Pizza, 4124 S Redwood Rd, Taylorsville, UT 84123", "latitude": 40.681614, "longitude": -111.93934, "avg_rating": 3.8, "num_of_reviews": 693, "price": "$", "slchd_establishment_key": "LITTLE CAESARS PIZZA|4124 S REDWOOD RD|TAYLORSVILLE", "distance_mi": null, "most_recent_inspection_score": 9, "critical_violation_count": 13, "total_violation_count": 43}, {"gmap_id": "0x8752635cff9aed71:0x379492c7774fe10f", "name": "My Pie Pizza", "address": "My Pie Pizza, 4655 S 2300 E #101, Holladay, UT 84117", "latitude": 40.6694987, "longitude": -111.8243611, "avg_rating": 4.6, "num_of_reviews": 338, "price": null, "slchd_establishment_key": "MY PIE PIZZA|4655 S 2300 E|HOLLADAY", "distance_mi": null, "most_recent_inspection_score": 9, "critical_violation_count": 5, "total_violation_count": 16}, {"gmap_id": "0x87528be323aef6fd:0xe85ccc05c988d8f3", "name": "Panda Express", "address": "Panda Express, 5594 S Redwood Rd, Taylorsville, UT 84123", "latitude": 40.6498341, "longitude": -111.9394834, "avg_rating": 3.7, "num_of_reviews": 869, "price": "$", "slchd_establishment_key": "PANDA EXPRESS #611|5594 S REDWOOD RD|TAYLORSVILLE", "distance_mi": null, "most_recent_inspection_score": 9, "critical_violation_count": 9, "total_violation_count": 30}, {"gmap_id": "0x8752f524f241857f:0x95ffbd1230399519", "name": "Golden Gyros", "address": "Golden Gyros, 259 W 900 S, Salt Lake City, UT 84101", "latitude": 40.7494823, "longitude": -111.898895, "avg_rating": 4.7, "num_of_reviews": 88, "price": null, "slchd_establishment_key": "GOLDEN GYROS|259 W 900 S|SALT LAKE CITY", "distance_mi": null, "most_recent_inspection_score": 8, "critical_violation_count": 11, "total_violation_count": 31}, {"gmap_id": "0x8752601ffa8e68bf:0xa5949367fd86f753", "name": "Zao Asian Cafe", "address": "Zao Asian Cafe, 2227 S Highland Dr e2, Salt Lake City, UT 84106", "latitude": 40.722199499999995, "longitude": -111.8574638, "avg_rating": 4.4, "num_of_reviews": 348, "price": "$", "slchd_establishment_key": "ZAO ASIAN CAFE|2227 S HIGHLAND DR|SALT LAKE CITY", "distance_mi": null, "most_recent_inspection_score": 8, "critical_violation_count": 14, "total_violation_count": 53}, {"gmap_id": "0x87528aa0b0c851bd:0xc5d0410c9b53ae1", "name": "Noodles and Company", "address": "Noodles and Company, 1152 E 2100 S, Salt Lake City, UT 84106", "latitude": 40.725228099999995, "longitude": -111.8579569, "avg_rating": 3.9, "num_of_reviews": 728, "price": "$", "slchd_establishment_key": "NOODLES & COMPANY|1152 E 2100 S|SALT LAKE CITY", "distance_mi": null, "most_recent_inspection_score": 8, "critical_violation_count": 9, "total_violation_count": 59}, {"gmap_id": "0x875285b3599c624f:0x5ef930c3662d1b3", "name": "Five Guys", "address": "Five Guys, 12570 S Rhetski Ln Suite 103, Riverton, UT 84065", "latitude": 40.522552999999995, "longitude": -111.9822748, "avg_rating": 4.5, "num_of_reviews": 688, "price": "$$", "slchd_establishment_key": "FIVE GUYS|12570 S RHETSKI LN|RIVERTON", "distance_mi": null, "most_recent_inspection_score": 8, "critical_violation_count": 8, "total_violation_count": 36}, {"gmap_id": "0x875287d8b1c3b3a1:0xbcbdb62fc76ac86c", "name": "Vessel Kitchen", "address": "Vessel Kitchen, 11052 S, State St Suite C, Sandy, UT 84070", "latitude": 40.5504573, "longitude": -111.8912475, "avg_rating": 4.6, "num_of_reviews": 278, "price": null, "slchd_establishment_key": "VESSEL KITCHEN|11052 S STATE ST|SANDY", "distance_mi": null, "most_recent_inspection_score": 8, "critical_violation_count": 8, "total_violation_count": 48}, {"gmap_id": "0x87528d4af51b6211:0xdeaaa6af8731f644", "name": "Panda Express", "address": "Panda Express, 3051 S Colt Plaza Dr, West Valley City, UT 84128", "latitude": 40.7047228, "longitude": -112.0254099, "avg_rating": 3.7, "num_of_reviews": 1917, "price": "$", "slchd_establishment_key": "PANDA EXPRESS #1011|3051 S COLT PLAZA DR|WEST VALLEY CITY", "distance_mi": null, "most_recent_inspection_score": 8, "critical_violation_count": 11, "total_violation_count": 35}, {"gmap_id": "0x87528991233d8ac1:0x2001dad5e3cdb0e0", "name": "Panda Express", "address": "Panda Express, 5888 State St, Murray, UT 84107", "latitude": 40.6436317, "longitude": -111.8893194, "avg_rating": 4.0, "num_of_reviews": 825, "price": "$", "slchd_establishment_key": "PANDA EXPRESS|5888 S STATE ST|MURRAY", "distance_mi": null, "most_recent_inspection_score": 8, "critical_violation_count": 11, "total_violation_count": 58}, {"gmap_id": "0x875261092ed85e51:0xa2ddd82cb2b77113", "name": "Five Guys", "address": "Five Guys, 3167 E 3300 S, Salt Lake City, UT 84109", "latitude": 40.700221899999995, "longitude": -111.8038599, "avg_rating": 4.2, "num_of_reviews": 684, "price": "$$", "slchd_establishment_key": "FIVE GUYS|3167 E 3300 S|SALT LAKE CITY", "distance_mi": null, "most_recent_inspection_score": 8, "critical_violation_count": 5, "total_violation_count": 30}]}
+
+Observation: SQL error: Binder Error: Referenced column "inspection_score" not found in FROM clause!
+Candidate bindings: "description", "num_of_reviews", "geom", "name", "price"
+
+LINE 1: SELECT inspection_score FROM establishments WHERE slchd_establishm...
+               ^
+
+Observation: SQL error: Binder Error: Referenced column "category" not found in FROM clause!
+Candidate bindings: "geom", "name", "avg_rating", "price"
+
+LINE 1: ...shments WHERE slchd_establishment_key IS NOT NULL GROUP BY category ORDER BY avg_inspection_score DESC LIMIT 10
+                                                                      ^
+
+Observation: SQL error: Binder Error: Referenced column "date" not found in FROM clause!
+Candidate bindings: "slchd_establishment_key"
+
+LINE 1: ...n_score) AS avg_inspection_score FROM inspections GROUP BY date ORDER BY date
+                                                                      ^
+
+Observation: SQL error: Binder Error: Referenced column "inspection_score" not found in FROM clause!
+Candidate bindings: "description", "num_of_reviews", "geom", "name", "price"
+
+LINE 1: SELECT COUNT(*) AS num_establishments, AVG(inspection_score) AS avg_inspection_score, MAX(inspection_s...
+                                                   ^
+
+Action: run_sql({'query': 'SELECT COUNT(*) AS num_establishments, AVG(most_recent_inspection_score) AS avg_inspection_score, MAX(most_recent_inspection_score) AS max_inspection_score, MIN(most_recent_inspection_score) AS min_inspection_score FROM establishments WHERE slchd_establishment_key IS NOT NULL'})
+
+Action: plot_chart({'chart_type': 'histogram', 'query': 'SELECT most_recent_inspection_score FROM establishments WHERE slchd_establishment_key IS NOT NULL', 'title': 'Inspection Score Distribution', 'x': 'most_recent_inspection_score'})
+
+Action: plot_chart({'chart_type': 'bar', 'query': 'SELECT category, AVG(most_recent_inspection_score) AS avg_inspection_score FROM establishments WHERE slchd_establishment_key IS NOT NULL GROUP BY category ORDER BY avg_inspection_score DESC LIMIT 10', 'title': 'Top 10 Categories by Average Inspection Score', 'x': 'category', 'y': 'avg_inspection_score'})
+
+Action: plot_chart({'chart_type': 'line', 'query': 'SELECT date, AVG(most_recent_inspection_score) AS avg_inspection_score FROM establishments WHERE slchd_establishment_key IS NOT NULL GROUP BY date ORDER BY date', 'title': 'Average Inspection Score Over Time', 'x': 'date', 'y': 'avg_inspection_score'})
+
+Observation: SQL error: Binder Error: Referenced column "most_recent_inspection_score" not found in FROM clause!
+Candidate bindings: "description", "price", "num_of_reviews", "slchd_establishment_key", "geom"
+
+LINE 1: SELECT COUNT(*) AS num_establishments, AVG(most_recent_inspection_score) AS avg_inspection_score, MAX...
+                                                   ^
+
+Observation: SQL error: Binder Error: Referenced column "most_recent_inspection_score" not found in FROM clause!
+Candidate bindings: "description", "price", "num_of_reviews", "slchd_establishment_key", "geom"
+
+LINE 1: SELECT most_recent_inspection_score FROM establishments WHERE slch...
+               ^
+
+Observation: SQL error: Binder Error: Referenced column "category" not found in FROM clause!
+Candidate bindings: "geom", "name", "avg_rating", "price"
+
+LINE 1: ...shments WHERE slchd_establishment_key IS NOT NULL GROUP BY category ORDER BY avg_inspection_score DESC LIMIT 10
+                                                                      ^
+
+Observation: SQL error: Binder Error: Referenced column "date" not found in FROM clause!
+Candidate bindings: "name", "slchd_establishment_key", "address", "avg_rating", "description"
+
+LINE 1: ...shments WHERE slchd_establishment_key IS NOT NULL GROUP BY date ORDER BY date
+                                                                      ^
+
+Action: get_schema({})
+
+Observation: Project food_health_viz {
+  database_type: 'DuckDB'
+}
+
+Table establishment_keys {
+  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']
+  name varchar [not null]
+  address varchar [not null]
+  city varchar [not null]
+  city_state_zip varchar
+  establishment_type varchar
+  source varchar [note: 'friend_slc | own_scrape']
+  slchd_lat double
+  slchd_lon double
+  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']
+
+  Note: 'SLCHD establishment list, one row per portal listing.'
+}
+
+Table category {
+  category_id integer [pk]
+  category varchar
+}
+
+Table establishments {
+  gmap_id varchar [pk]
+  name varchar
+  address varchar
+  description varchar
+  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']
+  avg_rating double
+  num_of_reviews integer
+  price varchar
+  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']
+
+  Note: 'One row per Google Local place — all restaurants, not just SLCHD-matched.'
+}
+
+Table establishment_attributes {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  attribute varchar [not null]
+
+  indexes { (gmap_id, attribute) [pk] }
+
+  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. "Service options") dropped.'
+}
+
+Table establishment_categories {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  category_id integer [ref: > category.category_id, not null]
+
+  indexes { (gmap_id, category_id) [pk] }
+}
+
+Table gmap_hours {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  day integer [not null, note: '0=Sun … 6=Sat']
+  open_min bigint
+  open_max bigint
+
+  indexes { (gmap_id, day) [pk] }
+
+  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'
+}
+
+Table review {
+  user_id varchar
+  name varchar
+  time bigint
+  rating double
+  text varchar
+  resp varchar
+  gmap_id varchar [ref: > establishments.gmap_id]
+}
+
+Table inspection_types {
+  inspection_type_id integer [pk, note: 'parsed leading number, e.g. "01 - Routine" -> 1']
+  description varchar [note: 'e.g. "Routine"']
+}
+
+Table inspections {
+  inspection_id bigint [pk, increment]
+  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]
+  inspection_date date [not null]
+  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable — 27 rows have no type']
+  inspection_score integer
+
+  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'
+}
+
+Table violation_codes {
+  violation_code_id integer [pk, increment]
+  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. "4.5.18"']
+  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']
+  critical boolean [not null]
+}
+
+Table violations {
+  violation_id bigint [pk, increment]
+  inspection_id bigint [ref: > inspections.inspection_id, not null]
+  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]
+  violation_description varchar [note: 'per-occurrence free text']
+  violation_occurrences integer
+  violation_cos boolean [note: 'corrected on site']
+  violation_phr varchar [note: 'public health rationale']
+
+  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'
+}
+
+
+Action: run_sql({'query': 'SELECT COUNT(*) AS num_establishments, AVG(inspection_score) AS avg_inspection_score, MAX(inspection_score) AS max_inspection_score, MIN(inspection_score) AS min_inspection_score FROM inspections WHERE inspection_score IS NOT NULL'})
+
+Action: plot_chart({'chart_type': 'histogram', 'query': 'SELECT inspection_score FROM inspections WHERE inspection_score IS NOT NULL', 'title': 'Inspection Score Distribution', 'x': 'inspection_score'})
+
+Action: plot_chart({'chart_type': 'bar', 'query': 'SELECT inspection_type_id, AVG(inspection_score) AS avg_inspection_score FROM inspections WHERE inspection_score IS NOT NULL GROUP BY inspection_type_id ORDER BY avg_inspection_score DESC LIMIT 10', 'title': 'Top 10 Inspection Types by Average Inspection Score', 'x': 'inspection_type_id', 'y': 'avg_inspection_score'})
+
+Action: plot_chart({'chart_type': 'line', 'query': 'SELECT inspection_date, AVG(inspection_score) AS avg_inspection_score FROM inspections WHERE inspection_score IS NOT NULL GROUP BY inspection_date ORDER BY inspection_date', 'title': 'Average Inspection Score Over Time', 'x': 'inspection_date', 'y': 'avg_inspection_score'})
+
+Observation: {"row_count": 1, "truncated": false, "rows": [{"num_establishments": 7798, "avg_inspection_score": 10.288022569889716, "max_inspection_score": 297, "min_inspection_score": 0}]}
+
+Observation: Chart created: 'Inspection Score Distribution' (histogram, 7798 rows). It will be shown to the user below your answer.
+
+Observation: Chart created: 'Top 10 Inspection Types by Average Inspection Score' (bar, 4 rows). It will be shown to the user below your answer.
+
+Observation: Chart created: 'Average Inspection Score Over Time' (line, 2212 rows). It will be shown to the user below your answer.
+
+--- Usage: 57213 tokens, ~$0.0340 ---
