@@ -1,0 +1,2980 @@
+{
+  "source": "frontend",
+  "run_id": "a9a457a0",
+  "timestamp": "2026-08-15T09:21:21.339599+00:00",
+  "variant": "v1_memory",
+  "provider": "anthropic",
+  "model": "claude-sonnet-5",
+  "question": "For which restaurants has the number of critical violations increased, and for which has it decreased over the last 5 years? Show me a detailed visual analysis.",
+  "output_text": "## Critical Violation Trend Analysis \u2014 Last 5 Years (2021\u201107\u201117 \u2192 2026\u201107\u201117*)\n\n*\\*The most recent inspection date in the data is 2026\u201107\u201117, so I used that as the anchor and split the 5\u2011year window into an \"earlier\" half (2021\u201107\u201117\u20132024\u201101\u201117) and a \"recent\" half (2024\u201101\u201117\u20132026\u201107\u201117), comparing average critical violations **per inspection** in each half (not raw totals) \u2014 raw totals are misleading here because the recent half actually contains more inspections overall (3,470 vs 2,156) across more establishments (1,312 vs 907), so a rate-based comparison is the fair way to detect real trend direction.*\n\n**Important caveat on grounding:** this analysis draws from the SLCHD inspection tables (`establishment_keys`/`inspections`/`violations`), which are only linked to Google-mapped listings (`establishments`) for **1.6%** of restaurants overall. When I tried to pin the top trending names (e.g., \"Top Stop #C-23\", \"Kokopelli's Koffee House\") onto the map via `search_establishments`, most had no `slchd_establishment_key` match to a Google listing, so they can't be shown as pins on the interactive map \u2014 the numbers below come directly from the inspection records themselves.\n\n### Findings\nRestricting to the 659 establishments with at least 2 inspections in **both** halves (enough data to call a real trend):\n- **187 restaurants got worse** (higher avg. critical violations/inspection recently)\n- **356 restaurants improved** (lower avg. critical violations/inspection recently)\n- **116 were unchanged**\n\n**Most worsened** (biggest rate increase): Top Stop #C\u201123 (SLC, 0.5\u21924.0 crit/inspection), Arivo Cafe (Kearns, 0\u21922.4), Manolis (SLC, 1.3\u21923.7), Wendy's #6098 (West Jordan, 0.7\u21922.75), Garden Espresso (Murray, 1.3\u21923.3).\n\n**Most improved** (biggest rate decrease): Kokopelli's Koffee House (Holladay, 5.5\u21921.0), Cafe Rio \u2013 West Valley City (5.7\u21921.2), Jersey Mike's Subs \u2013 Herriman (5.75\u21921.4), Rancheritos Draper (6.2\u21922.3), Navajo Hogan (South Salt Lake, 4.4\u21920.67).\n\nThe scatter plot shows all 659 restaurants plotted by earlier-period vs. recent-period rate \u2014 points below the diagonal improved, points above worsened, confirming decreases (356) outnumber increases (187) overall, i.e. more restaurants trended toward better food-safety compliance than worse over this window.",
+  "structured_response": null,
+  "trace_text": "Action: get_schema({})\n\nObservation: Project food_health_viz {\n  database_type: 'DuckDB'\n}\n\nTable establishment_keys {\n  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']\n  name varchar [not null]\n  address varchar [not null]\n  city varchar [not null]\n  city_state_zip varchar\n  establishment_type varchar\n  source varchar [note: 'friend_slc | own_scrape']\n  slchd_lat double\n  slchd_lon double\n  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']\n\n  Note: 'SLCHD establishment list, one row per portal listing.'\n}\n\nTable category {\n  category_id integer [pk]\n  category varchar\n}\n\nTable establishments {\n  gmap_id varchar [pk]\n  name varchar\n  address varchar\n  description varchar\n  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']\n  avg_rating double\n  num_of_reviews integer\n  price varchar\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']\n\n  Note: 'One row per Google Local place \u2014 all restaurants, not just SLCHD-matched.'\n}\n\nTable establishment_attributes {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  attribute varchar [not null]\n\n  indexes { (gmap_id, attribute) [pk] }\n\n  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. \"Service options\") dropped.'\n}\n\nTable establishment_categories {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  category_id integer [ref: > category.category_id, not null]\n\n  indexes { (gmap_id, category_id) [pk] }\n}\n\nTable gmap_hours {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  day integer [not null, note: '0=Sun \u2026 6=Sat']\n  open_min bigint\n  open_max bigint\n\n  indexes { (gmap_id, day) [pk] }\n\n  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'\n}\n\nTable review {\n  user_id varchar\n  name varchar\n  time bigint\n  rating double\n  text varchar\n  resp varchar\n  gmap_id varchar [ref: > establishments.gmap_id]\n}\n\nTable inspection_types {\n  inspection_type_id integer [pk, note: 'parsed leading number, e.g. \"01 - Routine\" -> 1']\n  description varchar [note: 'e.g. \"Routine\"']\n}\n\nTable inspections {\n  inspection_id bigint [pk, increment]\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]\n  inspection_date date [not null]\n  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable \u2014 27 rows have no type']\n  inspection_score integer\n\n  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'\n}\n\nTable violation_codes {\n  violation_code_id integer [pk, increment]\n  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. \"4.5.18\"']\n  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']\n  critical boolean [not null]\n}\n\nTable violations {\n  violation_id bigint [pk, increment]\n  inspection_id bigint [ref: > inspections.inspection_id, not null]\n  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]\n  violation_description varchar [note: 'per-occurrence free text']\n  violation_occurrences integer\n  violation_cos boolean [note: 'corrected on site']\n  violation_phr varchar [note: 'public health rationale']\n\n  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'\n}\n\n\nAction: run_sql({'query': 'SELECT max(inspection_date) as max_date, min(inspection_date) as min_date FROM inspections'})\n\nObservation: {\"row_count\": 1, \"truncated\": false, \"rows\": [{\"max_date\": \"2026-07-17 00:00:00\", \"min_date\": \"2009-01-09 00:00:00\"}]}\n\nAction: run_sql({'query': \"\\nWITH window_insp AS (\\n  SELECT i.slchd_establishment_key, i.inspection_id, i.inspection_date,\\n    CASE WHEN i.inspection_date >= DATE '2024-01-17' THEN 'recent' ELSE 'earlier' END AS period\\n  FROM inspections i\\n  WHERE i.inspection_date >= DATE '2021-07-17' AND i.inspection_date <= DATE '2026-07-17'\\n),\\ncrit AS (\\n  SELECT w.slchd_establishment_key, w.period, w.inspection_id,\\n    COUNT(*) FILTER (WHERE vc.critical) AS crit_count\\n  FROM window_insp w\\n  LEFT JOIN violations v ON v.inspection_id = w.inspection_id\\n  LEFT JOIN violation_codes vc ON vc.violation_code_id = v.violation_code_id\\n  GROUP BY w.slchd_establishment_key, w.period, w.inspection_id\\n),\\nagg AS (\\n  SELECT slchd_establishment_key, period, SUM(crit_count) AS total_crit, COUNT(*) AS num_inspections\\n  FROM crit\\n  GROUP BY slchd_establishment_key, period\\n),\\npiv AS (\\n  SELECT slchd_establishment_key,\\n    MAX(CASE WHEN period='earlier' THEN total_crit ELSE 0 END) AS earlier_crit,\\n    MAX(CASE WHEN period='recent' THEN total_crit ELSE 0 END) AS recent_crit,\\n    MAX(CASE WHEN period='earlier' THEN num_inspections ELSE 0 END) AS earlier_insp,\\n    MAX(CASE WHEN period='recent' THEN num_inspections ELSE 0 END) AS recent_insp\\n  FROM agg\\n  GROUP BY slchd_establishment_key\\n)\\nSELECT ek.name, ek.city, p.earlier_crit, p.recent_crit, (p.recent_crit - p.earlier_crit) AS delta, p.earlier_insp, p.recent_insp\\nFROM piv p\\nJOIN establishment_keys ek ON ek.slchd_establishment_key = p.slchd_establishment_key\\nWHERE p.earlier_insp > 0 AND p.recent_insp > 0\\nORDER BY delta DESC\\nLIMIT 15\\n\"})\n\nObservation: {\"row_count\": 15, \"truncated\": false, \"rows\": [{\"name\": \"CAFE RIO\", \"city\": \"SOUTH JORDAN\", \"earlier_crit\": 2.0, \"recent_crit\": 48.0, \"delta\": 46.0, \"earlier_insp\": 1, \"recent_insp\": 9}, {\"name\": \"YANNIS GREEK EXPRESS\", \"city\": \"SALT LAKE CITY\", \"earlier_crit\": 1.0, \"recent_crit\": 22.0, \"delta\": 21.0, \"earlier_insp\": 1, \"recent_insp\": 4}, {\"name\": \"ANGELAS CATERING\", \"city\": \"MILLCREEK TS\", \"earlier_crit\": 0.0, \"recent_crit\": 15.0, \"delta\": 15.0, \"earlier_insp\": 1, \"recent_insp\": 4}, {\"name\": \"BON APPETIT @ WGU\", \"city\": \"MILLCREEK\", \"earlier_crit\": 5.0, \"recent_crit\": 19.0, \"delta\": 14.0, \"earlier_insp\": 2, \"recent_insp\": 6}, {\"name\": \"ARCTIC CIRCLE 202\", \"city\": \"MILLCREEK TS\", \"earlier_crit\": 1.0, \"recent_crit\": 14.0, \"delta\": 13.0, \"earlier_insp\": 1, \"recent_insp\": 6}, {\"name\": \"YOSHIS RESTAURANT\", \"city\": \"MURRAY\", \"earlier_crit\": 3.0, \"recent_crit\": 16.0, \"delta\": 13.0, \"earlier_insp\": 3, \"recent_insp\": 7}, {\"name\": \"SAOLA\", \"city\": \"COTTONWOOD HEIGHTS\", \"earlier_crit\": 12.0, \"recent_crit\": 24.0, \"delta\": 12.0, \"earlier_insp\": 1, \"recent_insp\": 5}, {\"name\": \"VOLUNTEERS OF AMERICA RECOVERY ON RDWD\", \"city\": \"SALT LAKE CITY\", \"earlier_crit\": 3.0, \"recent_crit\": 15.0, \"delta\": 12.0, \"earlier_insp\": 1, \"recent_insp\": 5}, {\"name\": \"ARIVO CAFE\", \"city\": \"KEARNS\", \"earlier_crit\": 0.0, \"recent_crit\": 12.0, \"delta\": 12.0, \"earlier_insp\": 2, \"recent_insp\": 5}, {\"name\": \"TAQUERIA 27 HOLLADAY\", \"city\": \"HOLLADAY\", \"earlier_crit\": 0.0, \"recent_crit\": 12.0, \"delta\": 12.0, \"earlier_insp\": 1, \"recent_insp\": 5}, {\"name\": \"MENCHIES\", \"city\": \"MILLCREEK TS\", \"earlier_crit\": 0.0, \"recent_crit\": 11.0, \"delta\": 11.0, \"earlier_insp\": 1, \"recent_insp\": 4}, {\"name\": \"OLD TOWNE TAVERN\", \"city\": \"MIDVALE\", \"earlier_crit\": 5.0, \"recent_crit\": 16.0, \"delta\": 11.0, \"earlier_insp\": 1, \"recent_insp\": 4}, {\"name\": \"WENDYS #6064\", \"city\": \"MAGNA\", \"earlier_crit\": 3.0, \"recent_crit\": 13.0, \"delta\": 10.0, \"earlier_insp\": 1, \"recent_insp\": 9}, {\"name\": \"AMERICAN FOOD & VENDING CORP @ ZIONS BANCORP TECH\", \"city\": \"MIDVALE\", \"earlier_crit\": 2.0, \"recent_crit\": 12.0, \"delta\": 10.0, \"earlier_insp\": 1, \"recent_insp\": 4}, {\"name\": \"TABLE X\", \"city\": \"MILLCREEK TS\", \"earlier_crit\": 1.0, \"recent_crit\": 11.0, \"delta\": 10.0, \"earlier_insp\": 1, \"recent_insp\": 3}]}\n\nAction: run_sql({'query': \"\\nSELECT CASE WHEN inspection_date >= DATE '2024-01-17' THEN 'recent' ELSE 'earlier' END AS period,\\nCOUNT(*) AS num_inspections, COUNT(DISTINCT slchd_establishment_key) as num_establishments\\nFROM inspections\\nWHERE inspection_date >= DATE '2021-07-17' AND inspection_date <= DATE '2026-07-17'\\nGROUP BY period\\n\"})\n\nObservation: {\"row_count\": 2, \"truncated\": false, \"rows\": [{\"period\": \"earlier\", \"num_inspections\": 2156, \"num_establishments\": 907}, {\"period\": \"recent\", \"num_inspections\": 3470, \"num_establishments\": 1312}]}\n\nAction: run_sql({'query': \"\\nWITH window_insp AS (\\n  SELECT i.slchd_establishment_key, i.inspection_id, i.inspection_date,\\n    CASE WHEN i.inspection_date >= DATE '2024-01-17' THEN 'recent' ELSE 'earlier' END AS period\\n  FROM inspections i\\n  WHERE i.inspection_date >= DATE '2021-07-17' AND i.inspection_date <= DATE '2026-07-17'\\n),\\ncrit AS (\\n  SELECT w.slchd_establishment_key, w.period, w.inspection_id,\\n    COUNT(*) FILTER (WHERE vc.critical) AS crit_count\\n  FROM window_insp w\\n  LEFT JOIN violations v ON v.inspection_id = w.inspection_id\\n  LEFT JOIN violation_codes vc ON vc.violation_code_id = v.violation_code_id\\n  GROUP BY w.slchd_establishment_key, w.period, w.inspection_id\\n),\\nagg AS (\\n  SELECT slchd_establishment_key, period, SUM(crit_count)*1.0/COUNT(*) AS avg_crit, COUNT(*) AS num_inspections, SUM(crit_count) as total_crit\\n  FROM crit\\n  GROUP BY slchd_establishment_key, period\\n),\\npiv AS (\\n  SELECT slchd_establishment_key,\\n    MAX(CASE WHEN period='earlier' THEN avg_crit END) AS earlier_avg,\\n    MAX(CASE WHEN period='recent' THEN avg_crit END) AS recent_avg,\\n    MAX(CASE WHEN period='earlier' THEN num_inspections END) AS earlier_insp,\\n    MAX(CASE WHEN period='recent' THEN num_inspections END) AS recent_insp,\\n    MAX(CASE WHEN period='earlier' THEN total_crit END) AS earlier_total,\\n    MAX(CASE WHEN period='recent' THEN total_crit END) AS recent_total\\n  FROM agg\\n  GROUP BY slchd_establishment_key\\n)\\nSELECT ek.name, ek.city, p.earlier_avg, p.recent_avg, (p.recent_avg-p.earlier_avg) AS delta_rate,\\np.earlier_insp, p.recent_insp, p.earlier_total, p.recent_total\\nFROM piv p\\nJOIN establishment_keys ek ON ek.slchd_establishment_key = p.slchd_establishment_key\\nWHERE p.earlier_insp >= 2 AND p.recent_insp >= 2\\nORDER BY delta_rate DESC\\nLIMIT 12\\n\"})\n\nObservation: {\"row_count\": 12, \"truncated\": false, \"rows\": [{\"name\": \"TOP STOP #C-23\", \"city\": \"SALT LAKE CITY\", \"earlier_avg\": 0.5, \"recent_avg\": 4.0, \"delta_rate\": 3.5, \"earlier_insp\": 2, \"recent_insp\": 2, \"earlier_total\": 1.0, \"recent_total\": 8.0}, {\"name\": \"ARIVO CAFE\", \"city\": \"KEARNS\", \"earlier_avg\": 0.0, \"recent_avg\": 2.4, \"delta_rate\": 2.4, \"earlier_insp\": 2, \"recent_insp\": 5, \"earlier_total\": 0.0, \"recent_total\": 12.0}, {\"name\": \"MANOLIS\", \"city\": \"SALT LAKE CITY\", \"earlier_avg\": 1.3333333333333333, \"recent_avg\": 3.6666666666666665, \"delta_rate\": 2.333333333333333, \"earlier_insp\": 3, \"recent_insp\": 3, \"earlier_total\": 4.0, \"recent_total\": 11.0}, {\"name\": \"WENDYS #6098\", \"city\": \"WEST JORDAN\", \"earlier_avg\": 0.6666666666666666, \"recent_avg\": 2.75, \"delta_rate\": 2.0833333333333335, \"earlier_insp\": 3, \"recent_insp\": 4, \"earlier_total\": 2.0, \"recent_total\": 11.0}, {\"name\": \"GARDEN ESPRESSO\", \"city\": \"MURRAY\", \"earlier_avg\": 1.3333333333333333, \"recent_avg\": 3.3333333333333335, \"delta_rate\": 2.0, \"earlier_insp\": 3, \"recent_insp\": 3, \"earlier_total\": 4.0, \"recent_total\": 10.0}, {\"name\": \"U OF U RICE ECCLES STADIUM - 35S\", \"city\": \"SALT LAKE CITY\", \"earlier_avg\": 0.5, \"recent_avg\": 2.5, \"delta_rate\": 2.0, \"earlier_insp\": 2, \"recent_insp\": 2, \"earlier_total\": 1.0, \"recent_total\": 5.0}, {\"name\": \"GOOD2GO STORES\", \"city\": \"HERRIMAN\", \"earlier_avg\": 0.0, \"recent_avg\": 2.0, \"delta_rate\": 2.0, \"earlier_insp\": 2, \"recent_insp\": 3, \"earlier_total\": 0.0, \"recent_total\": 6.0}, {\"name\": \"APPLEBEES WEST VALLEY\", \"city\": \"WEST VALLEY CITY\", \"earlier_avg\": 0.5, \"recent_avg\": 2.5, \"delta_rate\": 2.0, \"earlier_insp\": 2, \"recent_insp\": 4, \"earlier_total\": 1.0, \"recent_total\": 10.0}, {\"name\": \"TARGET T1751 STARBUCKS\", \"city\": \"COTTONWOOD HEIGHTS\", \"earlier_avg\": 0.3333333333333333, \"recent_avg\": 2.0, \"delta_rate\": 1.6666666666666667, \"earlier_insp\": 3, \"recent_insp\": 3, \"earlier_total\": 1.0, \"recent_total\": 6.0}, {\"name\": \"MANNYS NEIGHBORHOOD BAR\", \"city\": \"SALT LAKE CITY\", \"earlier_avg\": 0.5, \"recent_avg\": 2.0, \"delta_rate\": 1.5, \"earlier_insp\": 2, \"recent_insp\": 2, \"earlier_total\": 1.0, \"recent_total\": 4.0}, {\"name\": \"ARBYS #8541\", \"city\": \"MIDVALE\", \"earlier_avg\": 0.0, \"recent_avg\": 1.5, \"delta_rate\": 1.5, \"earlier_insp\": 3, \"recent_insp\": 2, \"earlier_total\": 0.0, \"recent_total\": 3.0}, {\"name\": \"ARCTIC CIRCLE 111\", \"city\": \"WEST JORDAN\", \"earlier_avg\": 2.0, \"recent_avg\": 3.3333333333333335, \"delta_rate\": 1.3333333333333335, \"earlier_insp\": 3, \"recent_insp\": 3, \"earlier_total\": 6.0, \"recent_total\": 10.0}]}\n\nAction: run_sql({'query': \"\\nWITH window_insp AS (\\n  SELECT i.slchd_establishment_key, i.inspection_id, i.inspection_date,\\n    CASE WHEN i.inspection_date >= DATE '2024-01-17' THEN 'recent' ELSE 'earlier' END AS period\\n  FROM inspections i\\n  WHERE i.inspection_date >= DATE '2021-07-17' AND i.inspection_date <= DATE '2026-07-17'\\n),\\ncrit AS (\\n  SELECT w.slchd_establishment_key, w.period, w.inspection_id,\\n    COUNT(*) FILTER (WHERE vc.critical) AS crit_count\\n  FROM window_insp w\\n  LEFT JOIN violations v ON v.inspection_id = w.inspection_id\\n  LEFT JOIN violation_codes vc ON vc.violation_code_id = v.violation_code_id\\n  GROUP BY w.slchd_establishment_key, w.period, w.inspection_id\\n),\\nagg AS (\\n  SELECT slchd_establishment_key, period, SUM(crit_count)*1.0/COUNT(*) AS avg_crit, COUNT(*) AS num_inspections, SUM(crit_count) as total_crit\\n  FROM crit\\n  GROUP BY slchd_establishment_key, period\\n),\\npiv AS (\\n  SELECT slchd_establishment_key,\\n    MAX(CASE WHEN period='earlier' THEN avg_crit END) AS earlier_avg,\\n    MAX(CASE WHEN period='recent' THEN avg_crit END) AS recent_avg,\\n    MAX(CASE WHEN period='earlier' THEN num_inspections END) AS earlier_insp,\\n    MAX(CASE WHEN period='recent' THEN num_inspections END) AS recent_insp,\\n    MAX(CASE WHEN period='earlier' THEN total_crit END) AS earlier_total,\\n    MAX(CASE WHEN period='recent' THEN total_crit END) AS recent_total\\n  FROM agg\\n  GROUP BY slchd_establishment_key\\n)\\nSELECT ek.name, ek.city, p.earlier_avg, p.recent_avg, (p.recent_avg-p.earlier_avg) AS delta_rate,\\np.earlier_insp, p.recent_insp, p.earlier_total, p.recent_total\\nFROM piv p\\nJOIN establishment_keys ek ON ek.slchd_establishment_key = p.slchd_establishment_key\\nWHERE p.earlier_insp >= 2 AND p.recent_insp >= 2\\nORDER BY delta_rate ASC\\nLIMIT 12\\n\"})\n\nObservation: {\"row_count\": 12, \"truncated\": false, \"rows\": [{\"name\": \"KOKOPELLIS KOFFEE HOUSE\", \"city\": \"HOLLADAY\", \"earlier_avg\": 5.5, \"recent_avg\": 1.0, \"delta_rate\": -4.5, \"earlier_insp\": 2, \"recent_insp\": 3, \"earlier_total\": 11.0, \"recent_total\": 3.0}, {\"name\": \"CAFE RIO\", \"city\": \"WEST VALLEY CITY\", \"earlier_avg\": 5.666666666666667, \"recent_avg\": 1.2, \"delta_rate\": -4.466666666666667, \"earlier_insp\": 3, \"recent_insp\": 5, \"earlier_total\": 17.0, \"recent_total\": 6.0}, {\"name\": \"JERSEY MIKES SUBS\", \"city\": \"HERRIMAN\", \"earlier_avg\": 5.75, \"recent_avg\": 1.4, \"delta_rate\": -4.35, \"earlier_insp\": 4, \"recent_insp\": 5, \"earlier_total\": 23.0, \"recent_total\": 7.0}, {\"name\": \"RANCHERITOS DRAPER\", \"city\": \"DRAPER\", \"earlier_avg\": 6.2, \"recent_avg\": 2.3333333333333335, \"delta_rate\": -3.8666666666666667, \"earlier_insp\": 5, \"recent_insp\": 3, \"earlier_total\": 31.0, \"recent_total\": 7.0}, {\"name\": \"NAVAJO HOGAN\", \"city\": \"SOUTH SALT LAKE\", \"earlier_avg\": 4.4, \"recent_avg\": 0.6666666666666666, \"delta_rate\": -3.733333333333334, \"earlier_insp\": 5, \"recent_insp\": 3, \"earlier_total\": 22.0, \"recent_total\": 2.0}, {\"name\": \"COSTA VIDA GATEWAY\", \"city\": \"SALT LAKE CITY\", \"earlier_avg\": 5.0, \"recent_avg\": 1.3333333333333333, \"delta_rate\": -3.666666666666667, \"earlier_insp\": 2, \"recent_insp\": 3, \"earlier_total\": 10.0, \"recent_total\": 4.0}, {\"name\": \"SEVEN ELEVEN #12957A\", \"city\": \"MIDVALE\", \"earlier_avg\": 6.25, \"recent_avg\": 2.6666666666666665, \"delta_rate\": -3.5833333333333335, \"earlier_insp\": 4, \"recent_insp\": 3, \"earlier_total\": 25.0, \"recent_total\": 8.0}, {\"name\": \"SEVEN ELEVEN #41131A\", \"city\": \"MAGNA\", \"earlier_avg\": 3.5, \"recent_avg\": 0.0, \"delta_rate\": -3.5, \"earlier_insp\": 2, \"recent_insp\": 3, \"earlier_total\": 7.0, \"recent_total\": 0.0}, {\"name\": \"SEVEN ELEVEN STORE #23850C\", \"city\": \"MURRAY\", \"earlier_avg\": 4.666666666666667, \"recent_avg\": 1.3333333333333333, \"delta_rate\": -3.333333333333334, \"earlier_insp\": 3, \"recent_insp\": 3, \"earlier_total\": 14.0, \"recent_total\": 4.0}, {\"name\": \"BAMBARA/HOTEL MONACO MAIN KITCHEN\", \"city\": \"SALT LAKE CITY\", \"earlier_avg\": 5.0, \"recent_avg\": 1.6666666666666667, \"delta_rate\": -3.333333333333333, \"earlier_insp\": 2, \"recent_insp\": 3, \"earlier_total\": 10.0, \"recent_total\": 5.0}, {\"name\": \"APOLLO BURGER\", \"city\": \"SALT LAKE CITY\", \"earlier_avg\": 4.0, \"recent_avg\": 0.8, \"delta_rate\": -3.2, \"earlier_insp\": 3, \"recent_insp\": 5, \"earlier_total\": 12.0, \"recent_total\": 4.0}, {\"name\": \"SEVEN ELEVEN STORE #26838C\", \"city\": \"WEST VALLEY CITY\", \"earlier_avg\": 3.5, \"recent_avg\": 0.3333333333333333, \"delta_rate\": -3.1666666666666665, \"earlier_insp\": 2, \"recent_insp\": 3, \"earlier_total\": 7.0, \"recent_total\": 1.0}]}\n\nAction: run_sql({'query': \"\\nWITH window_insp AS (\\n  SELECT i.slchd_establishment_key, i.inspection_id, i.inspection_date,\\n    CASE WHEN i.inspection_date >= DATE '2024-01-17' THEN 'recent' ELSE 'earlier' END AS period\\n  FROM inspections i\\n  WHERE i.inspection_date >= DATE '2021-07-17' AND i.inspection_date <= DATE '2026-07-17'\\n),\\ncrit AS (\\n  SELECT w.slchd_establishment_key, w.period, w.inspection_id,\\n    COUNT(*) FILTER (WHERE vc.critical) AS crit_count\\n  FROM window_insp w\\n  LEFT JOIN violations v ON v.inspection_id = w.inspection_id\\n  LEFT JOIN violation_codes vc ON vc.violation_code_id = v.violation_code_id\\n  GROUP BY w.slchd_establishment_key, w.period, w.inspection_id\\n),\\nagg AS (\\n  SELECT slchd_establishment_key, period, SUM(crit_count)*1.0/COUNT(*) AS avg_crit, COUNT(*) AS num_inspections\\n  FROM crit\\n  GROUP BY slchd_establishment_key, period\\n),\\npiv AS (\\n  SELECT slchd_establishment_key,\\n    MAX(CASE WHEN period='earlier' THEN avg_crit END) AS earlier_avg,\\n    MAX(CASE WHEN period='recent' THEN avg_crit END) AS recent_avg,\\n    MAX(CASE WHEN period='earlier' THEN num_inspections END) AS earlier_insp,\\n    MAX(CASE WHEN period='recent' THEN num_inspections END) AS recent_insp\\n  FROM agg\\n  GROUP BY slchd_establishment_key\\n)\\nSELECT\\n  SUM(CASE WHEN recent_avg > earlier_avg THEN 1 ELSE 0 END) AS increased,\\n  SUM(CASE WHEN recent_avg < earlier_avg THEN 1 ELSE 0 END) AS decreased,\\n  SUM(CASE WHEN recent_avg = earlier_avg THEN 1 ELSE 0 END) AS unchanged,\\n  COUNT(*) AS total_with_both_periods\\nFROM piv\\nWHERE earlier_insp >= 2 AND recent_insp >= 2\\n\"})\n\nObservation: {\"row_count\": 1, \"truncated\": false, \"rows\": [{\"increased\": 187.0, \"decreased\": 356.0, \"unchanged\": 116.0, \"total_with_both_periods\": 659}]}\n\nAction: search_establishments({'name_contains': 'TOP STOP', 'require_inspection_data': True})\n\nAction: search_establishments({'name_contains': 'KOKOPELLIS KOFFEE HOUSE', 'require_inspection_data': True})\n\nAction: plot_chart({'query': \"\\nWITH window_insp AS (\\n  SELECT i.slchd_establishment_key, i.inspection_id, i.inspection_date,\\n    CASE WHEN i.inspection_date >= DATE '2024-01-17' THEN 'recent' ELSE 'earlier' END AS period\\n  FROM inspections i\\n  WHERE i.inspection_date >= DATE '2021-07-17' AND i.inspection_date <= DATE '2026-07-17'\\n),\\ncrit AS (\\n  SELECT w.slchd_establishment_key, w.period, w.inspection_id,\\n    COUNT(*) FILTER (WHERE vc.critical) AS crit_count\\n  FROM window_insp w\\n  LEFT JOIN violations v ON v.inspection_id = w.inspection_id\\n  LEFT JOIN violation_codes vc ON vc.violation_code_id = v.violation_code_id\\n  GROUP BY w.slchd_establishment_key, w.period, w.inspection_id\\n),\\nagg AS (\\n  SELECT slchd_establishment_key, period, SUM(crit_count)*1.0/COUNT(*) AS avg_crit, COUNT(*) AS num_inspections\\n  FROM crit\\n  GROUP BY slchd_establishment_key, period\\n),\\npiv AS (\\n  SELECT slchd_establishment_key,\\n    MAX(CASE WHEN period='earlier' THEN avg_crit END) AS earlier_avg,\\n    MAX(CASE WHEN period='recent' THEN avg_crit END) AS recent_avg,\\n    MAX(CASE WHEN period='earlier' THEN num_inspections END) AS earlier_insp,\\n    MAX(CASE WHEN period='recent' THEN num_inspections END) AS recent_insp\\n  FROM agg\\n  GROUP BY slchd_establishment_key\\n)\\nSELECT\\n  CASE WHEN recent_avg > earlier_avg THEN 'Increased'\\n       WHEN recent_avg < earlier_avg THEN 'Decreased'\\n       ELSE 'Unchanged' END AS trend,\\n  COUNT(*) AS num_establishments\\nFROM piv\\nWHERE earlier_insp >= 2 AND recent_insp >= 2\\nGROUP BY trend\\n\", 'chart_type': 'pie', 'x': 'trend', 'y': 'num_establishments', 'title': 'Share of Restaurants: Critical Violation Rate Trend (Earlier 2021-2023 vs Recent 2024-2026)'})\n\nObservation: {\"row_count\": 0, \"rows\": []}\n\nObservation: {\"row_count\": 0, \"rows\": []}\n\nObservation: Chart created: 'Share of Restaurants: Critical Violation Rate Trend (Earlier 2021-2023 vs Recent 2024-2026)' (pie, 3 rows). It will be shown to the user below your answer.\n\nAction: search_establishments({'name_contains': 'Top Stop'})\n\nAction: search_establishments({'name_contains': 'Kokopelli'})\n\nObservation: {\"row_count\": 0, \"rows\": []}\n\nObservation: {\"row_count\": 1, \"rows\": [{\"gmap_id\": \"0x875261c2b0e2108b:0xb6159cea1605ebaa\", \"name\": \"Kokopelli's koffee\", \"address\": \"Kokopelli's koffee, 3955 Highland Dr, Millcreek, UT 84124\", \"latitude\": 40.685779, \"longitude\": -111.84436, \"avg_rating\": 4.1, \"num_of_reviews\": 118, \"price\": \"$\", \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}]}\n\nAction: plot_chart({'query': \"\\nWITH window_insp AS (\\n  SELECT i.slchd_establishment_key, i.inspection_id, i.inspection_date,\\n    CASE WHEN i.inspection_date >= DATE '2024-01-17' THEN 'recent' ELSE 'earlier' END AS period\\n  FROM inspections i\\n  WHERE i.inspection_date >= DATE '2021-07-17' AND i.inspection_date <= DATE '2026-07-17'\\n),\\ncrit AS (\\n  SELECT w.slchd_establishment_key, w.period, w.inspection_id,\\n    COUNT(*) FILTER (WHERE vc.critical) AS crit_count\\n  FROM window_insp w\\n  LEFT JOIN violations v ON v.inspection_id = w.inspection_id\\n  LEFT JOIN violation_codes vc ON vc.violation_code_id = v.violation_code_id\\n  GROUP BY w.slchd_establishment_key, w.period, w.inspection_id\\n),\\nagg AS (\\n  SELECT slchd_establishment_key, period, SUM(crit_count)*1.0/COUNT(*) AS avg_crit, COUNT(*) AS num_inspections\\n  FROM crit\\n  GROUP BY slchd_establishment_key, period\\n),\\npiv AS (\\n  SELECT slchd_establishment_key,\\n    MAX(CASE WHEN period='earlier' THEN avg_crit END) AS earlier_avg,\\n    MAX(CASE WHEN period='recent' THEN avg_crit END) AS recent_avg,\\n    MAX(CASE WHEN period='earlier' THEN num_inspections END) AS earlier_insp,\\n    MAX(CASE WHEN period='recent' THEN num_inspections END) AS recent_insp\\n  FROM agg\\n  GROUP BY slchd_establishment_key\\n)\\nSELECT ek.name || ' (' || ek.city || ')' AS restaurant, (p.recent_avg - p.earlier_avg) AS delta_rate\\nFROM piv p\\nJOIN establishment_keys ek ON ek.slchd_establishment_key = p.slchd_establishment_key\\nWHERE p.earlier_insp >= 2 AND p.recent_insp >= 2\\nORDER BY delta_rate DESC\\nLIMIT 10\\n\", 'chart_type': 'bar', 'x': 'restaurant', 'y': 'delta_rate', 'title': 'Top 10 Restaurants: Increase in Avg Critical Violations per Inspection (2021-23 vs 2024-26)'})\n\nAction: plot_chart({'query': \"\\nWITH window_insp AS (\\n  SELECT i.slchd_establishment_key, i.inspection_id, i.inspection_date,\\n    CASE WHEN i.inspection_date >= DATE '2024-01-17' THEN 'recent' ELSE 'earlier' END AS period\\n  FROM inspections i\\n  WHERE i.inspection_date >= DATE '2021-07-17' AND i.inspection_date <= DATE '2026-07-17'\\n),\\ncrit AS (\\n  SELECT w.slchd_establishment_key, w.period, w.inspection_id,\\n    COUNT(*) FILTER (WHERE vc.critical) AS crit_count\\n  FROM window_insp w\\n  LEFT JOIN violations v ON v.inspection_id = w.inspection_id\\n  LEFT JOIN violation_codes vc ON vc.violation_code_id = v.violation_code_id\\n  GROUP BY w.slchd_establishment_key, w.period, w.inspection_id\\n),\\nagg AS (\\n  SELECT slchd_establishment_key, period, SUM(crit_count)*1.0/COUNT(*) AS avg_crit, COUNT(*) AS num_inspections\\n  FROM crit\\n  GROUP BY slchd_establishment_key, period\\n),\\npiv AS (\\n  SELECT slchd_establishment_key,\\n    MAX(CASE WHEN period='earlier' THEN avg_crit END) AS earlier_avg,\\n    MAX(CASE WHEN period='recent' THEN avg_crit END) AS recent_avg,\\n    MAX(CASE WHEN period='earlier' THEN num_inspections END) AS earlier_insp,\\n    MAX(CASE WHEN period='recent' THEN num_inspections END) AS recent_insp\\n  FROM agg\\n  GROUP BY slchd_establishment_key\\n)\\nSELECT ek.name || ' (' || ek.city || ')' AS restaurant, (p.recent_avg - p.earlier_avg) AS delta_rate\\nFROM piv p\\nJOIN establishment_keys ek ON ek.slchd_establishment_key = p.slchd_establishment_key\\nWHERE p.earlier_insp >= 2 AND p.recent_insp >= 2\\nORDER BY delta_rate ASC\\nLIMIT 10\\n\", 'chart_type': 'bar', 'x': 'restaurant', 'y': 'delta_rate', 'title': 'Top 10 Restaurants: Decrease in Avg Critical Violations per Inspection (2021-23 vs 2024-26)'})\n\nAction: plot_chart({'query': \"\\nWITH window_insp AS (\\n  SELECT i.slchd_establishment_key, i.inspection_id, i.inspection_date,\\n    CASE WHEN i.inspection_date >= DATE '2024-01-17' THEN 'recent' ELSE 'earlier' END AS period\\n  FROM inspections i\\n  WHERE i.inspection_date >= DATE '2021-07-17' AND i.inspection_date <= DATE '2026-07-17'\\n),\\ncrit AS (\\n  SELECT w.slchd_establishment_key, w.period, w.inspection_id,\\n    COUNT(*) FILTER (WHERE vc.critical) AS crit_count\\n  FROM window_insp w\\n  LEFT JOIN violations v ON v.inspection_id = w.inspection_id\\n  LEFT JOIN violation_codes vc ON vc.violation_code_id = v.violation_code_id\\n  GROUP BY w.slchd_establishment_key, w.period, w.inspection_id\\n),\\nagg AS (\\n  SELECT slchd_establishment_key, period, SUM(crit_count)*1.0/COUNT(*) AS avg_crit, COUNT(*) AS num_inspections\\n  FROM crit\\n  GROUP BY slchd_establishment_key, period\\n),\\npiv AS (\\n  SELECT slchd_establishment_key,\\n    MAX(CASE WHEN period='earlier' THEN avg_crit END) AS earlier_avg,\\n    MAX(CASE WHEN period='recent' THEN avg_crit END) AS recent_avg,\\n    MAX(CASE WHEN period='earlier' THEN num_inspections END) AS earlier_insp,\\n    MAX(CASE WHEN period='recent' THEN num_inspections END) AS recent_insp\\n  FROM agg\\n  GROUP BY slchd_establishment_key\\n)\\nSELECT p.earlier_avg AS avg_crit_2021_2023, p.recent_avg AS avg_crit_2024_2026,\\n  CASE WHEN p.recent_avg > p.earlier_avg THEN 'Increased'\\n       WHEN p.recent_avg < p.earlier_avg THEN 'Decreased'\\n       ELSE 'Unchanged' END AS trend\\nFROM piv p\\nWHERE p.earlier_insp >= 2 AND p.recent_insp >= 2\\n\", 'chart_type': 'scatter', 'x': 'avg_crit_2021_2023', 'y': 'avg_crit_2024_2026', 'color': 'trend', 'title': 'Avg Critical Violations per Inspection: Earlier (2021-23) vs Recent (2024-26), All 659 Restaurants with Data in Both Periods'})\n\nObservation: Chart created: 'Top 10 Restaurants: Increase in Avg Critical Violations per Inspection (2021-23 vs 2024-26)' (bar, 10 rows). It will be shown to the user below your answer.\n\nObservation: Chart created: 'Top 10 Restaurants: Decrease in Avg Critical Violations per Inspection (2021-23 vs 2024-26)' (bar, 10 rows). It will be shown to the user below your answer.\n\nObservation: Chart created: 'Avg Critical Violations per Inspection: Earlier (2021-23) vs Recent (2024-26), All 659 Restaurants with Data in Both Periods' (scatter, 659 rows). It will be shown to the user below your answer.",
+  "timeline": [],
+  "messages": [
+    {
+      "type": "HumanMessage",
+      "content": "For which restaurants has the number of critical violations increased, and for which has it decreased over the last 5 years? Show me a detailed visual analysis."
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [
+        {
+          "signature": "EpYFCokBCBAYAipAsmFo4mFQdya+gwgQO6Zt9JwOMhW1gzMTZBopXJ0yNqt+1mrRK2TK1hqiJ+FYf3nXnZXnFGfGKtMHMs6XRce9kjIPY2xhdWRlLXNvbm5ldC01OABCCHRoaW5raW5nWiQ3M2FiYWQ1Yy1lZWVhLTQ3N2QtYjUyMC1jODJlMDYxMDc1NWMSDJPMwuwAg7LQP7BOmxoMNH817u0A4v8IrzShIjDxKXokrxBhzdLWe83fKG9mgDMNgzM/V4nTxhKwrZ3xQmYsX2BuenEOsWB+zrjTBCQquQPm9ezgRE98dQ52zGrZB1GetFuUAslG2wVKV63xCec8lDV7jtZZlJiKvpHO+YbiOmDK5BefgMguNqgwrDzNpvOBIaw6h4BFH7Rp0OjxY28N8YliD7xiEwU2/KHxF0T3aTGfkbHOsz4oGBcWOpd/GaCAVvbpRqEjo7iJjIro3LAh07KBmVe60ebe4MazvQ3kWmzHI1bvsCAzkFkMHdLkWYeS5yZsDd1FHI+M2YUcHmUlpBOnnkYMffcI1z2P0dQDYlPSucPPgFVR6dTAOw99MPpXZNIgCKrnmS9kD0BZ0LGmw48xV7KKV677msdB1jTSOH10sPwG0NyU651BatK1ya6ZuoiQLL1sLtDzM4XnnzBLeEbH27p1/fdi9m57pYTtVv8yWn4PYaDPqpp89vRwXsieXkVSjwX5TqDFHo0NC8Lj5nuJiDzVIb5ddQ/jselrbuLHn84iPuNVf95seMN2wUKVK/fiEwBNrePR7am8WO8IpstSxKgWSsAvqtaI2vdfxtMP/S9p9yMsKM1DuTiRDyXeSGnYh5e/TQ8oxCCE8MdYHuDO3i/aeFFCO6LFBzI3gRE1dFJ84QSFY9UYAQ==",
+          "thinking": "",
+          "type": "thinking"
+        },
+        {
+          "id": "toolu_01EMQKYdvq2qdLMmwmz4FoXY",
+          "caller": {
+            "type": "direct"
+          },
+          "input": {},
+          "name": "get_schema",
+          "type": "tool_use"
+        }
+      ],
+      "tool_calls": [
+        {
+          "name": "get_schema",
+          "args": {},
+          "id": "toolu_01EMQKYdvq2qdLMmwmz4FoXY",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 3459,
+        "output_tokens": 156,
+        "total_tokens": 3615,
+        "input_token_details": {
+          "cache_read": 0,
+          "cache_creation": 0,
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "output_token_details": {
+          "reasoning": 127
+        }
+      },
+      "model_name": "claude-sonnet-5"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "Project food_health_viz {\n  database_type: 'DuckDB'\n}\n\nTable establishment_keys {\n  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']\n  name varchar [not null]\n  address varchar [not null]\n  city varchar [not null]\n  city_state_zip varchar\n  establishment_type varchar\n  source varchar [note: 'friend_slc | own_scrape']\n  slchd_lat double\n  slchd_lon double\n  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']\n\n  Note: 'SLCHD establishment list, one row per portal listing.'\n}\n\nTable category {\n  category_id integer [pk]\n  category varchar\n}\n\nTable establishments {\n  gmap_id varchar [pk]\n  name varchar\n  address varchar\n  description varchar\n  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']\n  avg_rating double\n  num_of_reviews integer\n  price varchar\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']\n\n  Note: 'One row per Google Local place \u2014 all restaurants, not just SLCHD-matched.'\n}\n\nTable establishment_attributes {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  attribute varchar [not null]\n\n  indexes { (gmap_id, attribute) [pk] }\n\n  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. \"Service options\") dropped.'\n}\n\nTable establishment_categories {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  category_id integer [ref: > category.category_id, not null]\n\n  indexes { (gmap_id, category_id) [pk] }\n}\n\nTable gmap_hours {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  day integer [not null, note: '0=Sun \u2026 6=Sat']\n  open_min bigint\n  open_max bigint\n\n  indexes { (gmap_id, day) [pk] }\n\n  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'\n}\n\nTable review {\n  user_id varchar\n  name varchar\n  time bigint\n  rating double\n  text varchar\n  resp varchar\n  gmap_id varchar [ref: > establishments.gmap_id]\n}\n\nTable inspection_types {\n  inspection_type_id integer [pk, note: 'parsed leading number, e.g. \"01 - Routine\" -> 1']\n  description varchar [note: 'e.g. \"Routine\"']\n}\n\nTable inspections {\n  inspection_id bigint [pk, increment]\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]\n  inspection_date date [not null]\n  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable \u2014 27 rows have no type']\n  inspection_score integer\n\n  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'\n}\n\nTable violation_codes {\n  violation_code_id integer [pk, increment]\n  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. \"4.5.18\"']\n  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']\n  critical boolean [not null]\n}\n\nTable violations {\n  violation_id bigint [pk, increment]\n  inspection_id bigint [ref: > inspections.inspection_id, not null]\n  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]\n  violation_description varchar [note: 'per-occurrence free text']\n  violation_occurrences integer\n  violation_cos boolean [note: 'corrected on site']\n  violation_phr varchar [note: 'public health rationale']\n\n  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'\n}\n",
+      "tool_call_id": "toolu_01EMQKYdvq2qdLMmwmz4FoXY",
+      "name": "get_schema"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [
+        {
+          "signature": "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",
+          "thinking": "",
+          "type": "thinking"
+        },
+        {
+          "id": "toolu_01E22eAj357D7yhW1nKjEiJF",
+          "caller": {
+            "type": "direct"
+          },
+          "input": {
+            "query": "SELECT max(inspection_date) as max_date, min(inspection_date) as min_date FROM inspections"
+          },
+          "name": "run_sql",
+          "type": "tool_use"
+        }
+      ],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "SELECT max(inspection_date) as max_date, min(inspection_date) as min_date FROM inspections"
+          },
+          "id": "toolu_01E22eAj357D7yhW1nKjEiJF",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 5027,
+        "output_tokens": 796,
+        "total_tokens": 5823,
+        "input_token_details": {
+          "cache_read": 0,
+          "cache_creation": 0,
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "output_token_details": {
+          "reasoning": 713
+        }
+      },
+      "model_name": "claude-sonnet-5"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 1, \"truncated\": false, \"rows\": [{\"max_date\": \"2026-07-17 00:00:00\", \"min_date\": \"2009-01-09 00:00:00\"}]}",
+      "tool_call_id": "toolu_01E22eAj357D7yhW1nKjEiJF",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [
+        {
+          "signature": "EpwFCokBCBAYAipAeOpzRWOU4NZZRTMCByBT10UUv6Zg4eR7nkwYGOJQ/lt5ocfqn9xSonsmd7V62O3ZT2HQS2X5sCLmUS/LlUSZvTIPY2xhdWRlLXNvbm5ldC01OABCCHRoaW5raW5nWiQ3M2FiYWQ1Yy1lZWVhLTQ3N2QtYjUyMC1jODJlMDYxMDc1NWMSDGuXN+CjCBUsJU6LwhoM5oc1ODam9C6TTmDqIjA8jf9i0dbeIpG0ak38HlXOReYkCpTJ7I/IAPWIEZJ55TxlA7mF4nkNhudsiPufFFYqvwMB+1FosZSwhI7FkUfYGY/sTABmn724Q2cZqQwWHzfme+6CHqGbu3WJIc7+LTbLevYVcgtZA7Oc5aeoQfq/qsQhPjf4tmym2qgCsgd2dXly/FYWWtM0fKipucRrX1KCBmoOdA2ETAVK9HTKOp/wM0J+G6X9nFoJ1Q279gt5Bv4kKO2UO6tqsBzscCuxVddNqTJPQxVqCMyngsOW1WYnjEPx4wLskPYrduWPTw45kZEEdq9fsoRXs5z0Ap02oy4CY8u53F8ZWCKUCQMey2xmJwFwpJKNlk5J6K9OPQ5hYc5KrJQfPusmFvdsJIl2L00JPBMaqz8CqqzcNIxDCb5qDCrZz2qA8b3pXpCMYr8GX9e/AW6owAt+rZSRwy7euPzOfRUORMWAOsBG6uaYMVdMVcFe76t5AERyFrty6zqIg/a1qUVZ+vpNilUKrjMMs6IB1GWGDyAD/C0jw01NZBNujmWt9DAbEyFbZJTO3ZkHYgnTkJpNNJXrclSixIhFaxwpoIs7GIen7FzFJ0VG78fUgUIUf988ILBkxQzw+uWAK2MsGM6SMpuvcoKx2bJHfr1U+njE4MiUvS9cJLTIJHrlL1YYAQ==",
+          "thinking": "",
+          "type": "thinking"
+        },
+        {
+          "id": "toolu_01Ldczyq4S4UjZgxqiBaPohF",
+          "caller": {
+            "type": "direct"
+          },
+          "input": {
+            "query": "\nWITH window_insp AS (\n  SELECT i.slchd_establishment_key, i.inspection_id, i.inspection_date,\n    CASE WHEN i.inspection_date >= DATE '2024-01-17' THEN 'recent' ELSE 'earlier' END AS period\n  FROM inspections i\n  WHERE i.inspection_date >= DATE '2021-07-17' AND i.inspection_date <= DATE '2026-07-17'\n),\ncrit AS (\n  SELECT w.slchd_establishment_key, w.period, w.inspection_id,\n    COUNT(*) FILTER (WHERE vc.critical) AS crit_count\n  FROM window_insp w\n  LEFT JOIN violations v ON v.inspection_id = w.inspection_id\n  LEFT JOIN violation_codes vc ON vc.violation_code_id = v.violation_code_id\n  GROUP BY w.slchd_establishment_key, w.period, w.inspection_id\n),\nagg AS (\n  SELECT slchd_establishment_key, period, SUM(crit_count) AS total_crit, COUNT(*) AS num_inspections\n  FROM crit\n  GROUP BY slchd_establishment_key, period\n),\npiv AS (\n  SELECT slchd_establishment_key,\n    MAX(CASE WHEN period='earlier' THEN total_crit ELSE 0 END) AS earlier_crit,\n    MAX(CASE WHEN period='recent' THEN total_crit ELSE 0 END) AS recent_crit,\n    MAX(CASE WHEN period='earlier' THEN num_inspections ELSE 0 END) AS earlier_insp,\n    MAX(CASE WHEN period='recent' THEN num_inspections ELSE 0 END) AS recent_insp\n  FROM agg\n  GROUP BY slchd_establishment_key\n)\nSELECT ek.name, ek.city, p.earlier_crit, p.recent_crit, (p.recent_crit - p.earlier_crit) AS delta, p.earlier_insp, p.recent_insp\nFROM piv p\nJOIN establishment_keys ek ON ek.slchd_establishment_key = p.slchd_establishment_key\nWHERE p.earlier_insp > 0 AND p.recent_insp > 0\nORDER BY delta DESC\nLIMIT 15\n"
+          },
+          "name": "run_sql",
+          "type": "tool_use"
+        }
+      ],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "\nWITH window_insp AS (\n  SELECT i.slchd_establishment_key, i.inspection_id, i.inspection_date,\n    CASE WHEN i.inspection_date >= DATE '2024-01-17' THEN 'recent' ELSE 'earlier' END AS period\n  FROM inspections i\n  WHERE i.inspection_date >= DATE '2021-07-17' AND i.inspection_date <= DATE '2026-07-17'\n),\ncrit AS (\n  SELECT w.slchd_establishment_key, w.period, w.inspection_id,\n    COUNT(*) FILTER (WHERE vc.critical) AS crit_count\n  FROM window_insp w\n  LEFT JOIN violations v ON v.inspection_id = w.inspection_id\n  LEFT JOIN violation_codes vc ON vc.violation_code_id = v.violation_code_id\n  GROUP BY w.slchd_establishment_key, w.period, w.inspection_id\n),\nagg AS (\n  SELECT slchd_establishment_key, period, SUM(crit_count) AS total_crit, COUNT(*) AS num_inspections\n  FROM crit\n  GROUP BY slchd_establishment_key, period\n),\npiv AS (\n  SELECT slchd_establishment_key,\n    MAX(CASE WHEN period='earlier' THEN total_crit ELSE 0 END) AS earlier_crit,\n    MAX(CASE WHEN period='recent' THEN total_crit ELSE 0 END) AS recent_crit,\n    MAX(CASE WHEN period='earlier' THEN num_inspections ELSE 0 END) AS earlier_insp,\n    MAX(CASE WHEN period='recent' THEN num_inspections ELSE 0 END) AS recent_insp\n  FROM agg\n  GROUP BY slchd_establishment_key\n)\nSELECT ek.name, ek.city, p.earlier_crit, p.recent_crit, (p.recent_crit - p.earlier_crit) AS delta, p.earlier_insp, p.recent_insp\nFROM piv p\nJOIN establishment_keys ek ON ek.slchd_establishment_key = p.slchd_establishment_key\nWHERE p.earlier_insp > 0 AND p.recent_insp > 0\nORDER BY delta DESC\nLIMIT 15\n"
+          },
+          "id": "toolu_01Ldczyq4S4UjZgxqiBaPohF",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 5891,
+        "output_tokens": 992,
+        "total_tokens": 6883,
+        "input_token_details": {
+          "cache_read": 0,
+          "cache_creation": 0,
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "output_token_details": {
+          "reasoning": 143
+        }
+      },
+      "model_name": "claude-sonnet-5"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 15, \"truncated\": false, \"rows\": [{\"name\": \"CAFE RIO\", \"city\": \"SOUTH JORDAN\", \"earlier_crit\": 2.0, \"recent_crit\": 48.0, \"delta\": 46.0, \"earlier_insp\": 1, \"recent_insp\": 9}, {\"name\": \"YANNIS GREEK EXPRESS\", \"city\": \"SALT LAKE CITY\", \"earlier_crit\": 1.0, \"recent_crit\": 22.0, \"delta\": 21.0, \"earlier_insp\": 1, \"recent_insp\": 4}, {\"name\": \"ANGELAS CATERING\", \"city\": \"MILLCREEK TS\", \"earlier_crit\": 0.0, \"recent_crit\": 15.0, \"delta\": 15.0, \"earlier_insp\": 1, \"recent_insp\": 4}, {\"name\": \"BON APPETIT @ WGU\", \"city\": \"MILLCREEK\", \"earlier_crit\": 5.0, \"recent_crit\": 19.0, \"delta\": 14.0, \"earlier_insp\": 2, \"recent_insp\": 6}, {\"name\": \"ARCTIC CIRCLE 202\", \"city\": \"MILLCREEK TS\", \"earlier_crit\": 1.0, \"recent_crit\": 14.0, \"delta\": 13.0, \"earlier_insp\": 1, \"recent_insp\": 6}, {\"name\": \"YOSHIS RESTAURANT\", \"city\": \"MURRAY\", \"earlier_crit\": 3.0, \"recent_crit\": 16.0, \"delta\": 13.0, \"earlier_insp\": 3, \"recent_insp\": 7}, {\"name\": \"SAOLA\", \"city\": \"COTTONWOOD HEIGHTS\", \"earlier_crit\": 12.0, \"recent_crit\": 24.0, \"delta\": 12.0, \"earlier_insp\": 1, \"recent_insp\": 5}, {\"name\": \"VOLUNTEERS OF AMERICA RECOVERY ON RDWD\", \"city\": \"SALT LAKE CITY\", \"earlier_crit\": 3.0, \"recent_crit\": 15.0, \"delta\": 12.0, \"earlier_insp\": 1, \"recent_insp\": 5}, {\"name\": \"ARIVO CAFE\", \"city\": \"KEARNS\", \"earlier_crit\": 0.0, \"recent_crit\": 12.0, \"delta\": 12.0, \"earlier_insp\": 2, \"recent_insp\": 5}, {\"name\": \"TAQUERIA 27 HOLLADAY\", \"city\": \"HOLLADAY\", \"earlier_crit\": 0.0, \"recent_crit\": 12.0, \"delta\": 12.0, \"earlier_insp\": 1, \"recent_insp\": 5}, {\"name\": \"MENCHIES\", \"city\": \"MILLCREEK TS\", \"earlier_crit\": 0.0, \"recent_crit\": 11.0, \"delta\": 11.0, \"earlier_insp\": 1, \"recent_insp\": 4}, {\"name\": \"OLD TOWNE TAVERN\", \"city\": \"MIDVALE\", \"earlier_crit\": 5.0, \"recent_crit\": 16.0, \"delta\": 11.0, \"earlier_insp\": 1, \"recent_insp\": 4}, {\"name\": \"WENDYS #6064\", \"city\": \"MAGNA\", \"earlier_crit\": 3.0, \"recent_crit\": 13.0, \"delta\": 10.0, \"earlier_insp\": 1, \"recent_insp\": 9}, {\"name\": \"AMERICAN FOOD & VENDING CORP @ ZIONS BANCORP TECH\", \"city\": \"MIDVALE\", \"earlier_crit\": 2.0, \"recent_crit\": 12.0, \"delta\": 10.0, \"earlier_insp\": 1, \"recent_insp\": 4}, {\"name\": \"TABLE X\", \"city\": \"MILLCREEK TS\", \"earlier_crit\": 1.0, \"recent_crit\": 11.0, \"delta\": 10.0, \"earlier_insp\": 1, \"recent_insp\": 3}]}",
+      "tool_call_id": "toolu_01Ldczyq4S4UjZgxqiBaPohF",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [
+        {
+          "signature": "EtkHCokBCBAYAipAC8poWBsMsiz5eiF/fi10TIzQGssOXbrwSKUzVDcaTKYXB9PMhBbSXlboSgK0WlNuJVXJVFZq354xvfqlnmvijzIPY2xhdWRlLXNvbm5ldC01OABCCHRoaW5raW5nWiQ3M2FiYWQ1Yy1lZWVhLTQ3N2QtYjUyMC1jODJlMDYxMDc1NWMSDAEBNGBjXFqHJsqODxoMF2DUDDp5e4s/BcQIIjC+s+R3yBV9FyTSVrVYlEuDt+ht8Rc+XynAyLr6w5O7DqoiEFrssaKTnrg+Iuy0lTAq/AVuoTgJCl4anBM60139QIbH0dHQlk8W7v6Xdug4C/zYFix+DsbARjpWYKIY2tRdJh2AxyJjHu6ITbIXTJy7g2ikiWlQk7Rfjd6lfG0x19LGYZ2LxZPd/lb8dCKsfOAZS8lmehDwvl/0ALXrhWQes79o5AKzXr1/YYUtiJuJGu60kjno56Tuip70Pa2p/mkC4QuUzxEl4WDqpsQWMOhUlDO/WuOQ4Zpz1qoS4WEZDlrOkIvRM3vVTqeGXUWGsqn5ywQmFgLDYJFFUcikeL+p+MtwamIbt/XpWaS2R0fgjua5yrdRgRhjTGYDEpH8jebdVRSej+uBDIJ1AVc8jbrAUpf6RxaEsfNDg7rxGiIw/3RoFoGf+TA+eEwN40Ybu7ADp/txmAQ6kno7g7szNJxeYN1paFwkFYbHPh38Th6MGInojtU1jablc0+lJicvES2dN+cnBb9oXHItRq9O0L4G9aanRT2uv0KnuoqVIXFh2jo4IJRmiKaqYti7iFeHReUVFgnoGB1mKshH20wbz6z67odYA8Q/dVkXYoN5C4cCnV/mQ2lsl878ayj2FV5gu1ilp5pubKbvJIsr5Q7kwexAjRnGC/GPaU5VZQFXtbyWQ7Ilfx3m1hEsl9l9p3a/ZXAYgflzrohGLdIFbQIi3WSQrx90/cm1rd/OLHi1M6C2NRLNaxOIdOBFCetoftsXtpZDhCGMVSztuxBn9Ro78mRcl2UPSqIxI24i1wV8aP3LF4GiD8wDZAskLtH2Iut2Cg2tzF0IxxPwvCqJKbqb5uXU51ooBkpLVHnfbHQcVndUZEq+MWESHRLGIXLUVtbLaPZc721CUmYjbPsifmTRbeYOb5i0u3YBm9EvNgGJC7sUEjGpa8A+sljiiPyA4lhfPfic7gAfvUQOfzBWjbB2r5kvwUnnc+0BBbyweoLCPYeqxncWU0gbNmQqJu71P52I0FLUrGLRHy4rGX1wCxrhB3Lipn1oYYLt7QDjZaL+/SX+dDVB4Pb2CyqeddPxNpM0cRgB",
+          "thinking": "",
+          "type": "thinking"
+        },
+        {
+          "id": "toolu_01FLJEHLGhd6FJvpHR8wDcCc",
+          "caller": {
+            "type": "direct"
+          },
+          "input": {
+            "query": "\nSELECT CASE WHEN inspection_date >= DATE '2024-01-17' THEN 'recent' ELSE 'earlier' END AS period,\nCOUNT(*) AS num_inspections, COUNT(DISTINCT slchd_establishment_key) as num_establishments\nFROM inspections\nWHERE inspection_date >= DATE '2021-07-17' AND inspection_date <= DATE '2026-07-17'\nGROUP BY period\n"
+          },
+          "name": "run_sql",
+          "type": "tool_use"
+        }
+      ],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "\nSELECT CASE WHEN inspection_date >= DATE '2024-01-17' THEN 'recent' ELSE 'earlier' END AS period,\nCOUNT(*) AS num_inspections, COUNT(DISTINCT slchd_establishment_key) as num_establishments\nFROM inspections\nWHERE inspection_date >= DATE '2021-07-17' AND inspection_date <= DATE '2026-07-17'\nGROUP BY period\n"
+          },
+          "id": "toolu_01FLJEHLGhd6FJvpHR8wDcCc",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 8232,
+        "output_tokens": 443,
+        "total_tokens": 8675,
+        "input_token_details": {
+          "cache_read": 0,
+          "cache_creation": 0,
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "output_token_details": {
+          "reasoning": 240
+        }
+      },
+      "model_name": "claude-sonnet-5"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 2, \"truncated\": false, \"rows\": [{\"period\": \"earlier\", \"num_inspections\": 2156, \"num_establishments\": 907}, {\"period\": \"recent\", \"num_inspections\": 3470, \"num_establishments\": 1312}]}",
+      "tool_call_id": "toolu_01FLJEHLGhd6FJvpHR8wDcCc",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [
+        {
+          "signature": "Eq0GCokBCBAYAipAtBfUn33DWPJxpuuc41GJzKQe6q+fDcIBxP6aZLRzuE+EpPOxyEJQZUBFWi3rLS1fp8ZY0MEB6Vione/e4xwUJDIPY2xhdWRlLXNvbm5ldC01OABCCHRoaW5raW5nWiQ3M2FiYWQ1Yy1lZWVhLTQ3N2QtYjUyMC1jODJlMDYxMDc1NWMSDMYs+GbevVGPK9IDUhoMEg+i2ZN0osRAs4gLIjCZYeQ4GPKvGvn5g9Riqv5pszYKxirmBdAjm6heKVV/+7e+5akU7auQxJYxR+zY4i0q0AQJ8hohqyQOgTTpPL6Z807uHJTnCwSN7+AMIe9hrktZhdiV/QKK5LAFJDXKVEFvLU6jJmycZfsgNRrXbnSorH2/WAd7u1QiJOR7SzHm/G5sGdq8z+o2UGOewymvdHz2GXfHAUxqewlTeCSxGnRYlGN7EJm2pcDexjiz8QMhkXALmKIf6Uh/nppy+jHQXkcH9SO2R5UGlm/AYKz8kfo8VqDdLJl2llScPvUscQGqCYR+9gZvRdSf87NkrTlCD/0xCjMD6NzE+1ysTEr+N/9V9KMV+S2ZS6mP7BtNa+12i6/J1mnHRvH4n6DkSBOsXnvJr1wqLCDaKBauu6MLP52diHSqhSbbczv3bhgr6R0yVFBCE+8bO75gDU3xXDBdqiZZLSI9LZWIHFr5ghLCGgxtIkWVF+9TTImugp6oqjbX3xMPf6FJ5bmshvkALl8xTga1YN8iIT35KIFNIVczQiLm/4iPoRU7Ht2nIMfrpJPCFx30a4RRznxm4u8AwznzH0xJgoMhUuHD6yjf9lgo35qZOfOgu0ieSZfSdnPv1hVHmgPq722PaEaBUybAtbL7l/ZaEPv1CVS9UrdIQ3QVnJfJ7HCa8s7VPULdyBMuDpifxusysosLb7GmwQhYPxpXP2uhQBbbQlT1i/TAA8RB2lt7T9hyuvPN1iTO8/wrZIvjgBy9SBqGoeoFZy26r4lDrL6RSBTs5vS8l3TmmzrtJ6xpJkPQvLriIZ//o3z1I5lioOa8a8Kk5nPKPj9CngKA9zdiicq0x6IxHWrSSw/10r1gnAQFGAE=",
+          "thinking": "",
+          "type": "thinking"
+        },
+        {
+          "id": "toolu_01PXAjAvNzwnh1sasf94HXx2",
+          "caller": {
+            "type": "direct"
+          },
+          "input": {
+            "query": "\nWITH window_insp AS (\n  SELECT i.slchd_establishment_key, i.inspection_id, i.inspection_date,\n    CASE WHEN i.inspection_date >= DATE '2024-01-17' THEN 'recent' ELSE 'earlier' END AS period\n  FROM inspections i\n  WHERE i.inspection_date >= DATE '2021-07-17' AND i.inspection_date <= DATE '2026-07-17'\n),\ncrit AS (\n  SELECT w.slchd_establishment_key, w.period, w.inspection_id,\n    COUNT(*) FILTER (WHERE vc.critical) AS crit_count\n  FROM window_insp w\n  LEFT JOIN violations v ON v.inspection_id = w.inspection_id\n  LEFT JOIN violation_codes vc ON vc.violation_code_id = v.violation_code_id\n  GROUP BY w.slchd_establishment_key, w.period, w.inspection_id\n),\nagg AS (\n  SELECT slchd_establishment_key, period, SUM(crit_count)*1.0/COUNT(*) AS avg_crit, COUNT(*) AS num_inspections, SUM(crit_count) as total_crit\n  FROM crit\n  GROUP BY slchd_establishment_key, period\n),\npiv AS (\n  SELECT slchd_establishment_key,\n    MAX(CASE WHEN period='earlier' THEN avg_crit END) AS earlier_avg,\n    MAX(CASE WHEN period='recent' THEN avg_crit END) AS recent_avg,\n    MAX(CASE WHEN period='earlier' THEN num_inspections END) AS earlier_insp,\n    MAX(CASE WHEN period='recent' THEN num_inspections END) AS recent_insp,\n    MAX(CASE WHEN period='earlier' THEN total_crit END) AS earlier_total,\n    MAX(CASE WHEN period='recent' THEN total_crit END) AS recent_total\n  FROM agg\n  GROUP BY slchd_establishment_key\n)\nSELECT ek.name, ek.city, p.earlier_avg, p.recent_avg, (p.recent_avg-p.earlier_avg) AS delta_rate,\np.earlier_insp, p.recent_insp, p.earlier_total, p.recent_total\nFROM piv p\nJOIN establishment_keys ek ON ek.slchd_establishment_key = p.slchd_establishment_key\nWHERE p.earlier_insp >= 2 AND p.recent_insp >= 2\nORDER BY delta_rate DESC\nLIMIT 12\n"
+          },
+          "name": "run_sql",
+          "type": "tool_use"
+        }
+      ],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "\nWITH window_insp AS (\n  SELECT i.slchd_establishment_key, i.inspection_id, i.inspection_date,\n    CASE WHEN i.inspection_date >= DATE '2024-01-17' THEN 'recent' ELSE 'earlier' END AS period\n  FROM inspections i\n  WHERE i.inspection_date >= DATE '2021-07-17' AND i.inspection_date <= DATE '2026-07-17'\n),\ncrit AS (\n  SELECT w.slchd_establishment_key, w.period, w.inspection_id,\n    COUNT(*) FILTER (WHERE vc.critical) AS crit_count\n  FROM window_insp w\n  LEFT JOIN violations v ON v.inspection_id = w.inspection_id\n  LEFT JOIN violation_codes vc ON vc.violation_code_id = v.violation_code_id\n  GROUP BY w.slchd_establishment_key, w.period, w.inspection_id\n),\nagg AS (\n  SELECT slchd_establishment_key, period, SUM(crit_count)*1.0/COUNT(*) AS avg_crit, COUNT(*) AS num_inspections, SUM(crit_count) as total_crit\n  FROM crit\n  GROUP BY slchd_establishment_key, period\n),\npiv AS (\n  SELECT slchd_establishment_key,\n    MAX(CASE WHEN period='earlier' THEN avg_crit END) AS earlier_avg,\n    MAX(CASE WHEN period='recent' THEN avg_crit END) AS recent_avg,\n    MAX(CASE WHEN period='earlier' THEN num_inspections END) AS earlier_insp,\n    MAX(CASE WHEN period='recent' THEN num_inspections END) AS recent_insp,\n    MAX(CASE WHEN period='earlier' THEN total_crit END) AS earlier_total,\n    MAX(CASE WHEN period='recent' THEN total_crit END) AS recent_total\n  FROM agg\n  GROUP BY slchd_establishment_key\n)\nSELECT ek.name, ek.city, p.earlier_avg, p.recent_avg, (p.recent_avg-p.earlier_avg) AS delta_rate,\np.earlier_insp, p.recent_insp, p.earlier_total, p.recent_total\nFROM piv p\nJOIN establishment_keys ek ON ek.slchd_establishment_key = p.slchd_establishment_key\nWHERE p.earlier_insp >= 2 AND p.recent_insp >= 2\nORDER BY delta_rate DESC\nLIMIT 12\n"
+          },
+          "id": "toolu_01PXAjAvNzwnh1sasf94HXx2",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 8764,
+        "output_tokens": 1138,
+        "total_tokens": 9902,
+        "input_token_details": {
+          "cache_read": 0,
+          "cache_creation": 0,
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "output_token_details": {
+          "reasoning": 193
+        }
+      },
+      "model_name": "claude-sonnet-5"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 12, \"truncated\": false, \"rows\": [{\"name\": \"TOP STOP #C-23\", \"city\": \"SALT LAKE CITY\", \"earlier_avg\": 0.5, \"recent_avg\": 4.0, \"delta_rate\": 3.5, \"earlier_insp\": 2, \"recent_insp\": 2, \"earlier_total\": 1.0, \"recent_total\": 8.0}, {\"name\": \"ARIVO CAFE\", \"city\": \"KEARNS\", \"earlier_avg\": 0.0, \"recent_avg\": 2.4, \"delta_rate\": 2.4, \"earlier_insp\": 2, \"recent_insp\": 5, \"earlier_total\": 0.0, \"recent_total\": 12.0}, {\"name\": \"MANOLIS\", \"city\": \"SALT LAKE CITY\", \"earlier_avg\": 1.3333333333333333, \"recent_avg\": 3.6666666666666665, \"delta_rate\": 2.333333333333333, \"earlier_insp\": 3, \"recent_insp\": 3, \"earlier_total\": 4.0, \"recent_total\": 11.0}, {\"name\": \"WENDYS #6098\", \"city\": \"WEST JORDAN\", \"earlier_avg\": 0.6666666666666666, \"recent_avg\": 2.75, \"delta_rate\": 2.0833333333333335, \"earlier_insp\": 3, \"recent_insp\": 4, \"earlier_total\": 2.0, \"recent_total\": 11.0}, {\"name\": \"GARDEN ESPRESSO\", \"city\": \"MURRAY\", \"earlier_avg\": 1.3333333333333333, \"recent_avg\": 3.3333333333333335, \"delta_rate\": 2.0, \"earlier_insp\": 3, \"recent_insp\": 3, \"earlier_total\": 4.0, \"recent_total\": 10.0}, {\"name\": \"U OF U RICE ECCLES STADIUM - 35S\", \"city\": \"SALT LAKE CITY\", \"earlier_avg\": 0.5, \"recent_avg\": 2.5, \"delta_rate\": 2.0, \"earlier_insp\": 2, \"recent_insp\": 2, \"earlier_total\": 1.0, \"recent_total\": 5.0}, {\"name\": \"GOOD2GO STORES\", \"city\": \"HERRIMAN\", \"earlier_avg\": 0.0, \"recent_avg\": 2.0, \"delta_rate\": 2.0, \"earlier_insp\": 2, \"recent_insp\": 3, \"earlier_total\": 0.0, \"recent_total\": 6.0}, {\"name\": \"APPLEBEES WEST VALLEY\", \"city\": \"WEST VALLEY CITY\", \"earlier_avg\": 0.5, \"recent_avg\": 2.5, \"delta_rate\": 2.0, \"earlier_insp\": 2, \"recent_insp\": 4, \"earlier_total\": 1.0, \"recent_total\": 10.0}, {\"name\": \"TARGET T1751 STARBUCKS\", \"city\": \"COTTONWOOD HEIGHTS\", \"earlier_avg\": 0.3333333333333333, \"recent_avg\": 2.0, \"delta_rate\": 1.6666666666666667, \"earlier_insp\": 3, \"recent_insp\": 3, \"earlier_total\": 1.0, \"recent_total\": 6.0}, {\"name\": \"MANNYS NEIGHBORHOOD BAR\", \"city\": \"SALT LAKE CITY\", \"earlier_avg\": 0.5, \"recent_avg\": 2.0, \"delta_rate\": 1.5, \"earlier_insp\": 2, \"recent_insp\": 2, \"earlier_total\": 1.0, \"recent_total\": 4.0}, {\"name\": \"ARBYS #8541\", \"city\": \"MIDVALE\", \"earlier_avg\": 0.0, \"recent_avg\": 1.5, \"delta_rate\": 1.5, \"earlier_insp\": 3, \"recent_insp\": 2, \"earlier_total\": 0.0, \"recent_total\": 3.0}, {\"name\": \"ARCTIC CIRCLE 111\", \"city\": \"WEST JORDAN\", \"earlier_avg\": 2.0, \"recent_avg\": 3.3333333333333335, \"delta_rate\": 1.3333333333333335, \"earlier_insp\": 3, \"recent_insp\": 3, \"earlier_total\": 6.0, \"recent_total\": 10.0}]}",
+      "tool_call_id": "toolu_01PXAjAvNzwnh1sasf94HXx2",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "Now let's get the top decreasing (improved) establishments as well.",
+      "raw_content": [
+        {
+          "text": "Now let's get the top decreasing (improved) establishments as well.",
+          "type": "text"
+        },
+        {
+          "id": "toolu_01RB6HWBYbMaWy9DUdeCAJZg",
+          "caller": {
+            "type": "direct"
+          },
+          "input": {
+            "query": "\nWITH window_insp AS (\n  SELECT i.slchd_establishment_key, i.inspection_id, i.inspection_date,\n    CASE WHEN i.inspection_date >= DATE '2024-01-17' THEN 'recent' ELSE 'earlier' END AS period\n  FROM inspections i\n  WHERE i.inspection_date >= DATE '2021-07-17' AND i.inspection_date <= DATE '2026-07-17'\n),\ncrit AS (\n  SELECT w.slchd_establishment_key, w.period, w.inspection_id,\n    COUNT(*) FILTER (WHERE vc.critical) AS crit_count\n  FROM window_insp w\n  LEFT JOIN violations v ON v.inspection_id = w.inspection_id\n  LEFT JOIN violation_codes vc ON vc.violation_code_id = v.violation_code_id\n  GROUP BY w.slchd_establishment_key, w.period, w.inspection_id\n),\nagg AS (\n  SELECT slchd_establishment_key, period, SUM(crit_count)*1.0/COUNT(*) AS avg_crit, COUNT(*) AS num_inspections, SUM(crit_count) as total_crit\n  FROM crit\n  GROUP BY slchd_establishment_key, period\n),\npiv AS (\n  SELECT slchd_establishment_key,\n    MAX(CASE WHEN period='earlier' THEN avg_crit END) AS earlier_avg,\n    MAX(CASE WHEN period='recent' THEN avg_crit END) AS recent_avg,\n    MAX(CASE WHEN period='earlier' THEN num_inspections END) AS earlier_insp,\n    MAX(CASE WHEN period='recent' THEN num_inspections END) AS recent_insp,\n    MAX(CASE WHEN period='earlier' THEN total_crit END) AS earlier_total,\n    MAX(CASE WHEN period='recent' THEN total_crit END) AS recent_total\n  FROM agg\n  GROUP BY slchd_establishment_key\n)\nSELECT ek.name, ek.city, p.earlier_avg, p.recent_avg, (p.recent_avg-p.earlier_avg) AS delta_rate,\np.earlier_insp, p.recent_insp, p.earlier_total, p.recent_total\nFROM piv p\nJOIN establishment_keys ek ON ek.slchd_establishment_key = p.slchd_establishment_key\nWHERE p.earlier_insp >= 2 AND p.recent_insp >= 2\nORDER BY delta_rate ASC\nLIMIT 12\n"
+          },
+          "name": "run_sql",
+          "type": "tool_use"
+        }
+      ],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "\nWITH window_insp AS (\n  SELECT i.slchd_establishment_key, i.inspection_id, i.inspection_date,\n    CASE WHEN i.inspection_date >= DATE '2024-01-17' THEN 'recent' ELSE 'earlier' END AS period\n  FROM inspections i\n  WHERE i.inspection_date >= DATE '2021-07-17' AND i.inspection_date <= DATE '2026-07-17'\n),\ncrit AS (\n  SELECT w.slchd_establishment_key, w.period, w.inspection_id,\n    COUNT(*) FILTER (WHERE vc.critical) AS crit_count\n  FROM window_insp w\n  LEFT JOIN violations v ON v.inspection_id = w.inspection_id\n  LEFT JOIN violation_codes vc ON vc.violation_code_id = v.violation_code_id\n  GROUP BY w.slchd_establishment_key, w.period, w.inspection_id\n),\nagg AS (\n  SELECT slchd_establishment_key, period, SUM(crit_count)*1.0/COUNT(*) AS avg_crit, COUNT(*) AS num_inspections, SUM(crit_count) as total_crit\n  FROM crit\n  GROUP BY slchd_establishment_key, period\n),\npiv AS (\n  SELECT slchd_establishment_key,\n    MAX(CASE WHEN period='earlier' THEN avg_crit END) AS earlier_avg,\n    MAX(CASE WHEN period='recent' THEN avg_crit END) AS recent_avg,\n    MAX(CASE WHEN period='earlier' THEN num_inspections END) AS earlier_insp,\n    MAX(CASE WHEN period='recent' THEN num_inspections END) AS recent_insp,\n    MAX(CASE WHEN period='earlier' THEN total_crit END) AS earlier_total,\n    MAX(CASE WHEN period='recent' THEN total_crit END) AS recent_total\n  FROM agg\n  GROUP BY slchd_establishment_key\n)\nSELECT ek.name, ek.city, p.earlier_avg, p.recent_avg, (p.recent_avg-p.earlier_avg) AS delta_rate,\np.earlier_insp, p.recent_insp, p.earlier_total, p.recent_total\nFROM piv p\nJOIN establishment_keys ek ON ek.slchd_establishment_key = p.slchd_establishment_key\nWHERE p.earlier_insp >= 2 AND p.recent_insp >= 2\nORDER BY delta_rate ASC\nLIMIT 12\n"
+          },
+          "id": "toolu_01RB6HWBYbMaWy9DUdeCAJZg",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 11351,
+        "output_tokens": 966,
+        "total_tokens": 12317,
+        "input_token_details": {
+          "cache_read": 0,
+          "cache_creation": 0,
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "output_token_details": {
+          "reasoning": 0
+        }
+      },
+      "model_name": "claude-sonnet-5"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 12, \"truncated\": false, \"rows\": [{\"name\": \"KOKOPELLIS KOFFEE HOUSE\", \"city\": \"HOLLADAY\", \"earlier_avg\": 5.5, \"recent_avg\": 1.0, \"delta_rate\": -4.5, \"earlier_insp\": 2, \"recent_insp\": 3, \"earlier_total\": 11.0, \"recent_total\": 3.0}, {\"name\": \"CAFE RIO\", \"city\": \"WEST VALLEY CITY\", \"earlier_avg\": 5.666666666666667, \"recent_avg\": 1.2, \"delta_rate\": -4.466666666666667, \"earlier_insp\": 3, \"recent_insp\": 5, \"earlier_total\": 17.0, \"recent_total\": 6.0}, {\"name\": \"JERSEY MIKES SUBS\", \"city\": \"HERRIMAN\", \"earlier_avg\": 5.75, \"recent_avg\": 1.4, \"delta_rate\": -4.35, \"earlier_insp\": 4, \"recent_insp\": 5, \"earlier_total\": 23.0, \"recent_total\": 7.0}, {\"name\": \"RANCHERITOS DRAPER\", \"city\": \"DRAPER\", \"earlier_avg\": 6.2, \"recent_avg\": 2.3333333333333335, \"delta_rate\": -3.8666666666666667, \"earlier_insp\": 5, \"recent_insp\": 3, \"earlier_total\": 31.0, \"recent_total\": 7.0}, {\"name\": \"NAVAJO HOGAN\", \"city\": \"SOUTH SALT LAKE\", \"earlier_avg\": 4.4, \"recent_avg\": 0.6666666666666666, \"delta_rate\": -3.733333333333334, \"earlier_insp\": 5, \"recent_insp\": 3, \"earlier_total\": 22.0, \"recent_total\": 2.0}, {\"name\": \"COSTA VIDA GATEWAY\", \"city\": \"SALT LAKE CITY\", \"earlier_avg\": 5.0, \"recent_avg\": 1.3333333333333333, \"delta_rate\": -3.666666666666667, \"earlier_insp\": 2, \"recent_insp\": 3, \"earlier_total\": 10.0, \"recent_total\": 4.0}, {\"name\": \"SEVEN ELEVEN #12957A\", \"city\": \"MIDVALE\", \"earlier_avg\": 6.25, \"recent_avg\": 2.6666666666666665, \"delta_rate\": -3.5833333333333335, \"earlier_insp\": 4, \"recent_insp\": 3, \"earlier_total\": 25.0, \"recent_total\": 8.0}, {\"name\": \"SEVEN ELEVEN #41131A\", \"city\": \"MAGNA\", \"earlier_avg\": 3.5, \"recent_avg\": 0.0, \"delta_rate\": -3.5, \"earlier_insp\": 2, \"recent_insp\": 3, \"earlier_total\": 7.0, \"recent_total\": 0.0}, {\"name\": \"SEVEN ELEVEN STORE #23850C\", \"city\": \"MURRAY\", \"earlier_avg\": 4.666666666666667, \"recent_avg\": 1.3333333333333333, \"delta_rate\": -3.333333333333334, \"earlier_insp\": 3, \"recent_insp\": 3, \"earlier_total\": 14.0, \"recent_total\": 4.0}, {\"name\": \"BAMBARA/HOTEL MONACO MAIN KITCHEN\", \"city\": \"SALT LAKE CITY\", \"earlier_avg\": 5.0, \"recent_avg\": 1.6666666666666667, \"delta_rate\": -3.333333333333333, \"earlier_insp\": 2, \"recent_insp\": 3, \"earlier_total\": 10.0, \"recent_total\": 5.0}, {\"name\": \"APOLLO BURGER\", \"city\": \"SALT LAKE CITY\", \"earlier_avg\": 4.0, \"recent_avg\": 0.8, \"delta_rate\": -3.2, \"earlier_insp\": 3, \"recent_insp\": 5, \"earlier_total\": 12.0, \"recent_total\": 4.0}, {\"name\": \"SEVEN ELEVEN STORE #26838C\", \"city\": \"WEST VALLEY CITY\", \"earlier_avg\": 3.5, \"recent_avg\": 0.3333333333333333, \"delta_rate\": -3.1666666666666665, \"earlier_insp\": 2, \"recent_insp\": 3, \"earlier_total\": 7.0, \"recent_total\": 1.0}]}",
+      "tool_call_id": "toolu_01RB6HWBYbMaWy9DUdeCAJZg",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [
+        {
+          "signature": "EokDCokBCBAYAipAn8c7bYW9gSX0UFXBtAXDzrsoLinIillVN2orMexQ6su26L9rpxYLqeGjy28E7LuGuHH1wvAyaHfqr9ZsfLWoJTIPY2xhdWRlLXNvbm5ldC01OABCCHRoaW5raW5nWiQ3M2FiYWQ1Yy1lZWVhLTQ3N2QtYjUyMC1jODJlMDYxMDc1NWMSDBFMyf0Zxd8BGn1paxoMQ4qB3LCTro8Noa7YIjBbOZsA7N4QVq9W573HyF9spl1qVkx9B3FwZ1F+33djGF7I4ibFuARJzKIJgq3kWTAqrAG9/boSauIhpF4+nlRIUoBRWEwQa34dy9ej+R38n51vlS4X6q+0VGpYjCS/6BCxmXVUZWWJQnAvMo5/s4YFHVhnNg10HbUEEQpdl+/KBY8f14kUqaw9bh2/ZDlqbAtSncizIr8TsazRtUT/0fl+HSWLuLB+7s8OARr+K+bkKLFIAkvQo3DqR2QnT/pR4/TJkdBxCWQjABhVqbZ27qgA4uEfus4hzT0xELjtmMuVGAE=",
+          "thinking": "",
+          "type": "thinking"
+        },
+        {
+          "id": "toolu_01CmQaSL84M7UmKFkqeQZuXU",
+          "caller": {
+            "type": "direct"
+          },
+          "input": {
+            "query": "\nWITH window_insp AS (\n  SELECT i.slchd_establishment_key, i.inspection_id, i.inspection_date,\n    CASE WHEN i.inspection_date >= DATE '2024-01-17' THEN 'recent' ELSE 'earlier' END AS period\n  FROM inspections i\n  WHERE i.inspection_date >= DATE '2021-07-17' AND i.inspection_date <= DATE '2026-07-17'\n),\ncrit AS (\n  SELECT w.slchd_establishment_key, w.period, w.inspection_id,\n    COUNT(*) FILTER (WHERE vc.critical) AS crit_count\n  FROM window_insp w\n  LEFT JOIN violations v ON v.inspection_id = w.inspection_id\n  LEFT JOIN violation_codes vc ON vc.violation_code_id = v.violation_code_id\n  GROUP BY w.slchd_establishment_key, w.period, w.inspection_id\n),\nagg AS (\n  SELECT slchd_establishment_key, period, SUM(crit_count)*1.0/COUNT(*) AS avg_crit, COUNT(*) AS num_inspections\n  FROM crit\n  GROUP BY slchd_establishment_key, period\n),\npiv AS (\n  SELECT slchd_establishment_key,\n    MAX(CASE WHEN period='earlier' THEN avg_crit END) AS earlier_avg,\n    MAX(CASE WHEN period='recent' THEN avg_crit END) AS recent_avg,\n    MAX(CASE WHEN period='earlier' THEN num_inspections END) AS earlier_insp,\n    MAX(CASE WHEN period='recent' THEN num_inspections END) AS recent_insp\n  FROM agg\n  GROUP BY slchd_establishment_key\n)\nSELECT\n  SUM(CASE WHEN recent_avg > earlier_avg THEN 1 ELSE 0 END) AS increased,\n  SUM(CASE WHEN recent_avg < earlier_avg THEN 1 ELSE 0 END) AS decreased,\n  SUM(CASE WHEN recent_avg = earlier_avg THEN 1 ELSE 0 END) AS unchanged,\n  COUNT(*) AS total_with_both_periods\nFROM piv\nWHERE earlier_insp >= 2 AND recent_insp >= 2\n"
+          },
+          "name": "run_sql",
+          "type": "tool_use"
+        }
+      ],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "\nWITH window_insp AS (\n  SELECT i.slchd_establishment_key, i.inspection_id, i.inspection_date,\n    CASE WHEN i.inspection_date >= DATE '2024-01-17' THEN 'recent' ELSE 'earlier' END AS period\n  FROM inspections i\n  WHERE i.inspection_date >= DATE '2021-07-17' AND i.inspection_date <= DATE '2026-07-17'\n),\ncrit AS (\n  SELECT w.slchd_establishment_key, w.period, w.inspection_id,\n    COUNT(*) FILTER (WHERE vc.critical) AS crit_count\n  FROM window_insp w\n  LEFT JOIN violations v ON v.inspection_id = w.inspection_id\n  LEFT JOIN violation_codes vc ON vc.violation_code_id = v.violation_code_id\n  GROUP BY w.slchd_establishment_key, w.period, w.inspection_id\n),\nagg AS (\n  SELECT slchd_establishment_key, period, SUM(crit_count)*1.0/COUNT(*) AS avg_crit, COUNT(*) AS num_inspections\n  FROM crit\n  GROUP BY slchd_establishment_key, period\n),\npiv AS (\n  SELECT slchd_establishment_key,\n    MAX(CASE WHEN period='earlier' THEN avg_crit END) AS earlier_avg,\n    MAX(CASE WHEN period='recent' THEN avg_crit END) AS recent_avg,\n    MAX(CASE WHEN period='earlier' THEN num_inspections END) AS earlier_insp,\n    MAX(CASE WHEN period='recent' THEN num_inspections END) AS recent_insp\n  FROM agg\n  GROUP BY slchd_establishment_key\n)\nSELECT\n  SUM(CASE WHEN recent_avg > earlier_avg THEN 1 ELSE 0 END) AS increased,\n  SUM(CASE WHEN recent_avg < earlier_avg THEN 1 ELSE 0 END) AS decreased,\n  SUM(CASE WHEN recent_avg = earlier_avg THEN 1 ELSE 0 END) AS unchanged,\n  COUNT(*) AS total_with_both_periods\nFROM piv\nWHERE earlier_insp >= 2 AND recent_insp >= 2\n"
+          },
+          "id": "toolu_01CmQaSL84M7UmKFkqeQZuXU",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 13816,
+        "output_tokens": 913,
+        "total_tokens": 14729,
+        "input_token_details": {
+          "cache_read": 0,
+          "cache_creation": 0,
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "output_token_details": {
+          "reasoning": 48
+        }
+      },
+      "model_name": "claude-sonnet-5"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 1, \"truncated\": false, \"rows\": [{\"increased\": 187.0, \"decreased\": 356.0, \"unchanged\": 116.0, \"total_with_both_periods\": 659}]}",
+      "tool_call_id": "toolu_01CmQaSL84M7UmKFkqeQZuXU",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "Now let me pull these named restaurants into the map view via search_establishments, and build the charts.",
+      "raw_content": [
+        {
+          "text": "Now let me pull these named restaurants into the map view via search_establishments, and build the charts.",
+          "type": "text"
+        },
+        {
+          "id": "toolu_01KdAWfTCysEXxGa8ETRWXWa",
+          "caller": {
+            "type": "direct"
+          },
+          "input": {
+            "name_contains": "TOP STOP",
+            "require_inspection_data": true
+          },
+          "name": "search_establishments",
+          "type": "tool_use"
+        },
+        {
+          "id": "toolu_014UxSmJww8iHF7YrcqDmD6H",
+          "caller": {
+            "type": "direct"
+          },
+          "input": {
+            "name_contains": "KOKOPELLIS KOFFEE HOUSE",
+            "require_inspection_data": true
+          },
+          "name": "search_establishments",
+          "type": "tool_use"
+        },
+        {
+          "id": "toolu_01BFrCXpZ1UhcEtwM4y1YL2M",
+          "caller": {
+            "type": "direct"
+          },
+          "input": {
+            "query": "\nWITH window_insp AS (\n  SELECT i.slchd_establishment_key, i.inspection_id, i.inspection_date,\n    CASE WHEN i.inspection_date >= DATE '2024-01-17' THEN 'recent' ELSE 'earlier' END AS period\n  FROM inspections i\n  WHERE i.inspection_date >= DATE '2021-07-17' AND i.inspection_date <= DATE '2026-07-17'\n),\ncrit AS (\n  SELECT w.slchd_establishment_key, w.period, w.inspection_id,\n    COUNT(*) FILTER (WHERE vc.critical) AS crit_count\n  FROM window_insp w\n  LEFT JOIN violations v ON v.inspection_id = w.inspection_id\n  LEFT JOIN violation_codes vc ON vc.violation_code_id = v.violation_code_id\n  GROUP BY w.slchd_establishment_key, w.period, w.inspection_id\n),\nagg AS (\n  SELECT slchd_establishment_key, period, SUM(crit_count)*1.0/COUNT(*) AS avg_crit, COUNT(*) AS num_inspections\n  FROM crit\n  GROUP BY slchd_establishment_key, period\n),\npiv AS (\n  SELECT slchd_establishment_key,\n    MAX(CASE WHEN period='earlier' THEN avg_crit END) AS earlier_avg,\n    MAX(CASE WHEN period='recent' THEN avg_crit END) AS recent_avg,\n    MAX(CASE WHEN period='earlier' THEN num_inspections END) AS earlier_insp,\n    MAX(CASE WHEN period='recent' THEN num_inspections END) AS recent_insp\n  FROM agg\n  GROUP BY slchd_establishment_key\n)\nSELECT\n  CASE WHEN recent_avg > earlier_avg THEN 'Increased'\n       WHEN recent_avg < earlier_avg THEN 'Decreased'\n       ELSE 'Unchanged' END AS trend,\n  COUNT(*) AS num_establishments\nFROM piv\nWHERE earlier_insp >= 2 AND recent_insp >= 2\nGROUP BY trend\n",
+            "chart_type": "pie",
+            "x": "trend",
+            "y": "num_establishments",
+            "title": "Share of Restaurants: Critical Violation Rate Trend (Earlier 2021-2023 vs Recent 2024-2026)"
+          },
+          "name": "plot_chart",
+          "type": "tool_use"
+        }
+      ],
+      "tool_calls": [
+        {
+          "name": "search_establishments",
+          "args": {
+            "name_contains": "TOP STOP",
+            "require_inspection_data": true
+          },
+          "id": "toolu_01KdAWfTCysEXxGa8ETRWXWa",
+          "type": "tool_call"
+        },
+        {
+          "name": "search_establishments",
+          "args": {
+            "name_contains": "KOKOPELLIS KOFFEE HOUSE",
+            "require_inspection_data": true
+          },
+          "id": "toolu_014UxSmJww8iHF7YrcqDmD6H",
+          "type": "tool_call"
+        },
+        {
+          "name": "plot_chart",
+          "args": {
+            "query": "\nWITH window_insp AS (\n  SELECT i.slchd_establishment_key, i.inspection_id, i.inspection_date,\n    CASE WHEN i.inspection_date >= DATE '2024-01-17' THEN 'recent' ELSE 'earlier' END AS period\n  FROM inspections i\n  WHERE i.inspection_date >= DATE '2021-07-17' AND i.inspection_date <= DATE '2026-07-17'\n),\ncrit AS (\n  SELECT w.slchd_establishment_key, w.period, w.inspection_id,\n    COUNT(*) FILTER (WHERE vc.critical) AS crit_count\n  FROM window_insp w\n  LEFT JOIN violations v ON v.inspection_id = w.inspection_id\n  LEFT JOIN violation_codes vc ON vc.violation_code_id = v.violation_code_id\n  GROUP BY w.slchd_establishment_key, w.period, w.inspection_id\n),\nagg AS (\n  SELECT slchd_establishment_key, period, SUM(crit_count)*1.0/COUNT(*) AS avg_crit, COUNT(*) AS num_inspections\n  FROM crit\n  GROUP BY slchd_establishment_key, period\n),\npiv AS (\n  SELECT slchd_establishment_key,\n    MAX(CASE WHEN period='earlier' THEN avg_crit END) AS earlier_avg,\n    MAX(CASE WHEN period='recent' THEN avg_crit END) AS recent_avg,\n    MAX(CASE WHEN period='earlier' THEN num_inspections END) AS earlier_insp,\n    MAX(CASE WHEN period='recent' THEN num_inspections END) AS recent_insp\n  FROM agg\n  GROUP BY slchd_establishment_key\n)\nSELECT\n  CASE WHEN recent_avg > earlier_avg THEN 'Increased'\n       WHEN recent_avg < earlier_avg THEN 'Decreased'\n       ELSE 'Unchanged' END AS trend,\n  COUNT(*) AS num_establishments\nFROM piv\nWHERE earlier_insp >= 2 AND recent_insp >= 2\nGROUP BY trend\n",
+            "chart_type": "pie",
+            "x": "trend",
+            "y": "num_establishments",
+            "title": "Share of Restaurants: Critical Violation Rate Trend (Earlier 2021-2023 vs Recent 2024-2026)"
+          },
+          "id": "toolu_01BFrCXpZ1UhcEtwM4y1YL2M",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 14801,
+        "output_tokens": 1154,
+        "total_tokens": 15955,
+        "input_token_details": {
+          "cache_read": 0,
+          "cache_creation": 0,
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "output_token_details": {
+          "reasoning": 0
+        }
+      },
+      "model_name": "claude-sonnet-5"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 0, \"rows\": []}",
+      "tool_call_id": "toolu_01KdAWfTCysEXxGa8ETRWXWa",
+      "name": "search_establishments"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 0, \"rows\": []}",
+      "tool_call_id": "toolu_014UxSmJww8iHF7YrcqDmD6H",
+      "name": "search_establishments"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "Chart created: 'Share of Restaurants: Critical Violation Rate Trend (Earlier 2021-2023 vs Recent 2024-2026)' (pie, 3 rows). It will be shown to the user below your answer.",
+      "tool_call_id": "toolu_01BFrCXpZ1UhcEtwM4y1YL2M",
+      "name": "plot_chart"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [
+        {
+          "signature": "EqMDCokBCBAYAipArJNezbxlLZI6FeA6tpz0aW4RGbKh653OM1UxlkqAMqNMk+XM2xPAtMbaDaPDSTTGTltMhXTMm0jcJ5ynb8C67jIPY2xhdWRlLXNvbm5ldC01OABCCHRoaW5raW5nWiQ3M2FiYWQ1Yy1lZWVhLTQ3N2QtYjUyMC1jODJlMDYxMDc1NWMSDNyxG6dXJvPS+inQlRoMEK9Botaef49e1ylfIjBcs0P3235z5C0GV775l0xqO9kg/h114iWKS+ZmzONMqqKqjj5O+DgBp/3tnPWoKRMqxgG4xf354BHm4s2JAtPd+6dikuKeqlarm4msnDcD9ikSSzfTCmGvoQ1Tkfa8Zl+g+arneOLwgBN+umtoxIsBXGLz/XfszWpHao06ToDZQ1ZHc01qw+bJNWNA4tzXYEVsn4zY7HNPaPEaVSwttKD0WmAdzbicPhU8pKzI3lx5rXP4LaQpWBCD9i0v0mM+P5JW70bhQbkR8do0asw4apgw1jv+q3FrN0eHLUbwg5oivWduRNYsskV0xHKSBgqH78n+o8HHe3XznQMYAQ==",
+          "thinking": "",
+          "type": "thinking"
+        },
+        {
+          "id": "toolu_01T9YHMKGYGBRwsKpTtGsu9f",
+          "caller": {
+            "type": "direct"
+          },
+          "input": {
+            "name_contains": "Top Stop"
+          },
+          "name": "search_establishments",
+          "type": "tool_use"
+        },
+        {
+          "id": "toolu_018fhw9M1rEZiWarjbw39R2K",
+          "caller": {
+            "type": "direct"
+          },
+          "input": {
+            "name_contains": "Kokopelli"
+          },
+          "name": "search_establishments",
+          "type": "tool_use"
+        }
+      ],
+      "tool_calls": [
+        {
+          "name": "search_establishments",
+          "args": {
+            "name_contains": "Top Stop"
+          },
+          "id": "toolu_01T9YHMKGYGBRwsKpTtGsu9f",
+          "type": "tool_call"
+        },
+        {
+          "name": "search_establishments",
+          "args": {
+            "name_contains": "Kokopelli"
+          },
+          "id": "toolu_018fhw9M1rEZiWarjbw39R2K",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 16148,
+        "output_tokens": 164,
+        "total_tokens": 16312,
+        "input_token_details": {
+          "cache_read": 0,
+          "cache_creation": 0,
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "output_token_details": {
+          "reasoning": 53
+        }
+      },
+      "model_name": "claude-sonnet-5"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 0, \"rows\": []}",
+      "tool_call_id": "toolu_01T9YHMKGYGBRwsKpTtGsu9f",
+      "name": "search_establishments"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 1, \"rows\": [{\"gmap_id\": \"0x875261c2b0e2108b:0xb6159cea1605ebaa\", \"name\": \"Kokopelli's koffee\", \"address\": \"Kokopelli's koffee, 3955 Highland Dr, Millcreek, UT 84124\", \"latitude\": 40.685779, \"longitude\": -111.84436, \"avg_rating\": 4.1, \"num_of_reviews\": 118, \"price\": \"$\", \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}]}",
+      "tool_call_id": "toolu_018fhw9M1rEZiWarjbw39R2K",
+      "name": "search_establishments"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [
+        {
+          "signature": "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",
+          "thinking": "",
+          "type": "thinking"
+        },
+        {
+          "id": "toolu_01X5rhrVapUHgwYhfZSSkpT1",
+          "caller": {
+            "type": "direct"
+          },
+          "input": {
+            "query": "\nWITH window_insp AS (\n  SELECT i.slchd_establishment_key, i.inspection_id, i.inspection_date,\n    CASE WHEN i.inspection_date >= DATE '2024-01-17' THEN 'recent' ELSE 'earlier' END AS period\n  FROM inspections i\n  WHERE i.inspection_date >= DATE '2021-07-17' AND i.inspection_date <= DATE '2026-07-17'\n),\ncrit AS (\n  SELECT w.slchd_establishment_key, w.period, w.inspection_id,\n    COUNT(*) FILTER (WHERE vc.critical) AS crit_count\n  FROM window_insp w\n  LEFT JOIN violations v ON v.inspection_id = w.inspection_id\n  LEFT JOIN violation_codes vc ON vc.violation_code_id = v.violation_code_id\n  GROUP BY w.slchd_establishment_key, w.period, w.inspection_id\n),\nagg AS (\n  SELECT slchd_establishment_key, period, SUM(crit_count)*1.0/COUNT(*) AS avg_crit, COUNT(*) AS num_inspections\n  FROM crit\n  GROUP BY slchd_establishment_key, period\n),\npiv AS (\n  SELECT slchd_establishment_key,\n    MAX(CASE WHEN period='earlier' THEN avg_crit END) AS earlier_avg,\n    MAX(CASE WHEN period='recent' THEN avg_crit END) AS recent_avg,\n    MAX(CASE WHEN period='earlier' THEN num_inspections END) AS earlier_insp,\n    MAX(CASE WHEN period='recent' THEN num_inspections END) AS recent_insp\n  FROM agg\n  GROUP BY slchd_establishment_key\n)\nSELECT ek.name || ' (' || ek.city || ')' AS restaurant, (p.recent_avg - p.earlier_avg) AS delta_rate\nFROM piv p\nJOIN establishment_keys ek ON ek.slchd_establishment_key = p.slchd_establishment_key\nWHERE p.earlier_insp >= 2 AND p.recent_insp >= 2\nORDER BY delta_rate DESC\nLIMIT 10\n",
+            "chart_type": "bar",
+            "x": "restaurant",
+            "y": "delta_rate",
+            "title": "Top 10 Restaurants: Increase in Avg Critical Violations per Inspection (2021-23 vs 2024-26)"
+          },
+          "name": "plot_chart",
+          "type": "tool_use"
+        },
+        {
+          "id": "toolu_01JKGxjLEpmxVNmA8Z8S4VeF",
+          "caller": {
+            "type": "direct"
+          },
+          "input": {
+            "query": "\nWITH window_insp AS (\n  SELECT i.slchd_establishment_key, i.inspection_id, i.inspection_date,\n    CASE WHEN i.inspection_date >= DATE '2024-01-17' THEN 'recent' ELSE 'earlier' END AS period\n  FROM inspections i\n  WHERE i.inspection_date >= DATE '2021-07-17' AND i.inspection_date <= DATE '2026-07-17'\n),\ncrit AS (\n  SELECT w.slchd_establishment_key, w.period, w.inspection_id,\n    COUNT(*) FILTER (WHERE vc.critical) AS crit_count\n  FROM window_insp w\n  LEFT JOIN violations v ON v.inspection_id = w.inspection_id\n  LEFT JOIN violation_codes vc ON vc.violation_code_id = v.violation_code_id\n  GROUP BY w.slchd_establishment_key, w.period, w.inspection_id\n),\nagg AS (\n  SELECT slchd_establishment_key, period, SUM(crit_count)*1.0/COUNT(*) AS avg_crit, COUNT(*) AS num_inspections\n  FROM crit\n  GROUP BY slchd_establishment_key, period\n),\npiv AS (\n  SELECT slchd_establishment_key,\n    MAX(CASE WHEN period='earlier' THEN avg_crit END) AS earlier_avg,\n    MAX(CASE WHEN period='recent' THEN avg_crit END) AS recent_avg,\n    MAX(CASE WHEN period='earlier' THEN num_inspections END) AS earlier_insp,\n    MAX(CASE WHEN period='recent' THEN num_inspections END) AS recent_insp\n  FROM agg\n  GROUP BY slchd_establishment_key\n)\nSELECT ek.name || ' (' || ek.city || ')' AS restaurant, (p.recent_avg - p.earlier_avg) AS delta_rate\nFROM piv p\nJOIN establishment_keys ek ON ek.slchd_establishment_key = p.slchd_establishment_key\nWHERE p.earlier_insp >= 2 AND p.recent_insp >= 2\nORDER BY delta_rate ASC\nLIMIT 10\n",
+            "chart_type": "bar",
+            "x": "restaurant",
+            "y": "delta_rate",
+            "title": "Top 10 Restaurants: Decrease in Avg Critical Violations per Inspection (2021-23 vs 2024-26)"
+          },
+          "name": "plot_chart",
+          "type": "tool_use"
+        },
+        {
+          "id": "toolu_01RwujsvSAtxAiMhmJr6CWc2",
+          "caller": {
+            "type": "direct"
+          },
+          "input": {
+            "query": "\nWITH window_insp AS (\n  SELECT i.slchd_establishment_key, i.inspection_id, i.inspection_date,\n    CASE WHEN i.inspection_date >= DATE '2024-01-17' THEN 'recent' ELSE 'earlier' END AS period\n  FROM inspections i\n  WHERE i.inspection_date >= DATE '2021-07-17' AND i.inspection_date <= DATE '2026-07-17'\n),\ncrit AS (\n  SELECT w.slchd_establishment_key, w.period, w.inspection_id,\n    COUNT(*) FILTER (WHERE vc.critical) AS crit_count\n  FROM window_insp w\n  LEFT JOIN violations v ON v.inspection_id = w.inspection_id\n  LEFT JOIN violation_codes vc ON vc.violation_code_id = v.violation_code_id\n  GROUP BY w.slchd_establishment_key, w.period, w.inspection_id\n),\nagg AS (\n  SELECT slchd_establishment_key, period, SUM(crit_count)*1.0/COUNT(*) AS avg_crit, COUNT(*) AS num_inspections\n  FROM crit\n  GROUP BY slchd_establishment_key, period\n),\npiv AS (\n  SELECT slchd_establishment_key,\n    MAX(CASE WHEN period='earlier' THEN avg_crit END) AS earlier_avg,\n    MAX(CASE WHEN period='recent' THEN avg_crit END) AS recent_avg,\n    MAX(CASE WHEN period='earlier' THEN num_inspections END) AS earlier_insp,\n    MAX(CASE WHEN period='recent' THEN num_inspections END) AS recent_insp\n  FROM agg\n  GROUP BY slchd_establishment_key\n)\nSELECT p.earlier_avg AS avg_crit_2021_2023, p.recent_avg AS avg_crit_2024_2026,\n  CASE WHEN p.recent_avg > p.earlier_avg THEN 'Increased'\n       WHEN p.recent_avg < p.earlier_avg THEN 'Decreased'\n       ELSE 'Unchanged' END AS trend\nFROM piv p\nWHERE p.earlier_insp >= 2 AND p.recent_insp >= 2\n",
+            "chart_type": "scatter",
+            "x": "avg_crit_2021_2023",
+            "y": "avg_crit_2024_2026",
+            "color": "trend",
+            "title": "Avg Critical Violations per Inspection: Earlier (2021-23) vs Recent (2024-26), All 659 Restaurants with Data in Both Periods"
+          },
+          "name": "plot_chart",
+          "type": "tool_use"
+        }
+      ],
+      "tool_calls": [
+        {
+          "name": "plot_chart",
+          "args": {
+            "query": "\nWITH window_insp AS (\n  SELECT i.slchd_establishment_key, i.inspection_id, i.inspection_date,\n    CASE WHEN i.inspection_date >= DATE '2024-01-17' THEN 'recent' ELSE 'earlier' END AS period\n  FROM inspections i\n  WHERE i.inspection_date >= DATE '2021-07-17' AND i.inspection_date <= DATE '2026-07-17'\n),\ncrit AS (\n  SELECT w.slchd_establishment_key, w.period, w.inspection_id,\n    COUNT(*) FILTER (WHERE vc.critical) AS crit_count\n  FROM window_insp w\n  LEFT JOIN violations v ON v.inspection_id = w.inspection_id\n  LEFT JOIN violation_codes vc ON vc.violation_code_id = v.violation_code_id\n  GROUP BY w.slchd_establishment_key, w.period, w.inspection_id\n),\nagg AS (\n  SELECT slchd_establishment_key, period, SUM(crit_count)*1.0/COUNT(*) AS avg_crit, COUNT(*) AS num_inspections\n  FROM crit\n  GROUP BY slchd_establishment_key, period\n),\npiv AS (\n  SELECT slchd_establishment_key,\n    MAX(CASE WHEN period='earlier' THEN avg_crit END) AS earlier_avg,\n    MAX(CASE WHEN period='recent' THEN avg_crit END) AS recent_avg,\n    MAX(CASE WHEN period='earlier' THEN num_inspections END) AS earlier_insp,\n    MAX(CASE WHEN period='recent' THEN num_inspections END) AS recent_insp\n  FROM agg\n  GROUP BY slchd_establishment_key\n)\nSELECT ek.name || ' (' || ek.city || ')' AS restaurant, (p.recent_avg - p.earlier_avg) AS delta_rate\nFROM piv p\nJOIN establishment_keys ek ON ek.slchd_establishment_key = p.slchd_establishment_key\nWHERE p.earlier_insp >= 2 AND p.recent_insp >= 2\nORDER BY delta_rate DESC\nLIMIT 10\n",
+            "chart_type": "bar",
+            "x": "restaurant",
+            "y": "delta_rate",
+            "title": "Top 10 Restaurants: Increase in Avg Critical Violations per Inspection (2021-23 vs 2024-26)"
+          },
+          "id": "toolu_01X5rhrVapUHgwYhfZSSkpT1",
+          "type": "tool_call"
+        },
+        {
+          "name": "plot_chart",
+          "args": {
+            "query": "\nWITH window_insp AS (\n  SELECT i.slchd_establishment_key, i.inspection_id, i.inspection_date,\n    CASE WHEN i.inspection_date >= DATE '2024-01-17' THEN 'recent' ELSE 'earlier' END AS period\n  FROM inspections i\n  WHERE i.inspection_date >= DATE '2021-07-17' AND i.inspection_date <= DATE '2026-07-17'\n),\ncrit AS (\n  SELECT w.slchd_establishment_key, w.period, w.inspection_id,\n    COUNT(*) FILTER (WHERE vc.critical) AS crit_count\n  FROM window_insp w\n  LEFT JOIN violations v ON v.inspection_id = w.inspection_id\n  LEFT JOIN violation_codes vc ON vc.violation_code_id = v.violation_code_id\n  GROUP BY w.slchd_establishment_key, w.period, w.inspection_id\n),\nagg AS (\n  SELECT slchd_establishment_key, period, SUM(crit_count)*1.0/COUNT(*) AS avg_crit, COUNT(*) AS num_inspections\n  FROM crit\n  GROUP BY slchd_establishment_key, period\n),\npiv AS (\n  SELECT slchd_establishment_key,\n    MAX(CASE WHEN period='earlier' THEN avg_crit END) AS earlier_avg,\n    MAX(CASE WHEN period='recent' THEN avg_crit END) AS recent_avg,\n    MAX(CASE WHEN period='earlier' THEN num_inspections END) AS earlier_insp,\n    MAX(CASE WHEN period='recent' THEN num_inspections END) AS recent_insp\n  FROM agg\n  GROUP BY slchd_establishment_key\n)\nSELECT ek.name || ' (' || ek.city || ')' AS restaurant, (p.recent_avg - p.earlier_avg) AS delta_rate\nFROM piv p\nJOIN establishment_keys ek ON ek.slchd_establishment_key = p.slchd_establishment_key\nWHERE p.earlier_insp >= 2 AND p.recent_insp >= 2\nORDER BY delta_rate ASC\nLIMIT 10\n",
+            "chart_type": "bar",
+            "x": "restaurant",
+            "y": "delta_rate",
+            "title": "Top 10 Restaurants: Decrease in Avg Critical Violations per Inspection (2021-23 vs 2024-26)"
+          },
+          "id": "toolu_01JKGxjLEpmxVNmA8Z8S4VeF",
+          "type": "tool_call"
+        },
+        {
+          "name": "plot_chart",
+          "args": {
+            "query": "\nWITH window_insp AS (\n  SELECT i.slchd_establishment_key, i.inspection_id, i.inspection_date,\n    CASE WHEN i.inspection_date >= DATE '2024-01-17' THEN 'recent' ELSE 'earlier' END AS period\n  FROM inspections i\n  WHERE i.inspection_date >= DATE '2021-07-17' AND i.inspection_date <= DATE '2026-07-17'\n),\ncrit AS (\n  SELECT w.slchd_establishment_key, w.period, w.inspection_id,\n    COUNT(*) FILTER (WHERE vc.critical) AS crit_count\n  FROM window_insp w\n  LEFT JOIN violations v ON v.inspection_id = w.inspection_id\n  LEFT JOIN violation_codes vc ON vc.violation_code_id = v.violation_code_id\n  GROUP BY w.slchd_establishment_key, w.period, w.inspection_id\n),\nagg AS (\n  SELECT slchd_establishment_key, period, SUM(crit_count)*1.0/COUNT(*) AS avg_crit, COUNT(*) AS num_inspections\n  FROM crit\n  GROUP BY slchd_establishment_key, period\n),\npiv AS (\n  SELECT slchd_establishment_key,\n    MAX(CASE WHEN period='earlier' THEN avg_crit END) AS earlier_avg,\n    MAX(CASE WHEN period='recent' THEN avg_crit END) AS recent_avg,\n    MAX(CASE WHEN period='earlier' THEN num_inspections END) AS earlier_insp,\n    MAX(CASE WHEN period='recent' THEN num_inspections END) AS recent_insp\n  FROM agg\n  GROUP BY slchd_establishment_key\n)\nSELECT p.earlier_avg AS avg_crit_2021_2023, p.recent_avg AS avg_crit_2024_2026,\n  CASE WHEN p.recent_avg > p.earlier_avg THEN 'Increased'\n       WHEN p.recent_avg < p.earlier_avg THEN 'Decreased'\n       ELSE 'Unchanged' END AS trend\nFROM piv p\nWHERE p.earlier_insp >= 2 AND p.recent_insp >= 2\n",
+            "chart_type": "scatter",
+            "x": "avg_crit_2021_2023",
+            "y": "avg_crit_2024_2026",
+            "color": "trend",
+            "title": "Avg Critical Violations per Inspection: Earlier (2021-23) vs Recent (2024-26), All 659 Restaurants with Data in Both Periods"
+          },
+          "id": "toolu_01RwujsvSAtxAiMhmJr6CWc2",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 16603,
+        "output_tokens": 3386,
+        "total_tokens": 19989,
+        "input_token_details": {
+          "cache_read": 0,
+          "cache_creation": 0,
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "output_token_details": {
+          "reasoning": 441
+        }
+      },
+      "model_name": "claude-sonnet-5"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "Chart created: 'Top 10 Restaurants: Increase in Avg Critical Violations per Inspection (2021-23 vs 2024-26)' (bar, 10 rows). It will be shown to the user below your answer.",
+      "tool_call_id": "toolu_01X5rhrVapUHgwYhfZSSkpT1",
+      "name": "plot_chart"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "Chart created: 'Top 10 Restaurants: Decrease in Avg Critical Violations per Inspection (2021-23 vs 2024-26)' (bar, 10 rows). It will be shown to the user below your answer.",
+      "tool_call_id": "toolu_01JKGxjLEpmxVNmA8Z8S4VeF",
+      "name": "plot_chart"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "Chart created: 'Avg Critical Violations per Inspection: Earlier (2021-23) vs Recent (2024-26), All 659 Restaurants with Data in Both Periods' (scatter, 659 rows). It will be shown to the user below your answer.",
+      "tool_call_id": "toolu_01RwujsvSAtxAiMhmJr6CWc2",
+      "name": "plot_chart"
+    },
+    {
+      "type": "AIMessage",
+      "content": "## Critical Violation Trend Analysis \u2014 Last 5 Years (2021\u201107\u201117 \u2192 2026\u201107\u201117*)\n\n*\\*The most recent inspection date in the data is 2026\u201107\u201117, so I used that as the anchor and split the 5\u2011year window into an \"earlier\" half (2021\u201107\u201117\u20132024\u201101\u201117) and a \"recent\" half (2024\u201101\u201117\u20132026\u201107\u201117), comparing average critical violations **per inspection** in each half (not raw totals) \u2014 raw totals are misleading here because the recent half actually contains more inspections overall (3,470 vs 2,156) across more establishments (1,312 vs 907), so a rate-based comparison is the fair way to detect real trend direction.*\n\n**Important caveat on grounding:** this analysis draws from the SLCHD inspection tables (`establishment_keys`/`inspections`/`violations`), which are only linked to Google-mapped listings (`establishments`) for **1.6%** of restaurants overall. When I tried to pin the top trending names (e.g., \"Top Stop #C-23\", \"Kokopelli's Koffee House\") onto the map via `search_establishments`, most had no `slchd_establishment_key` match to a Google listing, so they can't be shown as pins on the interactive map \u2014 the numbers below come directly from the inspection records themselves.\n\n### Findings\nRestricting to the 659 establishments with at least 2 inspections in **both** halves (enough data to call a real trend):\n- **187 restaurants got worse** (higher avg. critical violations/inspection recently)\n- **356 restaurants improved** (lower avg. critical violations/inspection recently)\n- **116 were unchanged**\n\n**Most worsened** (biggest rate increase): Top Stop #C\u201123 (SLC, 0.5\u21924.0 crit/inspection), Arivo Cafe (Kearns, 0\u21922.4), Manolis (SLC, 1.3\u21923.7), Wendy's #6098 (West Jordan, 0.7\u21922.75), Garden Espresso (Murray, 1.3\u21923.3).\n\n**Most improved** (biggest rate decrease): Kokopelli's Koffee House (Holladay, 5.5\u21921.0), Cafe Rio \u2013 West Valley City (5.7\u21921.2), Jersey Mike's Subs \u2013 Herriman (5.75\u21921.4), Rancheritos Draper (6.2\u21922.3), Navajo Hogan (South Salt Lake, 4.4\u21920.67).\n\nThe scatter plot shows all 659 restaurants plotted by earlier-period vs. recent-period rate \u2014 points below the diagonal improved, points above worsened, confirming decreases (356) outnumber increases (187) overall, i.e. more restaurants trended toward better food-safety compliance than worse over this window.",
+      "tool_calls": [],
+      "usage_metadata": {
+        "input_tokens": 20311,
+        "output_tokens": 927,
+        "total_tokens": 21238,
+        "input_token_details": {
+          "cache_read": 0,
+          "cache_creation": 0,
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "output_token_details": {
+          "reasoning": 0
+        }
+      },
+      "model_name": "claude-sonnet-5"
+    }
+  ],
+  "charts": [
+    {
+      "data": [
+        {
+          "domain": {
+            "x": [
+              0.0,
+              1.0
+            ],
+            "y": [
+              0.0,
+              1.0
+            ]
+          },
+          "hovertemplate": "trend=%{label}<br>num_establishments=%{value}<extra></extra>",
+          "labels": [
+            "Increased",
+            "Unchanged",
+            "Decreased"
+          ],
+          "legendgroup": "",
+          "name": "",
+          "showlegend": true,
+          "values": {
+            "dtype": "i2",
+            "bdata": "uwB0AGQB"
+          },
+          "type": "pie"
+        }
+      ],
+      "layout": {
+        "template": {
+          "data": {
+            "candlestick": [
+              {
+                "decreasing": {
+                  "line": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "line": {
+                    "color": "#000032"
+                  }
+                },
+                "type": "candlestick"
+              }
+            ],
+            "contourcarpet": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contourcarpet"
+              }
+            ],
+            "contour": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contour"
+              }
+            ],
+            "heatmap": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "heatmap"
+              }
+            ],
+            "histogram2d": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "histogram2d"
+              }
+            ],
+            "icicle": [
+              {
+                "textfont": {
+                  "color": "white"
+                },
+                "type": "icicle"
+              }
+            ],
+            "sankey": [
+              {
+                "textfont": {
+                  "color": "#000036"
+                },
+                "type": "sankey"
+              }
+            ],
+            "scatter": [
+              {
+                "marker": {
+                  "line": {
+                    "width": 0
+                  }
+                },
+                "type": "scatter"
+              }
+            ],
+            "table": [
+              {
+                "cells": {
+                  "fill": {
+                    "color": "#000038"
+                  },
+                  "font": {
+                    "color": "#000037"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "header": {
+                  "fill": {
+                    "color": "#000040"
+                  },
+                  "font": {
+                    "color": "#000036"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "type": "table"
+              }
+            ],
+            "waterfall": [
+              {
+                "connector": {
+                  "line": {
+                    "color": "#000036",
+                    "width": 2
+                  }
+                },
+                "decreasing": {
+                  "marker": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "marker": {
+                    "color": "#000032"
+                  }
+                },
+                "totals": {
+                  "marker": {
+                    "color": "#000034"
+                  }
+                },
+                "type": "waterfall"
+              }
+            ]
+          },
+          "layout": {
+            "coloraxis": {
+              "colorscale": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorscale": {
+              "diverging": [
+                [
+                  0.0,
+                  "#000021"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000022"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000023"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000024"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000025"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000026"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000027"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000028"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000029"
+                ],
+                [
+                  1.0,
+                  "#000030"
+                ]
+              ],
+              "sequential": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ],
+              "sequentialminus": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorway": [
+              "#000001",
+              "#000002",
+              "#000003",
+              "#000004",
+              "#000005",
+              "#000006",
+              "#000007",
+              "#000008",
+              "#000009",
+              "#000010"
+            ]
+          }
+        },
+        "legend": {
+          "tracegroupgap": 0
+        },
+        "title": {
+          "text": "Share of Restaurants: Critical Violation Rate Trend (Earlier 2021-2023 vs Recent 2024-2026)"
+        }
+      }
+    },
+    {
+      "data": [
+        {
+          "hovertemplate": "trend=Decreased<br>avg_crit_2021_2023=%{x}<br>avg_crit_2024_2026=%{y}<extra></extra>",
+          "legendgroup": "Decreased",
+          "marker": {
+            "color": "#000001",
+            "symbol": "circle"
+          },
+          "mode": "markers",
+          "name": "Decreased",
+          "orientation": "v",
+          "showlegend": true,
+          "x": {
+            "dtype": "f8",
+            "bdata": "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"
+          },
+          "xaxis": "x",
+          "y": {
+            "dtype": "f8",
+            "bdata": "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"
+          },
+          "yaxis": "y",
+          "type": "scatter"
+        },
+        {
+          "hovertemplate": "trend=Increased<br>avg_crit_2021_2023=%{x}<br>avg_crit_2024_2026=%{y}<extra></extra>",
+          "legendgroup": "Increased",
+          "marker": {
+            "color": "#000002",
+            "symbol": "circle"
+          },
+          "mode": "markers",
+          "name": "Increased",
+          "orientation": "v",
+          "showlegend": true,
+          "x": {
+            "dtype": "f8",
+            "bdata": "AAAAAAAAAAAAAAAAAADgPwAAAAAAAAAAAAAAAAAA8D9VVVVVVVUFQAAAAAAAAPA/VVVVVVVV9T8AAAAAAADoPwAAAAAAAOA/AAAAAAAA4D8AAAAAAAD8PwAAAAAAAOA/AAAAAAAA9D8AAAAAAAAAAAAAAAAAAOA/AAAAAAAA4D8AAAAAAADgP1VVVVVVVdU/AAAAAAAAAAAAAAAAAADgP1VVVVVVVeU/AAAAAAAA8D8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD4P1VVVVVVVdU/AAAAAAAABEDNzMzMzMz8PwAAAAAAAPA/AAAAAAAA0D9VVVVVVVXlPwAAAAAAANA/VVVVVVVVDUAAAAAAAADQP1VVVVVVVdU/AAAAAAAAEEAAAAAAAADwP1VVVVVVVeU/AAAAAAAAAACrqqqqqqr6P1VVVVVVVdU/AAAAAAAAAEBVVVVVVVXlP1VVVVVVVdU/AAAAAAAA4D8AAAAAAADwP6uqqqqqqvo/AAAAAAAA8D8AAAAAAADwPwAAAAAAAAAAAAAAAAAA4D8AAAAAAADwP1VVVVVVVeU/AAAAAAAAAAAAAAAAAAAAAFVVVVVVVdU/AAAAAAAAAABVVVVVVVXFPwAAAAAAAARAAAAAAAAAAAAAAAAAAADgPwAAAAAAAOA/AAAAAAAAAAAAAAAAAAD4PwAAAAAAAAAAAAAAAAAA4D8AAAAAAADgPwAAAAAAAAAAVVVVVVVV5T+amZmZmZn5PwAAAAAAANA/AAAAAAAA4D9VVVVVVVXlPwAAAAAAAOg/AAAAAAAA4D8AAAAAAADgPwAAAAAAAPA/AAAAAAAA4D9VVVVVVVXlPwAAAAAAAOA/AAAAAAAA4D8AAAAAAAAAAAAAAAAAAOg/mpmZmZmZ2T8AAAAAAAAAAAAAAAAAAAAAAAAAAAAA8D8AAAAAAADQP1VVVVVVVQVAAAAAAAAA8D9VVVVVVVXVPwAAAAAAAOA/AAAAAAAA4D9VVVVVVVXVPwAAAAAAANA/AAAAAAAACEAAAAAAAAAAAAAAAAAAAPA/AAAAAAAA4D9VVVVVVVX1P2ZmZmZmZvY/AAAAAAAA4D8AAAAAAADgPwAAAAAAAAAAVVVVVVVV5T8AAAAAAAD4PwAAAAAAAAAAVVVVVVVV5T8AAAAAAADgPwAAAAAAAPA/AAAAAAAAFEAAAAAAAAAAAAAAAAAAAOA/VVVVVVVV1T8AAAAAAAAAAAAAAAAAAAAAAAAAAAAA8D9VVVVVVVXVPwAAAAAAAAAAAAAAAAAA4D8AAAAAAADQPwAAAAAAAARAAAAAAAAAAABmZmZmZmb2PwAAAAAAAAAAq6qqqqqq+j8AAAAAAAAAAAAAAAAAAAAAAAAAAAAA0D8AAAAAAADoPwAAAAAAAAAAAAAAAAAA8D8AAAAAAADgPwAAAAAAAPA/AAAAAAAA0D9VVVVVVVX1P6uqqqqqqvo/AAAAAAAA4D8AAAAAAADwPwAAAAAAAOA/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAPg/AAAAAAAAAEAAAAAAAADwPwAAAAAAAAhAAAAAAAAA/D+rqqqqqqoCQKuqqqqqqvo/AAAAAAAA8D8AAAAAAADgP1VVVVVVVeU/AAAAAAAA8D9VVVVVVVXlPwAAAAAAAOA/AAAAAAAA4D8AAAAAAAAAAKuqqqqqqvo/VVVVVVVV5T8AAAAAAADgPwAAAAAAAPA/VVVVVVVV1T8AAAAAAAAEQAAAAAAAAAAAAAAAAAAA+D9VVVVVVVXlPwAAAAAAAAAAAAAAAAAAAAAAAAAAAADwPwAAAAAAAOA/AAAAAAAA8D8zMzMzMzPzP1VVVVVVVeU/AAAAAAAA+D8AAAAAAAAIQAAAAAAAAPg/VVVVVVVV1T9VVVVVVVX1P1VVVVVVVdU/AAAAAAAACEAAAAAAAADwPwAAAAAAAAAAAAAAAAAA8D8AAAAAAADgPwAAAAAAAABAVVVVVVVV5T8="
+          },
+          "xaxis": "x",
+          "y": {
+            "dtype": "f8",
+            "bdata": "VVVVVVVV1T8AAAAAAADoPwAAAAAAAPA/VVVVVVVV9T8AAAAAAAAKQAAAAAAAAPQ/AAAAAAAA+D8AAAAAAAD4PwAAAAAAAPA/AAAAAAAA8D8AAAAAAAAAQAAAAAAAAABAAAAAAAAAAECamZmZmZnJPwAAAAAAAPA/AAAAAAAA8D8AAAAAAADwP5qZmZmZmek/AAAAAAAA4D8AAAAAAADwPwAAAAAAAPg/AAAAAAAAAEAAAAAAAADwP6uqqqqqqvI/AAAAAAAA6D8AAAAAAAD8PwAAAAAAAOA/ZmZmZmZmBkCamZmZmZkBQAAAAAAAAPg/VVVVVVVV9T8AAAAAAAD4PzMzMzMzM+M/AAAAAAAAE0AAAAAAAADwPwAAAAAAAPA/AAAAAAAAEUCrqqqqqqr6PwAAAAAAAPg/VVVVVVVV5T9VVVVVVVUFQAAAAAAAAPg/q6qqqqqqCkAAAAAAAADwPwAAAAAAAPg/q6qqqqqq8j8AAAAAAAD8PwAAAAAAAABAVVVVVVVV9T+rqqqqqqoCQDMzMzMzMwNAAAAAAAAABECSJEmSJEkCQAAAAAAAAAZAAAAAAAAA8D8AAAAAAADwPwAAAAAAAPA/AAAAAAAA8D8AAAAAAADgP1VVVVVVVQlAAAAAAAAA8D9VVVVVVVXlP1VVVVVVVeU/VVVVVVVV9T+rqqqqqqr6PwAAAAAAAPA/AAAAAAAAEEAAAAAAAADwPwAAAAAAAPA/AAAAAAAA6D8AAAAAAAD8P1VVVVVVVdU/AAAAAAAA8D8AAAAAAADoPwAAAAAAAPA/AAAAAAAA/D8AAAAAAAD4PwAAAAAAAABAAAAAAAAA+D+rqqqqqqr6PwAAAAAAAPg/AAAAAAAA8D8AAAAAAADgP6uqqqqqquo/MzMzMzMz4z+amZmZmZnZPwAAAAAAAPA/AAAAAAAA+D8AAAAAAAD4PwAAAAAAAAhAAAAAAAAAAEAAAAAAAADgP1VVVVVVVeU/AAAAAAAA6D8AAAAAAAD4PwAAAAAAAOg/AAAAAAAAEEBVVVVVVVXlP5qZmZmZmfk/AAAAAAAA8D+rqqqqqqoKQAAAAAAAAPg/AAAAAAAA+D8AAAAAAADwPwAAAAAAAPA/AAAAAAAA8D+rqqqqqqr6P1VVVVVVVeU/AAAAAAAAAEAAAAAAAAAEQAAAAAAAAPQ/AAAAAAAAGEBVVVVVVVXVPwAAAAAAAPA/AAAAAAAAAECamZmZmZnZPwAAAAAAANA/AAAAAAAA+D8zMzMzMzPjPwAAAAAAAPg/q6qqqqqq+j9VVVVVVVXlPwAAAAAAAAhAVVVVVVVV1T8AAAAAAAAAQAAAAAAAANA/AAAAAAAAAEBVVVVVVVXVPwAAAAAAAABAmpmZmZmZ6T8AAAAAAADwPwAAAAAAAOA/AAAAAAAA9D8AAAAAAADoP1VVVVVVVfU/AAAAAAAA6D8AAAAAAAD4PwAAAAAAAARAAAAAAAAA8D8AAAAAAAD4PwAAAAAAAPA/VVVVVVVV1T8AAAAAAADwP1VVVVVVVQVAq6qqqqqqAkAAAAAAAAAAQAAAAAAAABBAAAAAAAAACEAzMzMzMzMDQAAAAAAAAAJAAAAAAAAAAEAAAAAAAADwP1VVVVVVVfU/VVVVVVVV9T+rqqqqqqr6P1VVVVVVVfU/VVVVVVVV5T8AAAAAAADwP83MzMzMzPw/AAAAAAAA8D9VVVVVVVXlPwAAAAAAAPg/JUmSJEmS9D9VVVVVVVUFQFVVVVVVVeU/AAAAAAAAAEAAAAAAAADoP1VVVVVVVeU/AAAAAAAA8D8AAAAAAAD4PwAAAAAAAPA/AAAAAAAA9D8zMzMzMzMDQKuqqqqqqvo/VVVVVVVVBUCrqqqqqqoKQAAAAAAAAABAVVVVVVVV9T9VVVVVVVUNQAAAAAAAAOA/AAAAAAAADEAAAAAAAAD4P1VVVVVVVeU/AAAAAAAAAEAAAAAAAADwPwAAAAAAAAhAAAAAAAAA+D8="
+          },
+          "yaxis": "y",
+          "type": "scatter"
+        },
+        {
+          "hovertemplate": "trend=Unchanged<br>avg_crit_2021_2023=%{x}<br>avg_crit_2024_2026=%{y}<extra></extra>",
+          "legendgroup": "Unchanged",
+          "marker": {
+            "color": "#000003",
+            "symbol": "circle"
+          },
+          "mode": "markers",
+          "name": "Unchanged",
+          "orientation": "v",
+          "showlegend": true,
+          "x": {
+            "dtype": "f8",
+            "bdata": "q6qqqqqq+j8AAAAAAADgPwAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAAAAAAAAAAPA/AAAAAAAAAEAAAAAAAAAAAAAAAAAAAOA/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAOA/AAAAAAAAAEAAAAAAAADwPwAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAQFVVVVVVVeU/VVVVVVVV9T8AAAAAAAAAAGZmZmZmZvY/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA4D+rqqqqqqr6PwAAAAAAAAAAVVVVVVVV5T8AAAAAAADwPwAAAAAAAAAAAAAAAAAAAAAAAAAAAADwPwAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/AAAAAAAA8D8AAAAAAADgPwAAAAAAAOA/AAAAAAAA4D8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/AAAAAAAA8D8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/AAAAAAAA8D8AAAAAAADwPwAAAAAAAAAAq6qqqqqq+j8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAPg/AAAAAAAA8D8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAAAAAAAAAAOA/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAOA/AAAAAAAA6D8AAAAAAADwPwAAAAAAAOA/AAAAAAAAAAAAAAAAAADwPwAAAAAAAAAAAAAAAAAAAAAAAAAAAADwPwAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwPwAAAAAAAABAAAAAAAAAAAAAAAAAAADwPwAAAAAAAOA/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAARAAAAAAAAAAAAAAAAAAADwPwAAAAAAAAAAAAAAAAAAAAAAAAAAAADgPwAAAAAAAAAAAAAAAAAA4D8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwPwAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAAA=="
+          },
+          "xaxis": "x",
+          "y": {
+            "dtype": "f8",
+            "bdata": "q6qqqqqq+j8AAAAAAADgPwAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAAAAAAAAAAPA/AAAAAAAAAEAAAAAAAAAAAAAAAAAAAOA/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAOA/AAAAAAAAAEAAAAAAAADwPwAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAQFVVVVVVVeU/VVVVVVVV9T8AAAAAAAAAAGZmZmZmZvY/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA4D+rqqqqqqr6PwAAAAAAAAAAVVVVVVVV5T8AAAAAAADwPwAAAAAAAAAAAAAAAAAAAAAAAAAAAADwPwAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/AAAAAAAA8D8AAAAAAADgPwAAAAAAAOA/AAAAAAAA4D8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/AAAAAAAA8D8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/AAAAAAAA8D8AAAAAAADwPwAAAAAAAAAAq6qqqqqq+j8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAPg/AAAAAAAA8D8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAAAAAAAAAAOA/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAOA/AAAAAAAA6D8AAAAAAADwPwAAAAAAAOA/AAAAAAAAAAAAAAAAAADwPwAAAAAAAAAAAAAAAAAAAAAAAAAAAADwPwAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwPwAAAAAAAABAAAAAAAAAAAAAAAAAAADwPwAAAAAAAOA/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAARAAAAAAAAAAAAAAAAAAADwPwAAAAAAAAAAAAAAAAAAAAAAAAAAAADgPwAAAAAAAAAAAAAAAAAA4D8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwPwAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAAA=="
+          },
+          "yaxis": "y",
+          "type": "scatter"
+        }
+      ],
+      "layout": {
+        "template": {
+          "data": {
+            "candlestick": [
+              {
+                "decreasing": {
+                  "line": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "line": {
+                    "color": "#000032"
+                  }
+                },
+                "type": "candlestick"
+              }
+            ],
+            "contourcarpet": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contourcarpet"
+              }
+            ],
+            "contour": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contour"
+              }
+            ],
+            "heatmap": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "heatmap"
+              }
+            ],
+            "histogram2d": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "histogram2d"
+              }
+            ],
+            "icicle": [
+              {
+                "textfont": {
+                  "color": "white"
+                },
+                "type": "icicle"
+              }
+            ],
+            "sankey": [
+              {
+                "textfont": {
+                  "color": "#000036"
+                },
+                "type": "sankey"
+              }
+            ],
+            "scatter": [
+              {
+                "marker": {
+                  "line": {
+                    "width": 0
+                  }
+                },
+                "type": "scatter"
+              }
+            ],
+            "table": [
+              {
+                "cells": {
+                  "fill": {
+                    "color": "#000038"
+                  },
+                  "font": {
+                    "color": "#000037"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "header": {
+                  "fill": {
+                    "color": "#000040"
+                  },
+                  "font": {
+                    "color": "#000036"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "type": "table"
+              }
+            ],
+            "waterfall": [
+              {
+                "connector": {
+                  "line": {
+                    "color": "#000036",
+                    "width": 2
+                  }
+                },
+                "decreasing": {
+                  "marker": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "marker": {
+                    "color": "#000032"
+                  }
+                },
+                "totals": {
+                  "marker": {
+                    "color": "#000034"
+                  }
+                },
+                "type": "waterfall"
+              }
+            ]
+          },
+          "layout": {
+            "coloraxis": {
+              "colorscale": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorscale": {
+              "diverging": [
+                [
+                  0.0,
+                  "#000021"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000022"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000023"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000024"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000025"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000026"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000027"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000028"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000029"
+                ],
+                [
+                  1.0,
+                  "#000030"
+                ]
+              ],
+              "sequential": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ],
+              "sequentialminus": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorway": [
+              "#000001",
+              "#000002",
+              "#000003",
+              "#000004",
+              "#000005",
+              "#000006",
+              "#000007",
+              "#000008",
+              "#000009",
+              "#000010"
+            ]
+          }
+        },
+        "xaxis": {
+          "anchor": "y",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "avg_crit_2021_2023"
+          }
+        },
+        "yaxis": {
+          "anchor": "x",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "avg_crit_2024_2026"
+          }
+        },
+        "legend": {
+          "title": {
+            "text": "trend"
+          },
+          "tracegroupgap": 0
+        },
+        "title": {
+          "text": "Avg Critical Violations per Inspection: Earlier (2021-23) vs Recent (2024-26), All 659 Restaurants with Data in Both Periods"
+        }
+      }
+    },
+    {
+      "data": [
+        {
+          "hovertemplate": "restaurant=%{x}<br>delta_rate=%{y}<extra></extra>",
+          "legendgroup": "",
+          "marker": {
+            "color": "#000001",
+            "pattern": {
+              "shape": ""
+            }
+          },
+          "name": "",
+          "orientation": "v",
+          "showlegend": false,
+          "textposition": "auto",
+          "x": [
+            "TOP STOP #C-23 (SALT LAKE CITY)",
+            "ARIVO CAFE (KEARNS)",
+            "MANOLIS (SALT LAKE CITY)",
+            "WENDYS #6098 (WEST JORDAN)",
+            "APPLEBEES WEST VALLEY (WEST VALLEY CITY)",
+            "GOOD2GO STORES (HERRIMAN)",
+            "GARDEN ESPRESSO (MURRAY)",
+            "U OF U RICE ECCLES STADIUM - 35S (SALT LAKE CITY)",
+            "TARGET T1751 STARBUCKS (COTTONWOOD HEIGHTS)",
+            "ARBYS #8541 (MIDVALE)"
+          ],
+          "xaxis": "x",
+          "y": {
+            "dtype": "f8",
+            "bdata": "AAAAAAAADEAzMzMzMzMDQKqqqqqqqgJAq6qqqqqqAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQKuqqqqqqvo/AAAAAAAA+D8="
+          },
+          "yaxis": "y",
+          "type": "bar"
+        }
+      ],
+      "layout": {
+        "template": {
+          "data": {
+            "candlestick": [
+              {
+                "decreasing": {
+                  "line": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "line": {
+                    "color": "#000032"
+                  }
+                },
+                "type": "candlestick"
+              }
+            ],
+            "contourcarpet": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contourcarpet"
+              }
+            ],
+            "contour": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contour"
+              }
+            ],
+            "heatmap": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "heatmap"
+              }
+            ],
+            "histogram2d": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "histogram2d"
+              }
+            ],
+            "icicle": [
+              {
+                "textfont": {
+                  "color": "white"
+                },
+                "type": "icicle"
+              }
+            ],
+            "sankey": [
+              {
+                "textfont": {
+                  "color": "#000036"
+                },
+                "type": "sankey"
+              }
+            ],
+            "scatter": [
+              {
+                "marker": {
+                  "line": {
+                    "width": 0
+                  }
+                },
+                "type": "scatter"
+              }
+            ],
+            "table": [
+              {
+                "cells": {
+                  "fill": {
+                    "color": "#000038"
+                  },
+                  "font": {
+                    "color": "#000037"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "header": {
+                  "fill": {
+                    "color": "#000040"
+                  },
+                  "font": {
+                    "color": "#000036"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "type": "table"
+              }
+            ],
+            "waterfall": [
+              {
+                "connector": {
+                  "line": {
+                    "color": "#000036",
+                    "width": 2
+                  }
+                },
+                "decreasing": {
+                  "marker": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "marker": {
+                    "color": "#000032"
+                  }
+                },
+                "totals": {
+                  "marker": {
+                    "color": "#000034"
+                  }
+                },
+                "type": "waterfall"
+              }
+            ]
+          },
+          "layout": {
+            "coloraxis": {
+              "colorscale": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorscale": {
+              "diverging": [
+                [
+                  0.0,
+                  "#000021"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000022"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000023"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000024"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000025"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000026"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000027"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000028"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000029"
+                ],
+                [
+                  1.0,
+                  "#000030"
+                ]
+              ],
+              "sequential": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ],
+              "sequentialminus": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorway": [
+              "#000001",
+              "#000002",
+              "#000003",
+              "#000004",
+              "#000005",
+              "#000006",
+              "#000007",
+              "#000008",
+              "#000009",
+              "#000010"
+            ]
+          }
+        },
+        "xaxis": {
+          "anchor": "y",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "restaurant"
+          }
+        },
+        "yaxis": {
+          "anchor": "x",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "delta_rate"
+          }
+        },
+        "legend": {
+          "tracegroupgap": 0
+        },
+        "title": {
+          "text": "Top 10 Restaurants: Increase in Avg Critical Violations per Inspection (2021-23 vs 2024-26)"
+        },
+        "barmode": "relative"
+      }
+    },
+    {
+      "data": [
+        {
+          "hovertemplate": "restaurant=%{x}<br>delta_rate=%{y}<extra></extra>",
+          "legendgroup": "",
+          "marker": {
+            "color": "#000001",
+            "pattern": {
+              "shape": ""
+            }
+          },
+          "name": "",
+          "orientation": "v",
+          "showlegend": false,
+          "textposition": "auto",
+          "x": [
+            "KOKOPELLIS KOFFEE HOUSE (HOLLADAY)",
+            "CAFE RIO (WEST VALLEY CITY)",
+            "JERSEY MIKES SUBS (HERRIMAN)",
+            "RANCHERITOS DRAPER (DRAPER)",
+            "NAVAJO HOGAN (SOUTH SALT LAKE)",
+            "COSTA VIDA GATEWAY (SALT LAKE CITY)",
+            "SEVEN ELEVEN #12957A (MIDVALE)",
+            "SEVEN ELEVEN #41131A (MAGNA)",
+            "SEVEN ELEVEN STORE #23850C (MURRAY)",
+            "BAMBARA/HOTEL MONACO MAIN KITCHEN (SALT LAKE CITY)"
+          ],
+          "xaxis": "x",
+          "y": {
+            "dtype": "f8",
+            "bdata": "AAAAAAAAEsDe3d3d3d0RwGZmZmZmZhHA7+7u7u7uDsDf3d3d3d0NwFZVVVVVVQ3Aq6qqqqqqDMAAAAAAAAAMwKyqqqqqqgrAqqqqqqqqCsA="
+          },
+          "yaxis": "y",
+          "type": "bar"
+        }
+      ],
+      "layout": {
+        "template": {
+          "data": {
+            "candlestick": [
+              {
+                "decreasing": {
+                  "line": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "line": {
+                    "color": "#000032"
+                  }
+                },
+                "type": "candlestick"
+              }
+            ],
+            "contourcarpet": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contourcarpet"
+              }
+            ],
+            "contour": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contour"
+              }
+            ],
+            "heatmap": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "heatmap"
+              }
+            ],
+            "histogram2d": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "histogram2d"
+              }
+            ],
+            "icicle": [
+              {
+                "textfont": {
+                  "color": "white"
+                },
+                "type": "icicle"
+              }
+            ],
+            "sankey": [
+              {
+                "textfont": {
+                  "color": "#000036"
+                },
+                "type": "sankey"
+              }
+            ],
+            "scatter": [
+              {
+                "marker": {
+                  "line": {
+                    "width": 0
+                  }
+                },
+                "type": "scatter"
+              }
+            ],
+            "table": [
+              {
+                "cells": {
+                  "fill": {
+                    "color": "#000038"
+                  },
+                  "font": {
+                    "color": "#000037"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "header": {
+                  "fill": {
+                    "color": "#000040"
+                  },
+                  "font": {
+                    "color": "#000036"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "type": "table"
+              }
+            ],
+            "waterfall": [
+              {
+                "connector": {
+                  "line": {
+                    "color": "#000036",
+                    "width": 2
+                  }
+                },
+                "decreasing": {
+                  "marker": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "marker": {
+                    "color": "#000032"
+                  }
+                },
+                "totals": {
+                  "marker": {
+                    "color": "#000034"
+                  }
+                },
+                "type": "waterfall"
+              }
+            ]
+          },
+          "layout": {
+            "coloraxis": {
+              "colorscale": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorscale": {
+              "diverging": [
+                [
+                  0.0,
+                  "#000021"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000022"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000023"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000024"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000025"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000026"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000027"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000028"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000029"
+                ],
+                [
+                  1.0,
+                  "#000030"
+                ]
+              ],
+              "sequential": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ],
+              "sequentialminus": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorway": [
+              "#000001",
+              "#000002",
+              "#000003",
+              "#000004",
+              "#000005",
+              "#000006",
+              "#000007",
+              "#000008",
+              "#000009",
+              "#000010"
+            ]
+          }
+        },
+        "xaxis": {
+          "anchor": "y",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "restaurant"
+          }
+        },
+        "yaxis": {
+          "anchor": "x",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "delta_rate"
+          }
+        },
+        "legend": {
+          "tracegroupgap": 0
+        },
+        "title": {
+          "text": "Top 10 Restaurants: Decrease in Avg Critical Violations per Inspection (2021-23 vs 2024-26)"
+        },
+        "barmode": "relative"
+      }
+    }
+  ],
+  "candidate_pool_raw": [
+    {
+      "gmap_id": "0x875261c2b0e2108b:0xb6159cea1605ebaa",
+      "name": "Kokopelli's koffee",
+      "address": "Kokopelli's koffee, 3955 Highland Dr, Millcreek, UT 84124",
+      "latitude": 40.685779,
+      "longitude": -111.84436,
+      "avg_rating": 4.1,
+      "num_of_reviews": 118,
+      "price": "$",
+      "slchd_establishment_key": null,
+      "distance_mi": null,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    }
+  ],
+  "duration_seconds": 97.38,
+  "usage": {
+    "available": true,
+    "per_call": [
+      {
+        "input_tokens": 3459,
+        "output_tokens": 156,
+        "total_tokens": 3615
+      },
+      {
+        "input_tokens": 5027,
+        "output_tokens": 796,
+        "total_tokens": 5823
+      },
+      {
+        "input_tokens": 5891,
+        "output_tokens": 992,
+        "total_tokens": 6883
+      },
+      {
+        "input_tokens": 8232,
+        "output_tokens": 443,
+        "total_tokens": 8675
+      },
+      {
+        "input_tokens": 8764,
+        "output_tokens": 1138,
+        "total_tokens": 9902
+      },
+      {
+        "input_tokens": 11351,
+        "output_tokens": 966,
+        "total_tokens": 12317
+      },
+      {
+        "input_tokens": 13816,
+        "output_tokens": 913,
+        "total_tokens": 14729
+      },
+      {
+        "input_tokens": 14801,
+        "output_tokens": 1154,
+        "total_tokens": 15955
+      },
+      {
+        "input_tokens": 16148,
+        "output_tokens": 164,
+        "total_tokens": 16312
+      },
+      {
+        "input_tokens": 16603,
+        "output_tokens": 3386,
+        "total_tokens": 19989
+      },
+      {
+        "input_tokens": 20311,
+        "output_tokens": 927,
+        "total_tokens": 21238
+      }
+    ],
+    "input_tokens": 124403,
+    "output_tokens": 11035,
+    "total_tokens": 135438
+  },
+  "tokens_per_minute": 83446.0,
+  "estimated_cost_usd": 0.359156,
+  "success": true,
+  "error": null,
+  "chart_image_files": [
+    "2026-08-15T09-21-21.339599+00-00_v1_memory_a9a457a0_chart1.png",
+    "2026-08-15T09-21-21.339599+00-00_v1_memory_a9a457a0_chart2.png",
+    "2026-08-15T09-21-21.339599+00-00_v1_memory_a9a457a0_chart3.png"
+  ]
+}

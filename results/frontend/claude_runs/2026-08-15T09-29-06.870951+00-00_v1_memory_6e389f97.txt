@@ -1,0 +1,170 @@
+Question: Between Thai and Korean restaurants, which cuisine has the higher average rating? Which one has more violations?
+
+Variant: v1_memory | Provider: anthropic | Model: claude-sonnet-5
+Timestamp: 2026-08-15T09:29:06.870951+00:00 | Duration: 39.24s
+
+--- Answer ---
+## Ratings
+
+**Korean restaurants have the slightly higher average rating**: 4.52 (across 47 Korean establishments) vs. 4.45 for Thai (across 116 Thai establishments) on Google's 5-point scale. Both cuisines skew very high-rated — top performers in each category (e.g., Korealicious at 5.0, several Cupbop locations at 4.7–4.9; Taste of Thai Park City at 5.0, Tawan Thai at 5.0) show very little separation, so the ~0.07-point gap favoring Korean is modest, not dramatic.
+
+## Violations
+
+This is where I have to be transparent about a data limitation: **neither cuisine has any restaurants with matched SLCHD inspection history in this dataset** — 0 of the 116 Thai establishments and 0 of the 47 Korean establishments have a `slchd_establishment_key` match, meaning there are no inspection records or violations on file for either cuisine group. This isn't unusual — per the dataset's own coverage, about 98.4% of establishments overall lack matched inspection data — but it does mean I **cannot say which cuisine has more violations**, because there is literally zero violation evidence for either group in this database. Any claim comparing violation counts between Thai and Korean restaurants would not be grounded in actual data.
+
+**Bottom line:** Korean edges out Thai on average rating (4.52 vs 4.45), but the violations question is unanswerable from this data — no Thai or Korean establishment here has inspection/violation records on file.
+
+--- Reasoning trace ---
+Action: get_schema({})
+
+Observation: Project food_health_viz {
+  database_type: 'DuckDB'
+}
+
+Table establishment_keys {
+  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']
+  name varchar [not null]
+  address varchar [not null]
+  city varchar [not null]
+  city_state_zip varchar
+  establishment_type varchar
+  source varchar [note: 'friend_slc | own_scrape']
+  slchd_lat double
+  slchd_lon double
+  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']
+
+  Note: 'SLCHD establishment list, one row per portal listing.'
+}
+
+Table category {
+  category_id integer [pk]
+  category varchar
+}
+
+Table establishments {
+  gmap_id varchar [pk]
+  name varchar
+  address varchar
+  description varchar
+  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']
+  avg_rating double
+  num_of_reviews integer
+  price varchar
+  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']
+
+  Note: 'One row per Google Local place — all restaurants, not just SLCHD-matched.'
+}
+
+Table establishment_attributes {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  attribute varchar [not null]
+
+  indexes { (gmap_id, attribute) [pk] }
+
+  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. "Service options") dropped.'
+}
+
+Table establishment_categories {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  category_id integer [ref: > category.category_id, not null]
+
+  indexes { (gmap_id, category_id) [pk] }
+}
+
+Table gmap_hours {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  day integer [not null, note: '0=Sun … 6=Sat']
+  open_min bigint
+  open_max bigint
+
+  indexes { (gmap_id, day) [pk] }
+
+  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'
+}
+
+Table review {
+  user_id varchar
+  name varchar
+  time bigint
+  rating double
+  text varchar
+  resp varchar
+  gmap_id varchar [ref: > establishments.gmap_id]
+}
+
+Table inspection_types {
+  inspection_type_id integer [pk, note: 'parsed leading number, e.g. "01 - Routine" -> 1']
+  description varchar [note: 'e.g. "Routine"']
+}
+
+Table inspections {
+  inspection_id bigint [pk, increment]
+  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]
+  inspection_date date [not null]
+  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable — 27 rows have no type']
+  inspection_score integer
+
+  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'
+}
+
+Table violation_codes {
+  violation_code_id integer [pk, increment]
+  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. "4.5.18"']
+  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']
+  critical boolean [not null]
+}
+
+Table violations {
+  violation_id bigint [pk, increment]
+  inspection_id bigint [ref: > inspections.inspection_id, not null]
+  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]
+  violation_description varchar [note: 'per-occurrence free text']
+  violation_occurrences integer
+  violation_cos boolean [note: 'corrected on site']
+  violation_phr varchar [note: 'public health rationale']
+
+  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'
+}
+
+
+Action: run_sql({'query': "\nSELECT c.category_group,\n       COUNT(DISTINCT e.gmap_id) AS num_establishments,\n       ROUND(AVG(e.avg_rating),3) AS avg_rating,\n       ROUND(AVG(e.num_of_reviews),1) AS avg_reviews\nFROM establishments e\nJOIN establishment_categories ec ON ec.gmap_id = e.gmap_id\nJOIN category c2 ON c2.category_id = ec.category_id,\nLATERAL (SELECT CASE WHEN LOWER(c2.category) LIKE '%thai%' THEN 'Thai'\n                     WHEN LOWER(c2.category) LIKE '%korean%' THEN 'Korean' END AS category_group) c\nWHERE c.category_group IS NOT NULL\nGROUP BY c.category_group\n"})
+
+Action: run_sql({'query': "\nWITH matched AS (\n  SELECT DISTINCT e.gmap_id, e.slchd_establishment_key,\n    CASE WHEN LOWER(c.category) LIKE '%thai%' THEN 'Thai'\n         WHEN LOWER(c.category) LIKE '%korean%' THEN 'Korean' END AS category_group\n  FROM establishments e\n  JOIN establishment_categories ec ON ec.gmap_id = e.gmap_id\n  JOIN category c ON c.category_id = ec.category_id\n  WHERE e.slchd_establishment_key IS NOT NULL\n    AND (LOWER(c.category) LIKE '%thai%' OR LOWER(c.category) LIKE '%korean%')\n)\nSELECT m.category_group,\n       COUNT(DISTINCT m.gmap_id) AS num_matched_establishments,\n       COUNT(v.violation_id) AS total_violations,\n       SUM(CASE WHEN vc.critical THEN 1 ELSE 0 END) AS critical_violations\nFROM matched m\nJOIN inspections i ON i.slchd_establishment_key = m.slchd_establishment_key\nJOIN violations v ON v.inspection_id = i.inspection_id\nJOIN violation_codes vc ON vc.violation_code_id = v.violation_code_id\nGROUP BY m.category_group\n"})
+
+Observation: {"row_count": 2, "truncated": false, "rows": [{"category_group": "Thai", "num_establishments": 116, "avg_rating": 4.454, "avg_reviews": 373.0}, {"category_group": "Korean", "num_establishments": 47, "avg_rating": 4.521, "avg_reviews": 489.6}]}
+
+Observation: {"row_count": 0, "truncated": false, "rows": []}
+
+Action: run_sql({'query': "\nSELECT DISTINCT e.gmap_id, e.name, e.slchd_establishment_key,\n    CASE WHEN LOWER(c.category) LIKE '%thai%' THEN 'Thai'\n         WHEN LOWER(c.category) LIKE '%korean%' THEN 'Korean' END AS category_group\nFROM establishments e\nJOIN establishment_categories ec ON ec.gmap_id = e.gmap_id\nJOIN category c ON c.category_id = ec.category_id\nWHERE e.slchd_establishment_key IS NOT NULL\n    AND (LOWER(c.category) LIKE '%thai%' OR LOWER(c.category) LIKE '%korean%')\n"})
+
+Observation: {"row_count": 0, "truncated": false, "rows": []}
+
+Action: search_establishments({'category_contains': 'thai', 'require_inspection_data': True, 'limit': 50})
+
+Action: search_establishments({'category_contains': 'korean', 'require_inspection_data': True, 'limit': 50})
+
+Action: search_establishments({'category_contains': 'thai', 'sort_by': 'avg_rating', 'limit': 15})
+
+Action: search_establishments({'category_contains': 'korean', 'sort_by': 'avg_rating', 'limit': 15})
+
+Observation: {"row_count": 0, "rows": []}
+
+Observation: {"row_count": 0, "rows": []}
+
+Observation: {"row_count": 15, "rows": [{"gmap_id": "0x87526db7784e3143:0xae8dd7cb09315b64", "name": "Taste of Thai (Park City)", "address": "Taste of Thai (Park City), 1241 Center Dr Unit L160, Park City, UT 84098", "latitude": 40.7212421, "longitude": -111.5389746, "avg_rating": 5.0, "num_of_reviews": 26, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x874d85d538b183bb:0xf3c0830f64f5466a", "name": "Tawan Thai", "address": "Tawan Thai, 824 E 800 N, Orem, UT 84097", "latitude": 40.3107398, "longitude": -111.6761608, "avg_rating": 5.0, "num_of_reviews": 5, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x874d9be94563d229:0xdf5fc98f461cbbb6", "name": "Suzy Thai Food", "address": null, "latitude": 40.232943, "longitude": -111.6432336, "avg_rating": 5.0, "num_of_reviews": 44, "price": "$$", "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x875289cf5fce5e01:0xad451052bd93db14", "name": "Dee Garden Thai Kitchen", "address": "Dee Garden Thai Kitchen, 7098 S Redwood Rd, West Jordan, UT 84084", "latitude": 40.62256, "longitude": -111.9403065, "avg_rating": 4.9, "num_of_reviews": 144, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x8752610e6310aad9:0xb543edc015c46530", "name": "ChaiYo Thai Togo", "address": "ChaiYo Thai Togo, 3804 Highland Dr Ste B2, Millcreek, UT 84106", "latitude": 40.688364199999995, "longitude": -111.8462775, "avg_rating": 4.9, "num_of_reviews": 58, "price": "$$", "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x87528c76c227791f:0xd2fc86793fca8656", "name": "Thai Issan Restaurant and Mini-Mart", "address": "Thai Issan Restaurant and Mini-Mart, 2644 W 4700 S, Salt Lake City, UT 84129", "latitude": 40.668973, "longitude": -111.9568478, "avg_rating": 4.8, "num_of_reviews": 318, "price": "$", "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x874d9707a9d442c3:0x3862609a35323bcc", "name": "Thai Neighbor Cuisine 1", "address": "Thai Neighbor Cuisine 1, 170 W 300 S, Provo, UT 84601", "latitude": 40.2298489, "longitude": -111.6616192, "avg_rating": 4.8, "num_of_reviews": 228, "price": "$", "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x875305d03f9fce41:0x193a4ededc172507", "name": "Ros Ni Yuhm Thai Restaurant", "address": "Ros Ni Yuhm Thai Restaurant, 1813 Main St, Sunset, UT 84015", "latitude": 41.1401562, "longitude": -112.0264677, "avg_rating": 4.8, "num_of_reviews": 158, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x80ca45727c7e5b09:0xc67d7f169a6d0735", "name": "Kitchen Thai Express", "address": "Kitchen Thai Express, 1626 W Sunset Blvd B101, St. George, UT 84770", "latitude": 37.1236345, "longitude": -113.6182485, "avg_rating": 4.8, "num_of_reviews": 88, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x87528b67e26ee0fb:0xdc0b9b01a17dbe7e", "name": "Tuk Tuk\u2019s", "address": "Tuk Tuk\u2019s, 2222 W 3500 S b7, West Valley City, UT 84119", "latitude": 40.6974909, "longitude": -111.9477123, "avg_rating": 4.8, "num_of_reviews": 298, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x87527363fe1fb11b:0x12a092deeac9eab6", "name": "Baan Thai Cuisine & Bar", "address": "Baan Thai Cuisine & Bar, 710 Main St suite 3-103, Park City, UT 84060", "latitude": 40.6473242, "longitude": -111.4972752, "avg_rating": 4.8, "num_of_reviews": 108, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x874df5a5f2a33969:0x2f7f7dcd2853342f", "name": "Tawan Thai Restaurant", "address": "Tawan Thai Restaurant, 32 S Main St, Heber City, UT 84032", "latitude": 40.5070987, "longitude": -111.4137493, "avg_rating": 4.8, "num_of_reviews": 57, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x80b56107561cf149:0x88f968c1a7b5d2a0", "name": "Bunnisa's Thai Cuisine", "address": "Bunnisa's Thai Cuisine, 5 N Main St, Cedar City, UT 84720", "latitude": 37.677502, "longitude": -113.0623545, "avg_rating": 4.8, "num_of_reviews": 258, "price": "$$", "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x8752f50306891ca7:0x2febd8662871bd47", "name": "Laan Na Thai", "address": "Laan Na Thai, 336 W 300 S, Salt Lake City, UT 84101", "latitude": 40.7630241, "longitude": -111.9008636, "avg_rating": 4.8, "num_of_reviews": 408, "price": "$", "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x87525f8d59172199:0x79548a0e5d3eee3d", "name": "Tandooria SLC", "address": "Tandooria SLC, 67 W 1700 S, Salt Lake City, UT 84115", "latitude": 40.7333445, "longitude": -111.8931901, "avg_rating": 4.7, "num_of_reviews": 33, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}]}
+
+Observation: {"row_count": 15, "rows": [{"gmap_id": "0x87547e0a554a8ec9:0xe0abdfe210790af6", "name": "Korealicious", "address": "Korealicious, 54 W 400 N, Logan, UT 84321", "latitude": 41.7388112, "longitude": -111.8360808, "avg_rating": 5.0, "num_of_reviews": 108, "price": "$", "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x874d9b14ec07bdc5:0xc43290716588abbb", "name": "Katsu City", "address": "Katsu City, 1700 N State St #23, Provo, UT 84604", "latitude": 40.2560091, "longitude": -111.6703358, "avg_rating": 4.9, "num_of_reviews": 58, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x8752bdb07d9cc6b9:0xcbfda0fa32c60a14", "name": "Cupbop - Korean BBQ", "address": "Cupbop - Korean BBQ, 1024 N Main St Ste B, Tooele, UT 84074", "latitude": 40.551413, "longitude": -112.2975927, "avg_rating": 4.9, "num_of_reviews": 448, "price": "$", "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x874d9bab199d8c21:0x573cf4d6c1163514", "name": "Cupbop - Korean BBQ", "address": "Cupbop - Korean BBQ, 719 E University Pkwy, Orem, UT 84097", "latitude": 40.2735785, "longitude": -111.6785658, "avg_rating": 4.8, "num_of_reviews": 1195, "price": "$", "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x874d90a463f7482d:0x24ef3f25dd416519", "name": "Koko Lunchbox", "address": "Koko Lunchbox, 1175 N Canyon Rd #3420, Provo, UT 84604", "latitude": 40.2496979, "longitude": -111.6573679, "avg_rating": 4.8, "num_of_reviews": 908, "price": "$", "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x87530c1e6178d57f:0x14134bad410f742f", "name": "Bibop Korean BBQ LLC", "address": "Bibop Korean BBQ LLC, 333 2nd St #10, Ogden, UT 84404", "latitude": 41.2584811, "longitude": -111.9716507, "avg_rating": 4.8, "num_of_reviews": 158, "price": "$$", "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x87528bed7a776daf:0x5c00fdfa5893cc37", "name": "Sanfran Burrito N Fryz", "address": "Sanfran Burrito N Fryz, 3390 S State St STE35, Salt Lake City, UT 84115", "latitude": 40.6979847, "longitude": -111.8890771, "avg_rating": 4.8, "num_of_reviews": 47, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x8752f5cdbf09e4e9:0x9e0c6c8d1ebe68c8", "name": "Cupbop - Korean BBQ", "address": "Cupbop - Korean BBQ, 45 E Broadway, Salt Lake City, UT 84111", "latitude": 40.763146, "longitude": -111.8897385, "avg_rating": 4.8, "num_of_reviews": 818, "price": "$", "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x87531b5bf85fd901:0x82f2bf5d16327b1f", "name": "Jin's Restaurant", "address": "Jin's Restaurant, 2052 W 1700 S b6, Syracuse, UT 84075", "latitude": 41.0894444, "longitude": -112.0655556, "avg_rating": 4.8, "num_of_reviews": 338, "price": "$$", "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x80ca5ba224111c31:0x8b009a1d5eba0a0d", "name": "Flavor of Seoul (Casual Korean Restaurant)", "address": "Flavor of Seoul (Casual Korean Restaurant), 568 W Telegraph St #8, Washington, UT 84780", "latitude": 37.1300159, "longitude": -113.5188039, "avg_rating": 4.8, "num_of_reviews": 328, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x87530f6a704af3c3:0x28467b0626901dc4", "name": "Kogane Korean Kitchen", "address": "Kogane Korean Kitchen, 458 40th St, Ogden, UT 84403", "latitude": 41.190705, "longitude": -111.969536, "avg_rating": 4.8, "num_of_reviews": 278, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x87528d9cd06cfb41:0x3bf71f0c96a7d42", "name": "Paik's Noodle / HongKong Banjum 0410", "address": "Paik's Noodle / HongKong Banjum 0410, 3513s Constitution Blvd #100, West Valley City, UT 84119", "latitude": 40.6962494, "longitude": -111.9561513, "avg_rating": 4.8, "num_of_reviews": 188, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x87526344b266fc7b:0x927a92d9d730c66", "name": "Cupbop - Korean BBQ", "address": "Cupbop - Korean BBQ, 7178 Union Park Ave, Midvale, UT 84047", "latitude": 40.6210935, "longitude": -111.8565558, "avg_rating": 4.8, "num_of_reviews": 158, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x8752857788e92fe7:0x6bf70774f597ce8c", "name": "Cupbop - Korean BBQ", "address": "Cupbop - Korean BBQ, 11259 Kestrel Rise Rd Suite 100, South Jordan, UT 84095", "latitude": 40.546715299999995, "longitude": -112.0019626, "avg_rating": 4.7, "num_of_reviews": 1204, "price": "$", "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x8753038d0e4b7213:0x6132ac6a905b503a", "name": "Seoul Korean Restaurant UT", "address": "Seoul Korean Restaurant UT, 2625 N Hill Field Rd, Layton, UT 84041", "latitude": 41.098334, "longitude": -111.974094, "avg_rating": 4.7, "num_of_reviews": 73, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}]}
+
+Action: plot_chart({'query': "\nSELECT c.category_group AS cuisine, ROUND(AVG(e.avg_rating),3) AS avg_rating\nFROM establishments e\nJOIN establishment_categories ec ON ec.gmap_id = e.gmap_id\nJOIN category c2 ON c2.category_id = ec.category_id,\nLATERAL (SELECT CASE WHEN LOWER(c2.category) LIKE '%thai%' THEN 'Thai'\n                     WHEN LOWER(c2.category) LIKE '%korean%' THEN 'Korean' END AS category_group) c\nWHERE c.category_group IS NOT NULL\nGROUP BY c.category_group\n", 'chart_type': 'bar', 'x': 'cuisine', 'y': 'avg_rating', 'title': 'Average Google rating: Thai vs Korean restaurants'})
+
+Action: plot_chart({'query': "\nSELECT c.category_group AS cuisine, COUNT(DISTINCT e.gmap_id) AS num_establishments_with_inspection_data\nFROM establishments e\nJOIN establishment_categories ec ON ec.gmap_id = e.gmap_id\nJOIN category c2 ON c2.category_id = ec.category_id,\nLATERAL (SELECT CASE WHEN LOWER(c2.category) LIKE '%thai%' THEN 'Thai'\n                     WHEN LOWER(c2.category) LIKE '%korean%' THEN 'Korean' END AS category_group) c\nWHERE c.category_group IS NOT NULL AND e.slchd_establishment_key IS NOT NULL\nGROUP BY c.category_group\n", 'chart_type': 'bar', 'x': 'cuisine', 'y': 'num_establishments_with_inspection_data', 'title': 'Thai vs Korean restaurants with matched SLCHD inspection data (violations available)'})
+
+Observation: Chart created: 'Average Google rating: Thai vs Korean restaurants' (bar, 2 rows). It will be shown to the user below your answer.
+
+Observation: Query returned no rows, nothing to plot.
+
+Action: plot_chart({'query': "\nWITH cats AS (SELECT 'Thai' AS cuisine UNION ALL SELECT 'Korean'),\nmatched AS (\n  SELECT DISTINCT e.gmap_id,\n    CASE WHEN LOWER(c2.category) LIKE '%thai%' THEN 'Thai'\n         WHEN LOWER(c2.category) LIKE '%korean%' THEN 'Korean' END AS cuisine\n  FROM establishments e\n  JOIN establishment_categories ec ON ec.gmap_id = e.gmap_id\n  JOIN category c2 ON c2.category_id = ec.category_id\n  WHERE e.slchd_establishment_key IS NOT NULL\n)\nSELECT cats.cuisine, COUNT(matched.gmap_id) AS num_matched_with_inspection_data\nFROM cats LEFT JOIN matched ON matched.cuisine = cats.cuisine\nGROUP BY cats.cuisine\n", 'chart_type': 'bar', 'x': 'cuisine', 'y': 'num_matched_with_inspection_data', 'title': 'Thai vs Korean: establishments with matched SLCHD inspection/violation data'})
+
+Observation: Chart created: 'Thai vs Korean: establishments with matched SLCHD inspection/violation data' (bar, 2 rows). It will be shown to the user below your answer.
+
+--- Usage: 68768 tokens, ~$0.1697 ---

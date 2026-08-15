@@ -1,0 +1,20 @@
+Question: How many establishments have a Salt Lake County health inspection on record?
+
+Variant: v2_memory | Provider: anthropic | Model: claude-sonnet-5
+Timestamp: 2026-08-15T08:41:31.684518+00:00 | Duration: 9.69s
+
+--- Answer ---
+Out of the **8,592** establishments in the dataset, only **139** (about **1.62%**) have a matched Salt Lake County Health Department (SLCHD) inspection record on file. The remaining 8,453 establishments (98.4%) have no inspection history in this dataset at all — that's not the same as having a clean record, it simply means no SLCHD listing could be matched to them.
+
+The pie chart above shows this split visually: the vast majority of establishments have no inspection data linked, while only a small sliver (139) have actual inspection/violation history we can analyze.
+
+--- Reasoning trace ---
+Action: run_sql({'query': 'SELECT COUNT(*) AS total_establishments, COUNT(slchd_establishment_key) AS with_inspection_data, ROUND(100.0*COUNT(slchd_establishment_key)/COUNT(*),2) AS pct FROM establishments'})
+
+Observation: {"row_count": 1, "truncated": false, "rows": [{"total_establishments": 8592, "with_inspection_data": 139, "pct": 1.62}]}
+
+Action: plot_chart({'query': "SELECT CASE WHEN slchd_establishment_key IS NOT NULL THEN 'Has SLCHD Inspection Record' ELSE 'No Inspection Record' END AS status, COUNT(*) AS count FROM establishments GROUP BY 1", 'chart_type': 'pie', 'x': 'status', 'y': 'count', 'title': 'Establishments With vs Without Matched SLCHD Inspection Records'})
+
+Observation: Chart created: 'Establishments With vs Without Matched SLCHD Inspection Records' (pie, 2 rows). It will be shown to the user below your answer.
+
+--- Usage: 12389 tokens, ~$0.0297 ---

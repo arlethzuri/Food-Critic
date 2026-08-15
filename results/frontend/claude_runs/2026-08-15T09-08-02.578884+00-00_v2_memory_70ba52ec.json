@@ -1,0 +1,2142 @@
+{
+  "source": "frontend",
+  "run_id": "70ba52ec",
+  "timestamp": "2026-08-15T09:08:02.578884+00:00",
+  "variant": "v2_memory",
+  "provider": "anthropic",
+  "model": "claude-sonnet-5",
+  "question": "What's the difference between a critical and a non-critical violation, and how does each affect an inspection score?",
+  "output_text": "## Critical vs. Non-Critical Violations\n\nUnder Utah's R392-100 Food Service Sanitation Rule (adopted from the FDA Food Code 2013), violations are classified into two main risk tiers, both of which the underlying data model consolidates into `violation_codes.critical` (true/false):\n\n**Priority Item (\"Critical 1\")** \u2014 a provision \"whose application contributes directly to the elimination, prevention, or reduction to an acceptable level of hazards associated with foodborne illness or injury, and there is no provision that more directly controls the hazard.\" These are typically quantifiable control points like proper cooking/reheating/cooling temperatures and handwashing. In the Code they're marked with a superscript **P**. Utah's rule also lumps in \"Priority Foundation Item\" (Critical 2) violations \u2014 provisions that *support or enable* a Priority Item (e.g., staff training, HACCP documentation, labeling), marked **Pf**. In this dataset both are simply flagged `critical = true`.\n\n**Core Item (\"non-critical\")** \u2014 \"a provision in the Model Code that is not designated as a Priority Item or Priority Foundation Item,\" usually relating to general sanitation, facility upkeep, or operational controls rather than a direct, quantifiable illness-hazard control.\n\n**Correction timing differs too**: the regulation requires a Priority Item violation be corrected *at the time of inspection* (or within 72 hours if the inspector allows), a Priority Foundation Item within 10 calendar days, while Core/non-critical items get more routine handling.\n\n### Effect on inspection score\nPulling actual inspection data (22,339 non-critical vs. 9,690 critical violation citations logged):\n\n- **Critical violations drive the score up much faster.** Inspections with 0 critical violations average a score of **3.1**; that climbs to **8.5** with 1 critical violation, **14.7** with 2, **21.4** with 3, **28.5** with 4, and **34.8** with 5 \u2014 roughly +6-7 points per additional critical violation.\n- **Non-critical violations add points too, but much more slowly.** Going from 0 to 1 non-critical violation barely moves the average score (9.2 \u2192 5.6, reflecting that inspections with zero non-critical items often still have critical ones), and the climb per additional non-critical violation is only about +2 points (e.g., 5 \u2192 14.7, 10 \u2192 26.5), compared to the +6-7 per critical violation.\n\nIn short: since a higher inspection score = worse (0 is clean), **critical violations are weighted far more heavily** because they represent direct, immediate foodborne-illness hazards, while non-critical (Core) violations reflect general sanitation/operational issues and add to the score at a noticeably slower rate. The charts above show this side-by-side (score vs. # critical, score vs. # non-critical), plus the overall citation mix (~30% of all cited violations are critical, ~70% non-critical).",
+  "structured_response": null,
+  "trace_text": "Action: retrieve_regulation({'query': 'critical violation versus non-critical violation definition risk'})\n\nAction: retrieve_regulation({'query': 'inspection score calculation critical violation points demerit'})\n\nObservation: [R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 1-201 Applicability and Terms Defined, p.6]\ndesigned to identify potential FOOD EMPLOYEES who may be suffering from a \ndisease that can be transmitted through FOOD and done in compliance with Title 1 \nof the Americans with Disabilities Act of 1990. \n \n\"Confirmed disease outbreak\" means a FOODBORNE DISEASE OUTBREAK in \nwhich laboratory analysis of appropriate specimens identifies a causative agent \nand epidemiological analysis implicates the FOOD as the source of the illness. \n \n\"Consumer\" means a PERSON who is a member of the public, takes possession \nof FOOD, is not functioning in the capacity of an operator of a FOOD ESTABLISHMENT \nor FOOD PROCESSING PLANT, and does not offer the FOOD for resale. \n \nCore Item. \n \n(1)  \"Core item\" also referred to as \u201cnon critical\u201d means a provision in the Model \nCode that is not designated as a Priority Item or a Priority Foundation Item\u201d \n \n(2)  \"Core item\" includes an item that usually relates to general sanitation, \noperational controls, sanitation standard operating procedures (SSOPs),\n\n---\n\n[R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 1-201 Applicability and Terms Defined, p.20]\n\"Restricted egg\" means any check, dirty EGG, incubator reject, inedible, leaker, or \nloss as defined in 9 CFR 590. \n \n\"Restricted use pesticide\" means a pesticide product that contains the active \ningredients specified in 40 CFR 152.175 Pesticides classified for restricted use, and \nthat is limited to use by or under the direct supervision of a certified applicator. \n \n\"Risk\" means the likelihood that an adverse health effect will occur within a \npopulation as a result of a HAZARD in a FOOD. \n \n\"Safe material\" means: \n \n(1)  An article manufactured from or composed of materials that may not \nreasonably be expected to result, directly or indirectly, in their becoming a \ncomponent or otherwise affecting the characteristics of any FOOD; \n \n(2)  An additive that is used as specified in \u00a7 409 of the Federal Food, Drug, and \nCosmetic Act; or \n \n(3) Other materials that are not ADDITIVES and that are used in conformity with \napplicable regulations of the Food and Drug Administration.\n\n---\n\n[R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 1-201 Applicability and Terms Defined, p.13]\n13  \n \n\"Highly susceptible population\" means PERSONS who are more likely than other \npeople in the general population to experience foodborne disease because they are: \n \n(1)  Immunocompromised; preschool age children, or older adults; and \n \n(2)  Obtaining FOOD at a facility that provides services such as custodial care, \nhealth care, or assisted living, such as a child or adult day care center, kidney \ndialysis center, hospital or nursing home, or nutritional or socialization services \nsuch as a senior center. \n \n\"Imminent health hazard\" means a significant threat or danger to health that is \nconsidered to exist when there is evidence sufficient to show that a product, \npractice, circumstance, or event creates a situation that requires immediate \ncorrection or cessation of operation to prevent injury based on: \n \n(1)  The number of potential injuries, and \n \n(2)  The nature, severity, and duration of the anticipated injury.\n\n---\n\n[R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 8-906.10 Appointment by Regulatory Authority and, p.243]\nspecified in \u00b6 8-913.10(B) for each violation of this Code that \nis alleged and found to be committed, and calculated based \non each day a violation occurs as specified in \u00b6 8-913.10(C);\n\nObservation: [R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 8-405.20 Verification and Documentation of, p.220]\n(2) 10 calendar days after the inspection, for the PERMIT \nHOLDER to correct violations of a PRIORITY FOUNDATION \nITEM or HACCP PLAN deviations. \n \n8-405.20 Verification and Documentation of \nCorrection. \n \n(A) After observing at the time of inspection a correction of a \nviolation of a PRIORITY ITEM or PRIORITY FOUNDATION ITEM or a \nHACCP PLAN deviation, the REGULATORY AUTHORITY shall enter \nthe violation and information about the corrective action on \nthe inspection report. \n \n(B) As specified under \u00b6 8-405.11(B), after receiving \nnotification that the PERMIT HOLDER has corrected a violation of \na PRIORITY ITEM OR PRIORITY FOUNDATION ITEM or HACCP PLAN \ndeviation, or at the end of the specified period of time, the \nREGULATORY AUTHORITY shall verify correction of the violation, \ndocument the information on an inspection report, and enter \nthe report in the REGULATORY AUTHORITY'S records. \n \n \n \n8-406.11 Time Frame for Correction.\n\n---\n\n[R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 8-403.30 Issuing Report and Obtaining, p.218]\n215  \n(3) Nonconformance with PRIORITY ITEMS OR PRIORITY \nFOUNDATION ITEMS of this Code, \n \n(4) Failure of the appropriate FOOD EMPLOYEES to \ndemonstrate their knowledge of, and ability to perform \nin accordance with, the procedural, monitoring, \nverification, and corrective action practices required by \nthe REGULATORY AUTHORITY as specified under \n\u00a7 8-103.12, \n \n(5) Failure of the PERSON IN CHARGE to provide records \nrequired by the REGULATORY AUTHORITY for determining \nconformance with a HACCP PLAN as specified under \nSubparagraph 8-201.14(D)(6), and \n \n(6) Nonconformance with CRITICAL LIMITS of a HACCP \nPLAN. \n \n \n \n8-403.20 Specifying Time Frame for Corrections. \n \nThe REGULATORY AUTHORITY shall specify on the inspection \nreport form the time frame for correction of the violations as \nspecified under \u00a7\u00a7 8-404.11, 8-405.11, and 8-406.11. \n \n \n \n8-403.30 Issuing Report and Obtaining \nAcknowledgment of Receipt. \n \n \nAt the conclusion of the inspection and according to LAW, the\n\n---\n\n[R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 8-406 Core Item Violation, p.214]\n211  \n8-4 INSPECTION AND CORRECTION OF VIOLATIONS \n \nSubparts \n \n8-401 Frequency \n8-402 Competency and Access \n8-403 Report of Findings \n8-404 Imminent Health Hazard \n8-405 Violation of Priority Item or Priority \nFoundation Item \n8-406 Core Item Violation \n \n \n \nFrequency 8-401.10 Establishing Inspection Interval. \n \n(A) Except as specified in \u00b6\u00b6 (B) and (C) of this section, the \nREGULATORY AUTHORITY shall inspect a FOOD ESTABLISHMENT at \nleast once every 6 months and twice in a season for seasonal \noperations. \n \n(B) The REGULATORY AUTHORITY may increase the interval \nbetween inspections beyond 6 months if: \n \n(1) The FOOD ESTABLISHMENT is fully operating under an \nAPPROVED and validated HACCP PLAN as specified under \n\u00a7 8-201.14 and \u00b6\u00b6 8-103.12(A) and (B); \n \n(2) The FOOD ESTABLISHMENT is assigned a less frequent \ninspection frequency based on a written RISK-based \ninspection schedule that is being uniformly applied \nthroughout the jurisdiction or\n\n---\n\n[R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 8-405.20 Verification and Documentation of, p.220]\n217  \nViolation of \nPriority Item or \nPriority \nFoundation Item \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \nCore Item \nViolation \n8-405.11 Timely Correction. \n \n(A) Except as specified in \u00b6 (B) of this section, a PERMIT \nHOLDER shall at the time of inspection correct a violation of a \nPRIORITY ITEM or PRIORITY FOUNDATION ITEM of this Code and \nimplement corrective actions for a HACCP PLAN provision that \nis not in compliance with its CRITICAL LIMIT. Pf \n \n(B) Considering the nature of the potential HAZARD involved \nand the complexity of the corrective action needed, the \nREGULATORY AUTHORITY may agree to or specify a longer time \nframe, not to exceed: \n \n(1) 72 hours after the inspection, for the PERMIT HOLDER \nto correct violations of a PRIORITY ITEM; or \n \n(2) 10 calendar days after the inspection, for the PERMIT \nHOLDER to correct violations of a PRIORITY FOUNDATION \nITEM or HACCP PLAN deviations.\n\nAction: get_column_glossary({'table_dot_column': 'violations.is_critical'})\n\nAction: get_column_glossary({'table_dot_column': 'establishments.inspection_score'})\n\nAction: retrieve_regulation({'query': 'Priority Item definition foodborne illness risk factor'})\n\nAction: run_sql({'query': 'SELECT is_critical, count(*) as violation_count, avg(inspections.inspection_score) as avg_score\\nFROM violations\\nJOIN inspections ON violations.inspection_id = inspections.inspection_id\\nGROUP BY is_critical'})\n\nObservation: No glossary entry for 'violations.is_critical' \u2014 it's probably self-explanatory from get_schema.\n\nObservation: No glossary entry for 'establishments.inspection_score' \u2014 it's probably self-explanatory from get_schema.\n\nObservation: [R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 1-201 Applicability and Terms Defined, p.17]\n17  \nfacilities, or operations, and a FOOD ESTABLISHMENT is only one component of a \nlarger operation such as a health care facility, hotel, motel, school, recreational \ncamp, or prison. \n \n\"Primal cut\" means a basic major cut into which carcasses and sides of MEAT are \nseparated, such as a beef round, pork loin, lamb flank, or veal breast. \n \nPriority Item. \n \n(1)  \"Priority item\" also referred to as \u201ccritical 1\u201d means a provision in the \nModel Code whose application contributes directly to the elimination, \nprevention or reduction to an acceptable level, hazards associated with food \nborne illness or injury and there is no provision that more directly controls the \nhazard.   \n \n(2)  \"Priority item\" includes items with a quantifiable measure to show control of \nhazards such as cooking, reheating, cooling, handwashing; and \n \n(3)  \"Priority item\" is an item that is denoted in this Code with a superscript P-P. \n \nPriority Foundation Item.\n\n---\n\n[R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 1-201 Applicability and Terms Defined, p.6]\ndesigned to identify potential FOOD EMPLOYEES who may be suffering from a \ndisease that can be transmitted through FOOD and done in compliance with Title 1 \nof the Americans with Disabilities Act of 1990. \n \n\"Confirmed disease outbreak\" means a FOODBORNE DISEASE OUTBREAK in \nwhich laboratory analysis of appropriate specimens identifies a causative agent \nand epidemiological analysis implicates the FOOD as the source of the illness. \n \n\"Consumer\" means a PERSON who is a member of the public, takes possession \nof FOOD, is not functioning in the capacity of an operator of a FOOD ESTABLISHMENT \nor FOOD PROCESSING PLANT, and does not offer the FOOD for resale. \n \nCore Item. \n \n(1)  \"Core item\" also referred to as \u201cnon critical\u201d means a provision in the Model \nCode that is not designated as a Priority Item or a Priority Foundation Item\u201d \n \n(2)  \"Core item\" includes an item that usually relates to general sanitation, \noperational controls, sanitation standard operating procedures (SSOPs),\n\n---\n\n[R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 1-201 Applicability and Terms Defined, p.17]\n(3)  \"Priority item\" is an item that is denoted in this Code with a superscript P-P. \n \nPriority Foundation Item. \n \n(1)  \"Priority foundation item\" also referred to as \u201ccritical 2\u201d means a \nprovision in the Model Code whose application supports, facilitates or \nenables one or more PRIORITY ITEMS. \n \n(2)  \"Priority foundation item\" includes an item that requires the purposeful \nincorporation of specific actions, equipment or procedures by industry \nmanagement to attain control of risk factors that contribute to foodborne illness \nor injury such as personnel training, infrastructure or necessary equipment, \nHACCP plans, documentation or record keeping, and labeling; and \n \n(3) \"Priority foundation item\" is an item that is denoted in this Code with a \nsuperscript Pf - Pf. \n \n\"Public water system\" has the meaning stated in 40 CFR 141 National Primary \nDrinking Water Regulations. \n \n\"Ratite\" means a flightless bird such as an emu, ostrich, or rhea. \n \nReady-to-Eat Food.\n\n---\n\n[R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 2-103 Duties, p.27]\n26  \nKnowledge 2-102.11 Demonstration. \n \nBased on the RISKS inherent to the FOOD operation, during \ninspections and upon request the PERSON IN CHARGE shall \ndemonstrate to the REGULATORY AUTHORITY knowledge of \nfoodborne disease prevention, application of the HAZARD \nAnalysis and CRITICAL CONTROL POINT principles, and the \nrequirements of this Code.  The PERSON IN CHARGE shall \ndemonstrate this knowledge by: \n \n(A) Complying with this Code by having no violations of \nPRIORITY ITEMS during the current inspection; Pf \n \n(B) Being a certified FOOD protection manager who has \nshown proficiency of required information through passing a \ntest that is part of an ACCREDITED PROGRAM;Pf or \n \n(C) Responding correctly to the inspector's questions as they \nrelate to the specific FOOD operation. The areas of \nknowledge include: \n \n(1) Describing the relationship between the prevention of \nfoodborne disease and the personal hygiene of a FOOD \nEMPLOYEE; Pf\n\nObservation: SQL error: Binder Error: Referenced column \"is_critical\" not found in FROM clause!\nCandidate bindings: \"violation_description\", \"inspections.inspection_id\", \"violations.inspection_id\", \"slchd_establishment_key\", \"inspection_date\"\n\nLINE 4: GROUP BY is_critical\n                 ^\n\nAction: get_schema({})\n\nObservation: Project food_health_viz {\n  database_type: 'DuckDB'\n}\n\nTable establishment_keys {\n  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']\n  name varchar [not null]\n  address varchar [not null]\n  city varchar [not null]\n  city_state_zip varchar\n  establishment_type varchar\n  source varchar [note: 'friend_slc | own_scrape']\n  slchd_lat double\n  slchd_lon double\n  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']\n\n  Note: 'SLCHD establishment list, one row per portal listing.'\n}\n\nTable category {\n  category_id integer [pk]\n  category varchar\n}\n\nTable establishments {\n  gmap_id varchar [pk]\n  name varchar\n  address varchar\n  description varchar\n  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']\n  avg_rating double\n  num_of_reviews integer\n  price varchar\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']\n\n  Note: 'One row per Google Local place \u2014 all restaurants, not just SLCHD-matched.'\n}\n\nTable establishment_attributes {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  attribute varchar [not null]\n\n  indexes { (gmap_id, attribute) [pk] }\n\n  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. \"Service options\") dropped.'\n}\n\nTable establishment_categories {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  category_id integer [ref: > category.category_id, not null]\n\n  indexes { (gmap_id, category_id) [pk] }\n}\n\nTable gmap_hours {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  day integer [not null, note: '0=Sun \u2026 6=Sat']\n  open_min bigint\n  open_max bigint\n\n  indexes { (gmap_id, day) [pk] }\n\n  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'\n}\n\nTable review {\n  user_id varchar\n  name varchar\n  time bigint\n  rating double\n  text varchar\n  resp varchar\n  gmap_id varchar [ref: > establishments.gmap_id]\n}\n\nTable inspection_types {\n  inspection_type_id integer [pk, note: 'parsed leading number, e.g. \"01 - Routine\" -> 1']\n  description varchar [note: 'e.g. \"Routine\"']\n}\n\nTable inspections {\n  inspection_id bigint [pk, increment]\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]\n  inspection_date date [not null]\n  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable \u2014 27 rows have no type']\n  inspection_score integer\n\n  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'\n}\n\nTable violation_codes {\n  violation_code_id integer [pk, increment]\n  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. \"4.5.18\"']\n  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']\n  critical boolean [not null]\n}\n\nTable violations {\n  violation_id bigint [pk, increment]\n  inspection_id bigint [ref: > inspections.inspection_id, not null]\n  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]\n  violation_description varchar [note: 'per-occurrence free text']\n  violation_occurrences integer\n  violation_cos boolean [note: 'corrected on site']\n  violation_phr varchar [note: 'public health rationale']\n\n  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'\n}\n\n\nAction: run_sql({'query': '\\nSELECT vc.critical, count(*) as violation_count\\nFROM violations v\\nJOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\\nGROUP BY vc.critical\\n'})\n\nAction: run_sql({'query': '\\nWITH per_insp AS (\\n  SELECT i.inspection_id, i.inspection_score,\\n    SUM(CASE WHEN vc.critical THEN 1 ELSE 0 END) AS n_critical,\\n    SUM(CASE WHEN NOT vc.critical THEN 1 ELSE 0 END) AS n_noncritical\\n  FROM inspections i\\n  JOIN violations v ON v.inspection_id = i.inspection_id\\n  JOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\\n  WHERE i.inspection_score IS NOT NULL\\n  GROUP BY i.inspection_id, i.inspection_score\\n)\\nSELECT n_critical, avg(inspection_score) as avg_score, count(*) as n\\nFROM per_insp\\nGROUP BY n_critical\\nORDER BY n_critical\\nLIMIT 15\\n'})\n\nAction: run_sql({'query': '\\nWITH per_insp AS (\\n  SELECT i.inspection_id, i.inspection_score,\\n    SUM(CASE WHEN vc.critical THEN 1 ELSE 0 END) AS n_critical,\\n    SUM(CASE WHEN NOT vc.critical THEN 1 ELSE 0 END) AS n_noncritical\\n  FROM inspections i\\n  JOIN violations v ON v.inspection_id = i.inspection_id\\n  JOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\\n  WHERE i.inspection_score IS NOT NULL\\n  GROUP BY i.inspection_id, i.inspection_score\\n)\\nSELECT n_noncritical, avg(inspection_score) as avg_score, count(*) as n\\nFROM per_insp\\nGROUP BY n_noncritical\\nORDER BY n_noncritical\\nLIMIT 15\\n'})\n\nObservation: {\"row_count\": 2, \"truncated\": false, \"rows\": [{\"critical\": false, \"violation_count\": 22339}, {\"critical\": true, \"violation_count\": 9690}]}\n\nObservation: {\"row_count\": 15, \"truncated\": false, \"rows\": [{\"n_critical\": 0.0, \"avg_score\": 3.0675349734684034, \"n\": 2073}, {\"n_critical\": 1.0, \"avg_score\": 8.502092050209205, \"n\": 2390}, {\"n_critical\": 2.0, \"avg_score\": 14.71658615136876, \"n\": 1242}, {\"n_critical\": 3.0, \"avg_score\": 21.37842190016103, \"n\": 621}, {\"n_critical\": 4.0, \"avg_score\": 28.48220064724919, \"n\": 309}, {\"n_critical\": 5.0, \"avg_score\": 34.76978417266187, \"n\": 139}, {\"n_critical\": 6.0, \"avg_score\": 43.328947368421055, \"n\": 76}, {\"n_critical\": 7.0, \"avg_score\": 51.8421052631579, \"n\": 19}, {\"n_critical\": 8.0, \"avg_score\": 47.34782608695652, \"n\": 23}, {\"n_critical\": 9.0, \"avg_score\": 54.0, \"n\": 5}, {\"n_critical\": 10.0, \"avg_score\": 85.0, \"n\": 6}, {\"n_critical\": 11.0, \"avg_score\": 133.0, \"n\": 2}, {\"n_critical\": 12.0, \"avg_score\": 53.5, \"n\": 2}, {\"n_critical\": 13.0, \"avg_score\": 69.0, \"n\": 1}, {\"n_critical\": 14.0, \"avg_score\": 46.0, \"n\": 1}]}\n\nObservation: {\"row_count\": 15, \"truncated\": false, \"rows\": [{\"n_noncritical\": 0.0, \"avg_score\": 9.177358490566037, \"n\": 530}, {\"n_noncritical\": 1.0, \"avg_score\": 5.603273577552611, \"n\": 1283}, {\"n_noncritical\": 2.0, \"avg_score\": 7.8321167883211675, \"n\": 1370}, {\"n_noncritical\": 3.0, \"avg_score\": 9.87688219663419, \"n\": 1129}, {\"n_noncritical\": 4.0, \"avg_score\": 12.028792912513843, \"n\": 903}, {\"n_noncritical\": 5.0, \"avg_score\": 14.6608, \"n\": 625}, {\"n_noncritical\": 6.0, \"avg_score\": 18.44736842105263, \"n\": 418}, {\"n_noncritical\": 7.0, \"avg_score\": 20.808, \"n\": 250}, {\"n_noncritical\": 8.0, \"avg_score\": 26.30065359477124, \"n\": 153}, {\"n_noncritical\": 9.0, \"avg_score\": 27.93, \"n\": 100}, {\"n_noncritical\": 10.0, \"avg_score\": 26.484848484848484, \"n\": 66}, {\"n_noncritical\": 11.0, \"avg_score\": 30.64516129032258, \"n\": 31}, {\"n_noncritical\": 12.0, \"avg_score\": 35.05555555555556, \"n\": 18}, {\"n_noncritical\": 13.0, \"avg_score\": 42.4, \"n\": 15}, {\"n_noncritical\": 14.0, \"avg_score\": 35.6, \"n\": 5}]}\n\nAction: plot_chart({'query': '\\nWITH per_insp AS (\\n  SELECT i.inspection_id, i.inspection_score,\\n    SUM(CASE WHEN vc.critical THEN 1 ELSE 0 END) AS n_critical\\n  FROM inspections i\\n  JOIN violations v ON v.inspection_id = i.inspection_id\\n  JOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\\n  WHERE i.inspection_score IS NOT NULL\\n  GROUP BY i.inspection_id, i.inspection_score\\n)\\nSELECT n_critical, avg(inspection_score) as avg_score\\nFROM per_insp\\nWHERE n_critical <= 10\\nGROUP BY n_critical\\nORDER BY n_critical\\n', 'chart_type': 'bar', 'x': 'n_critical', 'y': 'avg_score', 'title': 'Average Inspection Score Rises Sharply with Number of Critical Violations'})\n\nAction: plot_chart({'query': '\\nWITH per_insp AS (\\n  SELECT i.inspection_id, i.inspection_score,\\n    SUM(CASE WHEN NOT vc.critical THEN 1 ELSE 0 END) AS n_noncritical\\n  FROM inspections i\\n  JOIN violations v ON v.inspection_id = i.inspection_id\\n  JOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\\n  WHERE i.inspection_score IS NOT NULL\\n  GROUP BY i.inspection_id, i.inspection_score\\n)\\nSELECT n_noncritical, avg(inspection_score) as avg_score\\nFROM per_insp\\nWHERE n_noncritical <= 10\\nGROUP BY n_noncritical\\nORDER BY n_noncritical\\n', 'chart_type': 'bar', 'x': 'n_noncritical', 'y': 'avg_score', 'title': 'Average Inspection Score Rises More Gradually with Number of Non-Critical Violations'})\n\nAction: plot_chart({'query': '\\nSELECT vc.critical AS violation_type, count(*) as violation_count\\nFROM violations v\\nJOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\\nGROUP BY vc.critical\\n', 'chart_type': 'pie', 'x': 'violation_type', 'y': 'violation_count', 'title': 'Share of Cited Violations that are Critical vs Non-Critical (SLCHD Inspections)'})\n\nObservation: Chart created: 'Average Inspection Score Rises Sharply with Number of Critical Violations' (bar, 11 rows). It will be shown to the user below your answer.\n\nObservation: Chart created: 'Average Inspection Score Rises More Gradually with Number of Non-Critical Violations' (bar, 11 rows). It will be shown to the user below your answer.\n\nObservation: Chart created: 'Share of Cited Violations that are Critical vs Non-Critical (SLCHD Inspections)' (pie, 2 rows). It will be shown to the user below your answer.",
+  "timeline": [],
+  "messages": [
+    {
+      "type": "HumanMessage",
+      "content": "What's the difference between a critical and a non-critical violation, and how does each affect an inspection score?"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [
+        {
+          "signature": "Eu0CCokBCBAYAipAyZwW1UXC10Sd+mOF5f4eOszAA3Oi6FS83VYcObJ7ok3ytyCyuAsvoudz8Na8RyadZLstYh/tycrgXf5huvQQFTIPY2xhdWRlLXNvbm5ldC01OABCCHRoaW5raW5nWiQ3M2FiYWQ1Yy1lZWVhLTQ3N2QtYjUyMC1jODJlMDYxMDc1NWMSDO7gAcKh2kTN3lbr/hoMPH077cGBm2aV7YRFIjDclJmKFbUeQy+WpkF0v6z4lb4KbiogXBqusjJwAzKhfZnPzu3b5m7lHD6Q/kuG8GkqkAHTAK7jMj3i0ZkLOgigxGxJCO9kRwPpCiE0CEIQkfe+3HN7h9j5mwIwITGCS6H/JK2BKGN9p4U+JMpS8LLJs6XqNaNeVjz9VlGEDbiRdjkrZO/guTnlCHTsKYQwrnl5Tk19dJDxmb5n+/SCuvggBJCqK5yYkV44XIFcHnKGivLdqDed2lr/ZJ0uPEDBYmzD8eMYAQ==",
+          "thinking": "",
+          "type": "thinking"
+        },
+        {
+          "id": "toolu_01DUGmp2qbngrQrEDJrtK4re",
+          "caller": {
+            "type": "direct"
+          },
+          "input": {
+            "query": "critical violation versus non-critical violation definition risk"
+          },
+          "name": "retrieve_regulation",
+          "type": "tool_use"
+        },
+        {
+          "id": "toolu_01FdAfNQwpMRaUZP3vSKGds7",
+          "caller": {
+            "type": "direct"
+          },
+          "input": {
+            "query": "inspection score calculation critical violation points demerit"
+          },
+          "name": "retrieve_regulation",
+          "type": "tool_use"
+        }
+      ],
+      "tool_calls": [
+        {
+          "name": "retrieve_regulation",
+          "args": {
+            "query": "critical violation versus non-critical violation definition risk"
+          },
+          "id": "toolu_01DUGmp2qbngrQrEDJrtK4re",
+          "type": "tool_call"
+        },
+        {
+          "name": "retrieve_regulation",
+          "args": {
+            "query": "inspection score calculation critical violation points demerit"
+          },
+          "id": "toolu_01FdAfNQwpMRaUZP3vSKGds7",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 3675,
+        "output_tokens": 173,
+        "total_tokens": 3848,
+        "input_token_details": {
+          "cache_read": 0,
+          "cache_creation": 0,
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "output_token_details": {
+          "reasoning": 42
+        }
+      },
+      "model_name": "claude-sonnet-5"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "[R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 1-201 Applicability and Terms Defined, p.6]\ndesigned to identify potential FOOD EMPLOYEES who may be suffering from a \ndisease that can be transmitted through FOOD and done in compliance with Title 1 \nof the Americans with Disabilities Act of 1990. \n \n\"Confirmed disease outbreak\" means a FOODBORNE DISEASE OUTBREAK in \nwhich laboratory analysis of appropriate specimens identifies a causative agent \nand epidemiological analysis implicates the FOOD as the source of the illness. \n \n\"Consumer\" means a PERSON who is a member of the public, takes possession \nof FOOD, is not functioning in the capacity of an operator of a FOOD ESTABLISHMENT \nor FOOD PROCESSING PLANT, and does not offer the FOOD for resale. \n \nCore Item. \n \n(1)  \"Core item\" also referred to as \u201cnon critical\u201d means a provision in the Model \nCode that is not designated as a Priority Item or a Priority Foundation Item\u201d \n \n(2)  \"Core item\" includes an item that usually relates to general sanitation, \noperational controls, sanitation standard operating procedures (SSOPs),\n\n---\n\n[R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 1-201 Applicability and Terms Defined, p.20]\n\"Restricted egg\" means any check, dirty EGG, incubator reject, inedible, leaker, or \nloss as defined in 9 CFR 590. \n \n\"Restricted use pesticide\" means a pesticide product that contains the active \ningredients specified in 40 CFR 152.175 Pesticides classified for restricted use, and \nthat is limited to use by or under the direct supervision of a certified applicator. \n \n\"Risk\" means the likelihood that an adverse health effect will occur within a \npopulation as a result of a HAZARD in a FOOD. \n \n\"Safe material\" means: \n \n(1)  An article manufactured from or composed of materials that may not \nreasonably be expected to result, directly or indirectly, in their becoming a \ncomponent or otherwise affecting the characteristics of any FOOD; \n \n(2)  An additive that is used as specified in \u00a7 409 of the Federal Food, Drug, and \nCosmetic Act; or \n \n(3) Other materials that are not ADDITIVES and that are used in conformity with \napplicable regulations of the Food and Drug Administration.\n\n---\n\n[R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 1-201 Applicability and Terms Defined, p.13]\n13  \n \n\"Highly susceptible population\" means PERSONS who are more likely than other \npeople in the general population to experience foodborne disease because they are: \n \n(1)  Immunocompromised; preschool age children, or older adults; and \n \n(2)  Obtaining FOOD at a facility that provides services such as custodial care, \nhealth care, or assisted living, such as a child or adult day care center, kidney \ndialysis center, hospital or nursing home, or nutritional or socialization services \nsuch as a senior center. \n \n\"Imminent health hazard\" means a significant threat or danger to health that is \nconsidered to exist when there is evidence sufficient to show that a product, \npractice, circumstance, or event creates a situation that requires immediate \ncorrection or cessation of operation to prevent injury based on: \n \n(1)  The number of potential injuries, and \n \n(2)  The nature, severity, and duration of the anticipated injury.\n\n---\n\n[R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 8-906.10 Appointment by Regulatory Authority and, p.243]\nspecified in \u00b6 8-913.10(B) for each violation of this Code that \nis alleged and found to be committed, and calculated based \non each day a violation occurs as specified in \u00b6 8-913.10(C);",
+      "tool_call_id": "toolu_01DUGmp2qbngrQrEDJrtK4re",
+      "name": "retrieve_regulation"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "[R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 8-405.20 Verification and Documentation of, p.220]\n(2) 10 calendar days after the inspection, for the PERMIT \nHOLDER to correct violations of a PRIORITY FOUNDATION \nITEM or HACCP PLAN deviations. \n \n8-405.20 Verification and Documentation of \nCorrection. \n \n(A) After observing at the time of inspection a correction of a \nviolation of a PRIORITY ITEM or PRIORITY FOUNDATION ITEM or a \nHACCP PLAN deviation, the REGULATORY AUTHORITY shall enter \nthe violation and information about the corrective action on \nthe inspection report. \n \n(B) As specified under \u00b6 8-405.11(B), after receiving \nnotification that the PERMIT HOLDER has corrected a violation of \na PRIORITY ITEM OR PRIORITY FOUNDATION ITEM or HACCP PLAN \ndeviation, or at the end of the specified period of time, the \nREGULATORY AUTHORITY shall verify correction of the violation, \ndocument the information on an inspection report, and enter \nthe report in the REGULATORY AUTHORITY'S records. \n \n \n \n8-406.11 Time Frame for Correction.\n\n---\n\n[R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 8-403.30 Issuing Report and Obtaining, p.218]\n215  \n(3) Nonconformance with PRIORITY ITEMS OR PRIORITY \nFOUNDATION ITEMS of this Code, \n \n(4) Failure of the appropriate FOOD EMPLOYEES to \ndemonstrate their knowledge of, and ability to perform \nin accordance with, the procedural, monitoring, \nverification, and corrective action practices required by \nthe REGULATORY AUTHORITY as specified under \n\u00a7 8-103.12, \n \n(5) Failure of the PERSON IN CHARGE to provide records \nrequired by the REGULATORY AUTHORITY for determining \nconformance with a HACCP PLAN as specified under \nSubparagraph 8-201.14(D)(6), and \n \n(6) Nonconformance with CRITICAL LIMITS of a HACCP \nPLAN. \n \n \n \n8-403.20 Specifying Time Frame for Corrections. \n \nThe REGULATORY AUTHORITY shall specify on the inspection \nreport form the time frame for correction of the violations as \nspecified under \u00a7\u00a7 8-404.11, 8-405.11, and 8-406.11. \n \n \n \n8-403.30 Issuing Report and Obtaining \nAcknowledgment of Receipt. \n \n \nAt the conclusion of the inspection and according to LAW, the\n\n---\n\n[R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 8-406 Core Item Violation, p.214]\n211  \n8-4 INSPECTION AND CORRECTION OF VIOLATIONS \n \nSubparts \n \n8-401 Frequency \n8-402 Competency and Access \n8-403 Report of Findings \n8-404 Imminent Health Hazard \n8-405 Violation of Priority Item or Priority \nFoundation Item \n8-406 Core Item Violation \n \n \n \nFrequency 8-401.10 Establishing Inspection Interval. \n \n(A) Except as specified in \u00b6\u00b6 (B) and (C) of this section, the \nREGULATORY AUTHORITY shall inspect a FOOD ESTABLISHMENT at \nleast once every 6 months and twice in a season for seasonal \noperations. \n \n(B) The REGULATORY AUTHORITY may increase the interval \nbetween inspections beyond 6 months if: \n \n(1) The FOOD ESTABLISHMENT is fully operating under an \nAPPROVED and validated HACCP PLAN as specified under \n\u00a7 8-201.14 and \u00b6\u00b6 8-103.12(A) and (B); \n \n(2) The FOOD ESTABLISHMENT is assigned a less frequent \ninspection frequency based on a written RISK-based \ninspection schedule that is being uniformly applied \nthroughout the jurisdiction or\n\n---\n\n[R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 8-405.20 Verification and Documentation of, p.220]\n217  \nViolation of \nPriority Item or \nPriority \nFoundation Item \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \nCore Item \nViolation \n8-405.11 Timely Correction. \n \n(A) Except as specified in \u00b6 (B) of this section, a PERMIT \nHOLDER shall at the time of inspection correct a violation of a \nPRIORITY ITEM or PRIORITY FOUNDATION ITEM of this Code and \nimplement corrective actions for a HACCP PLAN provision that \nis not in compliance with its CRITICAL LIMIT. Pf \n \n(B) Considering the nature of the potential HAZARD involved \nand the complexity of the corrective action needed, the \nREGULATORY AUTHORITY may agree to or specify a longer time \nframe, not to exceed: \n \n(1) 72 hours after the inspection, for the PERMIT HOLDER \nto correct violations of a PRIORITY ITEM; or \n \n(2) 10 calendar days after the inspection, for the PERMIT \nHOLDER to correct violations of a PRIORITY FOUNDATION \nITEM or HACCP PLAN deviations.",
+      "tool_call_id": "toolu_01FdAfNQwpMRaUZP3vSKGds7",
+      "name": "retrieve_regulation"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [
+        {
+          "signature": "EpYDCokBCBAYAipABssGRw6mVhrcfswd8n3BPpE50eOi89pwu0dw2UQdg6wnByoLaTbcNM0T4T8++1eI9kSJiL4uCty1bZnWpkIvHzIPY2xhdWRlLXNvbm5ldC01OABCCHRoaW5raW5nWiQ3M2FiYWQ1Yy1lZWVhLTQ3N2QtYjUyMC1jODJlMDYxMDc1NWMSDFk0ePNpSk+ghk/LVBoMBRblgrhRYhcxHyhMIjCqamfUVYWE3EOvtuVlxJBTrDcIBGBY1C/d8jSwscRU1QEl3pVqaz2KMrG35TUG58kquQHX+AvsA3hIQoRddaEB5JMk9MFIfvxlQ1vaKOOaegBePFA/+zhEtj/iCEd04ba/0GY5i+x0EkIeAlEcbMGqwIgR+3ghaVmRG6fJYkIK0g60RX4cohQCOUnAALbMYQionIlC87udao53EBefHmRVXWMj9CXnXNbVUP98SREa2a3RP9BxC+Bd335KNipNkR/3xBH0SsvFurhqITZPi3tq6CXGEWUEC4wrhxpUd8DQnk3agTwV1OdrUx37zBgB",
+          "thinking": "",
+          "type": "thinking"
+        },
+        {
+          "id": "toolu_013P4FdNeYwiP7PDAdKfXCwe",
+          "caller": {
+            "type": "direct"
+          },
+          "input": {
+            "table_dot_column": "violations.is_critical"
+          },
+          "name": "get_column_glossary",
+          "type": "tool_use"
+        },
+        {
+          "id": "toolu_01S1ePEnbAvctqNtH4KSM8QU",
+          "caller": {
+            "type": "direct"
+          },
+          "input": {
+            "table_dot_column": "establishments.inspection_score"
+          },
+          "name": "get_column_glossary",
+          "type": "tool_use"
+        },
+        {
+          "id": "toolu_011iW4PbfBXQYMEPt6h5PQjR",
+          "caller": {
+            "type": "direct"
+          },
+          "input": {
+            "query": "Priority Item definition foodborne illness risk factor"
+          },
+          "name": "retrieve_regulation",
+          "type": "tool_use"
+        },
+        {
+          "id": "toolu_01Y8gMvbLJg26NrJ6G15U6wB",
+          "caller": {
+            "type": "direct"
+          },
+          "input": {
+            "query": "SELECT is_critical, count(*) as violation_count, avg(inspections.inspection_score) as avg_score\nFROM violations\nJOIN inspections ON violations.inspection_id = inspections.inspection_id\nGROUP BY is_critical"
+          },
+          "name": "run_sql",
+          "type": "tool_use"
+        }
+      ],
+      "tool_calls": [
+        {
+          "name": "get_column_glossary",
+          "args": {
+            "table_dot_column": "violations.is_critical"
+          },
+          "id": "toolu_013P4FdNeYwiP7PDAdKfXCwe",
+          "type": "tool_call"
+        },
+        {
+          "name": "get_column_glossary",
+          "args": {
+            "table_dot_column": "establishments.inspection_score"
+          },
+          "id": "toolu_01S1ePEnbAvctqNtH4KSM8QU",
+          "type": "tool_call"
+        },
+        {
+          "name": "retrieve_regulation",
+          "args": {
+            "query": "Priority Item definition foodborne illness risk factor"
+          },
+          "id": "toolu_011iW4PbfBXQYMEPt6h5PQjR",
+          "type": "tool_call"
+        },
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "SELECT is_critical, count(*) as violation_count, avg(inspections.inspection_score) as avg_score\nFROM violations\nJOIN inspections ON violations.inspection_id = inspections.inspection_id\nGROUP BY is_critical"
+          },
+          "id": "toolu_01Y8gMvbLJg26NrJ6G15U6wB",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 7367,
+        "output_tokens": 365,
+        "total_tokens": 7732,
+        "input_token_details": {
+          "cache_read": 0,
+          "cache_creation": 0,
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "output_token_details": {
+          "reasoning": 50
+        }
+      },
+      "model_name": "claude-sonnet-5"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "No glossary entry for 'violations.is_critical' \u2014 it's probably self-explanatory from get_schema.",
+      "tool_call_id": "toolu_013P4FdNeYwiP7PDAdKfXCwe",
+      "name": "get_column_glossary"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "No glossary entry for 'establishments.inspection_score' \u2014 it's probably self-explanatory from get_schema.",
+      "tool_call_id": "toolu_01S1ePEnbAvctqNtH4KSM8QU",
+      "name": "get_column_glossary"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "[R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 1-201 Applicability and Terms Defined, p.17]\n17  \nfacilities, or operations, and a FOOD ESTABLISHMENT is only one component of a \nlarger operation such as a health care facility, hotel, motel, school, recreational \ncamp, or prison. \n \n\"Primal cut\" means a basic major cut into which carcasses and sides of MEAT are \nseparated, such as a beef round, pork loin, lamb flank, or veal breast. \n \nPriority Item. \n \n(1)  \"Priority item\" also referred to as \u201ccritical 1\u201d means a provision in the \nModel Code whose application contributes directly to the elimination, \nprevention or reduction to an acceptable level, hazards associated with food \nborne illness or injury and there is no provision that more directly controls the \nhazard.   \n \n(2)  \"Priority item\" includes items with a quantifiable measure to show control of \nhazards such as cooking, reheating, cooling, handwashing; and \n \n(3)  \"Priority item\" is an item that is denoted in this Code with a superscript P-P. \n \nPriority Foundation Item.\n\n---\n\n[R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 1-201 Applicability and Terms Defined, p.6]\ndesigned to identify potential FOOD EMPLOYEES who may be suffering from a \ndisease that can be transmitted through FOOD and done in compliance with Title 1 \nof the Americans with Disabilities Act of 1990. \n \n\"Confirmed disease outbreak\" means a FOODBORNE DISEASE OUTBREAK in \nwhich laboratory analysis of appropriate specimens identifies a causative agent \nand epidemiological analysis implicates the FOOD as the source of the illness. \n \n\"Consumer\" means a PERSON who is a member of the public, takes possession \nof FOOD, is not functioning in the capacity of an operator of a FOOD ESTABLISHMENT \nor FOOD PROCESSING PLANT, and does not offer the FOOD for resale. \n \nCore Item. \n \n(1)  \"Core item\" also referred to as \u201cnon critical\u201d means a provision in the Model \nCode that is not designated as a Priority Item or a Priority Foundation Item\u201d \n \n(2)  \"Core item\" includes an item that usually relates to general sanitation, \noperational controls, sanitation standard operating procedures (SSOPs),\n\n---\n\n[R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 1-201 Applicability and Terms Defined, p.17]\n(3)  \"Priority item\" is an item that is denoted in this Code with a superscript P-P. \n \nPriority Foundation Item. \n \n(1)  \"Priority foundation item\" also referred to as \u201ccritical 2\u201d means a \nprovision in the Model Code whose application supports, facilitates or \nenables one or more PRIORITY ITEMS. \n \n(2)  \"Priority foundation item\" includes an item that requires the purposeful \nincorporation of specific actions, equipment or procedures by industry \nmanagement to attain control of risk factors that contribute to foodborne illness \nor injury such as personnel training, infrastructure or necessary equipment, \nHACCP plans, documentation or record keeping, and labeling; and \n \n(3) \"Priority foundation item\" is an item that is denoted in this Code with a \nsuperscript Pf - Pf. \n \n\"Public water system\" has the meaning stated in 40 CFR 141 National Primary \nDrinking Water Regulations. \n \n\"Ratite\" means a flightless bird such as an emu, ostrich, or rhea. \n \nReady-to-Eat Food.\n\n---\n\n[R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 2-103 Duties, p.27]\n26  \nKnowledge 2-102.11 Demonstration. \n \nBased on the RISKS inherent to the FOOD operation, during \ninspections and upon request the PERSON IN CHARGE shall \ndemonstrate to the REGULATORY AUTHORITY knowledge of \nfoodborne disease prevention, application of the HAZARD \nAnalysis and CRITICAL CONTROL POINT principles, and the \nrequirements of this Code.  The PERSON IN CHARGE shall \ndemonstrate this knowledge by: \n \n(A) Complying with this Code by having no violations of \nPRIORITY ITEMS during the current inspection; Pf \n \n(B) Being a certified FOOD protection manager who has \nshown proficiency of required information through passing a \ntest that is part of an ACCREDITED PROGRAM;Pf or \n \n(C) Responding correctly to the inspector's questions as they \nrelate to the specific FOOD operation. The areas of \nknowledge include: \n \n(1) Describing the relationship between the prevention of \nfoodborne disease and the personal hygiene of a FOOD \nEMPLOYEE; Pf",
+      "tool_call_id": "toolu_011iW4PbfBXQYMEPt6h5PQjR",
+      "name": "retrieve_regulation"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "SQL error: Binder Error: Referenced column \"is_critical\" not found in FROM clause!\nCandidate bindings: \"violation_description\", \"inspections.inspection_id\", \"violations.inspection_id\", \"slchd_establishment_key\", \"inspection_date\"\n\nLINE 4: GROUP BY is_critical\n                 ^",
+      "tool_call_id": "toolu_01Y8gMvbLJg26NrJ6G15U6wB",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [
+        {
+          "signature": "EpQCCokBCBAYAipAuFy+Xuei3o37+CDua3I34y4fSIDw+toZJ0903V+4jZQkAMs/AOUx6iogguEwmUGTU2bKxU9JXKIrdnd0aXjbpTIPY2xhdWRlLXNvbm5ldC01OABCCHRoaW5raW5nWiQ3M2FiYWQ1Yy1lZWVhLTQ3N2QtYjUyMC1jODJlMDYxMDc1NWMSDGObKIyQ6CP/xACiFhoMaYAYW5ze2jNUUvqFIjAz5jV0nFOqLcx7UbdpzsHOBbc6laUsVeipTy+KBFYkuToDJmE5/R2P9ViedT/pZSwqOPT1NqFtObD0l8ENp7mGoRWjd1WhUihsimoGv86H8Gt6mifxu1CH2Xu7iHmaX4X72+qPpecBevJzGAE=",
+          "thinking": "",
+          "type": "thinking"
+        },
+        {
+          "id": "toolu_01DWRW6yWm9PXG2Fr6FxKAxD",
+          "caller": {
+            "type": "direct"
+          },
+          "input": {},
+          "name": "get_schema",
+          "type": "tool_use"
+        }
+      ],
+      "tool_calls": [
+        {
+          "name": "get_schema",
+          "args": {},
+          "id": "toolu_01DWRW6yWm9PXG2Fr6FxKAxD",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 9778,
+        "output_tokens": 41,
+        "total_tokens": 9819,
+        "input_token_details": {
+          "cache_read": 0,
+          "cache_creation": 0,
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "output_token_details": {
+          "reasoning": 13
+        }
+      },
+      "model_name": "claude-sonnet-5"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "Project food_health_viz {\n  database_type: 'DuckDB'\n}\n\nTable establishment_keys {\n  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']\n  name varchar [not null]\n  address varchar [not null]\n  city varchar [not null]\n  city_state_zip varchar\n  establishment_type varchar\n  source varchar [note: 'friend_slc | own_scrape']\n  slchd_lat double\n  slchd_lon double\n  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']\n\n  Note: 'SLCHD establishment list, one row per portal listing.'\n}\n\nTable category {\n  category_id integer [pk]\n  category varchar\n}\n\nTable establishments {\n  gmap_id varchar [pk]\n  name varchar\n  address varchar\n  description varchar\n  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']\n  avg_rating double\n  num_of_reviews integer\n  price varchar\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']\n\n  Note: 'One row per Google Local place \u2014 all restaurants, not just SLCHD-matched.'\n}\n\nTable establishment_attributes {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  attribute varchar [not null]\n\n  indexes { (gmap_id, attribute) [pk] }\n\n  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. \"Service options\") dropped.'\n}\n\nTable establishment_categories {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  category_id integer [ref: > category.category_id, not null]\n\n  indexes { (gmap_id, category_id) [pk] }\n}\n\nTable gmap_hours {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  day integer [not null, note: '0=Sun \u2026 6=Sat']\n  open_min bigint\n  open_max bigint\n\n  indexes { (gmap_id, day) [pk] }\n\n  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'\n}\n\nTable review {\n  user_id varchar\n  name varchar\n  time bigint\n  rating double\n  text varchar\n  resp varchar\n  gmap_id varchar [ref: > establishments.gmap_id]\n}\n\nTable inspection_types {\n  inspection_type_id integer [pk, note: 'parsed leading number, e.g. \"01 - Routine\" -> 1']\n  description varchar [note: 'e.g. \"Routine\"']\n}\n\nTable inspections {\n  inspection_id bigint [pk, increment]\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]\n  inspection_date date [not null]\n  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable \u2014 27 rows have no type']\n  inspection_score integer\n\n  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'\n}\n\nTable violation_codes {\n  violation_code_id integer [pk, increment]\n  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. \"4.5.18\"']\n  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']\n  critical boolean [not null]\n}\n\nTable violations {\n  violation_id bigint [pk, increment]\n  inspection_id bigint [ref: > inspections.inspection_id, not null]\n  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]\n  violation_description varchar [note: 'per-occurrence free text']\n  violation_occurrences integer\n  violation_cos boolean [note: 'corrected on site']\n  violation_phr varchar [note: 'public health rationale']\n\n  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'\n}\n",
+      "tool_call_id": "toolu_01DWRW6yWm9PXG2Fr6FxKAxD",
+      "name": "get_schema"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [
+        {
+          "signature": "Eq4ECokBCBAYAipArHY3KW037JBxbATXBQiopfgYm8p76e5Riz784anmzx5mH8499horU7MobFQPW3DvlzYt6HwYQStbnrCFPRnojTIPY2xhdWRlLXNvbm5ldC01OABCCHRoaW5raW5nWiQ3M2FiYWQ1Yy1lZWVhLTQ3N2QtYjUyMC1jODJlMDYxMDc1NWMSDGnSI8b4nhD7nJSbkxoM/DkcxqNO6dk0ZqPpIjDRREssnX0CC78WAQWPjW2AQvNVZyviIdNU6JId3StBAiYE7fYpOuhFRyTBhNDdB8Uq0QIM0OFdI7w6A3TVh9Mf2I7utRZapGvSrk0oPcg29LZQ1svmzjSfbBVnTvjpzS8QSjHtW6985fT1a8eskyREhf5Cu5DaAi79OtD7eXelLb32uQyN8UUbq2PD+bzuu8sT7DkcyJf7QV/dNrm0/09nt108SxKHrQLgrm84Xea/a1qX0iLvm7gQ2YCzGibuZGG9Mi8z//aF1FWIefSF6Ot0On9hZLmS387V3tYKBe95JI5x/mU5bY07T95GxncKMPtFI/OhQErTcCoaR2z+o/jBzR5RLzdwvTqJEKHYAKkQNOHQ8d9YzPidyvjvgDg0PldSZ8Km/Tl5X7Br56Eyt0xl0bKYc8dR7uukNbJdqsarP4aRwUzzCBfUwonXMhuOe8KQpoOs3IhO6vlBQYboasyesPb+ihVn/lPfvl6Mw0AuKf1FiNZ6FUIU70sML6WsHGkrGRvwGAE=",
+          "thinking": "",
+          "type": "thinking"
+        },
+        {
+          "id": "toolu_016MLAp4dbsFvM3iNg2r5jBF",
+          "caller": {
+            "type": "direct"
+          },
+          "input": {
+            "query": "\nSELECT vc.critical, count(*) as violation_count\nFROM violations v\nJOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\nGROUP BY vc.critical\n"
+          },
+          "name": "run_sql",
+          "type": "tool_use"
+        },
+        {
+          "id": "toolu_01MUQsTukCvXUy7PN6uoF6wZ",
+          "caller": {
+            "type": "direct"
+          },
+          "input": {
+            "query": "\nWITH per_insp AS (\n  SELECT i.inspection_id, i.inspection_score,\n    SUM(CASE WHEN vc.critical THEN 1 ELSE 0 END) AS n_critical,\n    SUM(CASE WHEN NOT vc.critical THEN 1 ELSE 0 END) AS n_noncritical\n  FROM inspections i\n  JOIN violations v ON v.inspection_id = i.inspection_id\n  JOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\n  WHERE i.inspection_score IS NOT NULL\n  GROUP BY i.inspection_id, i.inspection_score\n)\nSELECT n_critical, avg(inspection_score) as avg_score, count(*) as n\nFROM per_insp\nGROUP BY n_critical\nORDER BY n_critical\nLIMIT 15\n"
+          },
+          "name": "run_sql",
+          "type": "tool_use"
+        },
+        {
+          "id": "toolu_01HLvqdzQZ7Kkvjmrtz4bpr7",
+          "caller": {
+            "type": "direct"
+          },
+          "input": {
+            "query": "\nWITH per_insp AS (\n  SELECT i.inspection_id, i.inspection_score,\n    SUM(CASE WHEN vc.critical THEN 1 ELSE 0 END) AS n_critical,\n    SUM(CASE WHEN NOT vc.critical THEN 1 ELSE 0 END) AS n_noncritical\n  FROM inspections i\n  JOIN violations v ON v.inspection_id = i.inspection_id\n  JOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\n  WHERE i.inspection_score IS NOT NULL\n  GROUP BY i.inspection_id, i.inspection_score\n)\nSELECT n_noncritical, avg(inspection_score) as avg_score, count(*) as n\nFROM per_insp\nGROUP BY n_noncritical\nORDER BY n_noncritical\nLIMIT 15\n"
+          },
+          "name": "run_sql",
+          "type": "tool_use"
+        }
+      ],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "\nSELECT vc.critical, count(*) as violation_count\nFROM violations v\nJOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\nGROUP BY vc.critical\n"
+          },
+          "id": "toolu_016MLAp4dbsFvM3iNg2r5jBF",
+          "type": "tool_call"
+        },
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "\nWITH per_insp AS (\n  SELECT i.inspection_id, i.inspection_score,\n    SUM(CASE WHEN vc.critical THEN 1 ELSE 0 END) AS n_critical,\n    SUM(CASE WHEN NOT vc.critical THEN 1 ELSE 0 END) AS n_noncritical\n  FROM inspections i\n  JOIN violations v ON v.inspection_id = i.inspection_id\n  JOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\n  WHERE i.inspection_score IS NOT NULL\n  GROUP BY i.inspection_id, i.inspection_score\n)\nSELECT n_critical, avg(inspection_score) as avg_score, count(*) as n\nFROM per_insp\nGROUP BY n_critical\nORDER BY n_critical\nLIMIT 15\n"
+          },
+          "id": "toolu_01MUQsTukCvXUy7PN6uoF6wZ",
+          "type": "tool_call"
+        },
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "\nWITH per_insp AS (\n  SELECT i.inspection_id, i.inspection_score,\n    SUM(CASE WHEN vc.critical THEN 1 ELSE 0 END) AS n_critical,\n    SUM(CASE WHEN NOT vc.critical THEN 1 ELSE 0 END) AS n_noncritical\n  FROM inspections i\n  JOIN violations v ON v.inspection_id = i.inspection_id\n  JOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\n  WHERE i.inspection_score IS NOT NULL\n  GROUP BY i.inspection_id, i.inspection_score\n)\nSELECT n_noncritical, avg(inspection_score) as avg_score, count(*) as n\nFROM per_insp\nGROUP BY n_noncritical\nORDER BY n_noncritical\nLIMIT 15\n"
+          },
+          "id": "toolu_01HLvqdzQZ7Kkvjmrtz4bpr7",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 11232,
+        "output_tokens": 912,
+        "total_tokens": 12144,
+        "input_token_details": {
+          "cache_read": 0,
+          "cache_creation": 0,
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "output_token_details": {
+          "reasoning": 96
+        }
+      },
+      "model_name": "claude-sonnet-5"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 2, \"truncated\": false, \"rows\": [{\"critical\": false, \"violation_count\": 22339}, {\"critical\": true, \"violation_count\": 9690}]}",
+      "tool_call_id": "toolu_016MLAp4dbsFvM3iNg2r5jBF",
+      "name": "run_sql"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 15, \"truncated\": false, \"rows\": [{\"n_critical\": 0.0, \"avg_score\": 3.0675349734684034, \"n\": 2073}, {\"n_critical\": 1.0, \"avg_score\": 8.502092050209205, \"n\": 2390}, {\"n_critical\": 2.0, \"avg_score\": 14.71658615136876, \"n\": 1242}, {\"n_critical\": 3.0, \"avg_score\": 21.37842190016103, \"n\": 621}, {\"n_critical\": 4.0, \"avg_score\": 28.48220064724919, \"n\": 309}, {\"n_critical\": 5.0, \"avg_score\": 34.76978417266187, \"n\": 139}, {\"n_critical\": 6.0, \"avg_score\": 43.328947368421055, \"n\": 76}, {\"n_critical\": 7.0, \"avg_score\": 51.8421052631579, \"n\": 19}, {\"n_critical\": 8.0, \"avg_score\": 47.34782608695652, \"n\": 23}, {\"n_critical\": 9.0, \"avg_score\": 54.0, \"n\": 5}, {\"n_critical\": 10.0, \"avg_score\": 85.0, \"n\": 6}, {\"n_critical\": 11.0, \"avg_score\": 133.0, \"n\": 2}, {\"n_critical\": 12.0, \"avg_score\": 53.5, \"n\": 2}, {\"n_critical\": 13.0, \"avg_score\": 69.0, \"n\": 1}, {\"n_critical\": 14.0, \"avg_score\": 46.0, \"n\": 1}]}",
+      "tool_call_id": "toolu_01MUQsTukCvXUy7PN6uoF6wZ",
+      "name": "run_sql"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 15, \"truncated\": false, \"rows\": [{\"n_noncritical\": 0.0, \"avg_score\": 9.177358490566037, \"n\": 530}, {\"n_noncritical\": 1.0, \"avg_score\": 5.603273577552611, \"n\": 1283}, {\"n_noncritical\": 2.0, \"avg_score\": 7.8321167883211675, \"n\": 1370}, {\"n_noncritical\": 3.0, \"avg_score\": 9.87688219663419, \"n\": 1129}, {\"n_noncritical\": 4.0, \"avg_score\": 12.028792912513843, \"n\": 903}, {\"n_noncritical\": 5.0, \"avg_score\": 14.6608, \"n\": 625}, {\"n_noncritical\": 6.0, \"avg_score\": 18.44736842105263, \"n\": 418}, {\"n_noncritical\": 7.0, \"avg_score\": 20.808, \"n\": 250}, {\"n_noncritical\": 8.0, \"avg_score\": 26.30065359477124, \"n\": 153}, {\"n_noncritical\": 9.0, \"avg_score\": 27.93, \"n\": 100}, {\"n_noncritical\": 10.0, \"avg_score\": 26.484848484848484, \"n\": 66}, {\"n_noncritical\": 11.0, \"avg_score\": 30.64516129032258, \"n\": 31}, {\"n_noncritical\": 12.0, \"avg_score\": 35.05555555555556, \"n\": 18}, {\"n_noncritical\": 13.0, \"avg_score\": 42.4, \"n\": 15}, {\"n_noncritical\": 14.0, \"avg_score\": 35.6, \"n\": 5}]}",
+      "tool_call_id": "toolu_01HLvqdzQZ7Kkvjmrtz4bpr7",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "Now let me visualize this clearly with a couple of charts covering the data facets.",
+      "raw_content": [
+        {
+          "text": "Now let me visualize this clearly with a couple of charts covering the data facets.",
+          "type": "text"
+        },
+        {
+          "id": "toolu_013qi34WC94EmUXTAXp8j2eJ",
+          "caller": {
+            "type": "direct"
+          },
+          "input": {
+            "query": "\nWITH per_insp AS (\n  SELECT i.inspection_id, i.inspection_score,\n    SUM(CASE WHEN vc.critical THEN 1 ELSE 0 END) AS n_critical\n  FROM inspections i\n  JOIN violations v ON v.inspection_id = i.inspection_id\n  JOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\n  WHERE i.inspection_score IS NOT NULL\n  GROUP BY i.inspection_id, i.inspection_score\n)\nSELECT n_critical, avg(inspection_score) as avg_score\nFROM per_insp\nWHERE n_critical <= 10\nGROUP BY n_critical\nORDER BY n_critical\n",
+            "chart_type": "bar",
+            "x": "n_critical",
+            "y": "avg_score",
+            "title": "Average Inspection Score Rises Sharply with Number of Critical Violations"
+          },
+          "name": "plot_chart",
+          "type": "tool_use"
+        },
+        {
+          "id": "toolu_01P4FWUs9ffGpWfa4FmQZsCU",
+          "caller": {
+            "type": "direct"
+          },
+          "input": {
+            "query": "\nWITH per_insp AS (\n  SELECT i.inspection_id, i.inspection_score,\n    SUM(CASE WHEN NOT vc.critical THEN 1 ELSE 0 END) AS n_noncritical\n  FROM inspections i\n  JOIN violations v ON v.inspection_id = i.inspection_id\n  JOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\n  WHERE i.inspection_score IS NOT NULL\n  GROUP BY i.inspection_id, i.inspection_score\n)\nSELECT n_noncritical, avg(inspection_score) as avg_score\nFROM per_insp\nWHERE n_noncritical <= 10\nGROUP BY n_noncritical\nORDER BY n_noncritical\n",
+            "chart_type": "bar",
+            "x": "n_noncritical",
+            "y": "avg_score",
+            "title": "Average Inspection Score Rises More Gradually with Number of Non-Critical Violations"
+          },
+          "name": "plot_chart",
+          "type": "tool_use"
+        },
+        {
+          "id": "toolu_01XSRT3a6mzCBph4QVuS9EXS",
+          "caller": {
+            "type": "direct"
+          },
+          "input": {
+            "query": "\nSELECT vc.critical AS violation_type, count(*) as violation_count\nFROM violations v\nJOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\nGROUP BY vc.critical\n",
+            "chart_type": "pie",
+            "x": "violation_type",
+            "y": "violation_count",
+            "title": "Share of Cited Violations that are Critical vs Non-Critical (SLCHD Inspections)"
+          },
+          "name": "plot_chart",
+          "type": "tool_use"
+        }
+      ],
+      "tool_calls": [
+        {
+          "name": "plot_chart",
+          "args": {
+            "query": "\nWITH per_insp AS (\n  SELECT i.inspection_id, i.inspection_score,\n    SUM(CASE WHEN vc.critical THEN 1 ELSE 0 END) AS n_critical\n  FROM inspections i\n  JOIN violations v ON v.inspection_id = i.inspection_id\n  JOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\n  WHERE i.inspection_score IS NOT NULL\n  GROUP BY i.inspection_id, i.inspection_score\n)\nSELECT n_critical, avg(inspection_score) as avg_score\nFROM per_insp\nWHERE n_critical <= 10\nGROUP BY n_critical\nORDER BY n_critical\n",
+            "chart_type": "bar",
+            "x": "n_critical",
+            "y": "avg_score",
+            "title": "Average Inspection Score Rises Sharply with Number of Critical Violations"
+          },
+          "id": "toolu_013qi34WC94EmUXTAXp8j2eJ",
+          "type": "tool_call"
+        },
+        {
+          "name": "plot_chart",
+          "args": {
+            "query": "\nWITH per_insp AS (\n  SELECT i.inspection_id, i.inspection_score,\n    SUM(CASE WHEN NOT vc.critical THEN 1 ELSE 0 END) AS n_noncritical\n  FROM inspections i\n  JOIN violations v ON v.inspection_id = i.inspection_id\n  JOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\n  WHERE i.inspection_score IS NOT NULL\n  GROUP BY i.inspection_id, i.inspection_score\n)\nSELECT n_noncritical, avg(inspection_score) as avg_score\nFROM per_insp\nWHERE n_noncritical <= 10\nGROUP BY n_noncritical\nORDER BY n_noncritical\n",
+            "chart_type": "bar",
+            "x": "n_noncritical",
+            "y": "avg_score",
+            "title": "Average Inspection Score Rises More Gradually with Number of Non-Critical Violations"
+          },
+          "id": "toolu_01P4FWUs9ffGpWfa4FmQZsCU",
+          "type": "tool_call"
+        },
+        {
+          "name": "plot_chart",
+          "args": {
+            "query": "\nSELECT vc.critical AS violation_type, count(*) as violation_count\nFROM violations v\nJOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\nGROUP BY vc.critical\n",
+            "chart_type": "pie",
+            "x": "violation_type",
+            "y": "violation_count",
+            "title": "Share of Cited Violations that are Critical vs Non-Critical (SLCHD Inspections)"
+          },
+          "id": "toolu_01XSRT3a6mzCBph4QVuS9EXS",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 13345,
+        "output_tokens": 1131,
+        "total_tokens": 14476,
+        "input_token_details": {
+          "cache_read": 0,
+          "cache_creation": 0,
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "output_token_details": {
+          "reasoning": 0
+        }
+      },
+      "model_name": "claude-sonnet-5"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "Chart created: 'Average Inspection Score Rises Sharply with Number of Critical Violations' (bar, 11 rows). It will be shown to the user below your answer.",
+      "tool_call_id": "toolu_013qi34WC94EmUXTAXp8j2eJ",
+      "name": "plot_chart"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "Chart created: 'Average Inspection Score Rises More Gradually with Number of Non-Critical Violations' (bar, 11 rows). It will be shown to the user below your answer.",
+      "tool_call_id": "toolu_01P4FWUs9ffGpWfa4FmQZsCU",
+      "name": "plot_chart"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "Chart created: 'Share of Cited Violations that are Critical vs Non-Critical (SLCHD Inspections)' (pie, 2 rows). It will be shown to the user below your answer.",
+      "tool_call_id": "toolu_01XSRT3a6mzCBph4QVuS9EXS",
+      "name": "plot_chart"
+    },
+    {
+      "type": "AIMessage",
+      "content": "## Critical vs. Non-Critical Violations\n\nUnder Utah's R392-100 Food Service Sanitation Rule (adopted from the FDA Food Code 2013), violations are classified into two main risk tiers, both of which the underlying data model consolidates into `violation_codes.critical` (true/false):\n\n**Priority Item (\"Critical 1\")** \u2014 a provision \"whose application contributes directly to the elimination, prevention, or reduction to an acceptable level of hazards associated with foodborne illness or injury, and there is no provision that more directly controls the hazard.\" These are typically quantifiable control points like proper cooking/reheating/cooling temperatures and handwashing. In the Code they're marked with a superscript **P**. Utah's rule also lumps in \"Priority Foundation Item\" (Critical 2) violations \u2014 provisions that *support or enable* a Priority Item (e.g., staff training, HACCP documentation, labeling), marked **Pf**. In this dataset both are simply flagged `critical = true`.\n\n**Core Item (\"non-critical\")** \u2014 \"a provision in the Model Code that is not designated as a Priority Item or Priority Foundation Item,\" usually relating to general sanitation, facility upkeep, or operational controls rather than a direct, quantifiable illness-hazard control.\n\n**Correction timing differs too**: the regulation requires a Priority Item violation be corrected *at the time of inspection* (or within 72 hours if the inspector allows), a Priority Foundation Item within 10 calendar days, while Core/non-critical items get more routine handling.\n\n### Effect on inspection score\nPulling actual inspection data (22,339 non-critical vs. 9,690 critical violation citations logged):\n\n- **Critical violations drive the score up much faster.** Inspections with 0 critical violations average a score of **3.1**; that climbs to **8.5** with 1 critical violation, **14.7** with 2, **21.4** with 3, **28.5** with 4, and **34.8** with 5 \u2014 roughly +6-7 points per additional critical violation.\n- **Non-critical violations add points too, but much more slowly.** Going from 0 to 1 non-critical violation barely moves the average score (9.2 \u2192 5.6, reflecting that inspections with zero non-critical items often still have critical ones), and the climb per additional non-critical violation is only about +2 points (e.g., 5 \u2192 14.7, 10 \u2192 26.5), compared to the +6-7 per critical violation.\n\nIn short: since a higher inspection score = worse (0 is clean), **critical violations are weighted far more heavily** because they represent direct, immediate foodborne-illness hazards, while non-critical (Core) violations reflect general sanitation/operational issues and add to the score at a noticeably slower rate. The charts above show this side-by-side (score vs. # critical, score vs. # non-critical), plus the overall citation mix (~30% of all cited violations are critical, ~70% non-critical).",
+      "tool_calls": [],
+      "usage_metadata": {
+        "input_tokens": 14743,
+        "output_tokens": 974,
+        "total_tokens": 15717,
+        "input_token_details": {
+          "cache_read": 0,
+          "cache_creation": 0,
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "output_token_details": {
+          "reasoning": 0
+        }
+      },
+      "model_name": "claude-sonnet-5"
+    }
+  ],
+  "charts": [
+    {
+      "data": [
+        {
+          "hovertemplate": "n_critical=%{x}<br>avg_score=%{y}<extra></extra>",
+          "legendgroup": "",
+          "marker": {
+            "color": "#000001",
+            "pattern": {
+              "shape": ""
+            }
+          },
+          "name": "",
+          "orientation": "v",
+          "showlegend": false,
+          "textposition": "auto",
+          "x": {
+            "dtype": "f8",
+            "bdata": "AAAAAAAAAAAAAAAAAADwPwAAAAAAAABAAAAAAAAACEAAAAAAAAAQQAAAAAAAABRAAAAAAAAAGEAAAAAAAAAcQAAAAAAAACBAAAAAAAAAIkAAAAAAAAAkQA=="
+          },
+          "xaxis": "x",
+          "y": {
+            "dtype": "f8",
+            "bdata": "bRCzxk+KCEDTdY41EgEhQGnKSWHkbi1AJEj1QeBgNUCZC2qAcXs8QNRHq0mIYkFAoryG8hqqRUC9hvIayutJQEMWspCFrEdAAAAAAAAAS0AAAAAAAEBVQA=="
+          },
+          "yaxis": "y",
+          "type": "bar"
+        }
+      ],
+      "layout": {
+        "template": {
+          "data": {
+            "candlestick": [
+              {
+                "decreasing": {
+                  "line": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "line": {
+                    "color": "#000032"
+                  }
+                },
+                "type": "candlestick"
+              }
+            ],
+            "contourcarpet": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contourcarpet"
+              }
+            ],
+            "contour": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contour"
+              }
+            ],
+            "heatmap": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "heatmap"
+              }
+            ],
+            "histogram2d": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "histogram2d"
+              }
+            ],
+            "icicle": [
+              {
+                "textfont": {
+                  "color": "white"
+                },
+                "type": "icicle"
+              }
+            ],
+            "sankey": [
+              {
+                "textfont": {
+                  "color": "#000036"
+                },
+                "type": "sankey"
+              }
+            ],
+            "scatter": [
+              {
+                "marker": {
+                  "line": {
+                    "width": 0
+                  }
+                },
+                "type": "scatter"
+              }
+            ],
+            "table": [
+              {
+                "cells": {
+                  "fill": {
+                    "color": "#000038"
+                  },
+                  "font": {
+                    "color": "#000037"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "header": {
+                  "fill": {
+                    "color": "#000040"
+                  },
+                  "font": {
+                    "color": "#000036"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "type": "table"
+              }
+            ],
+            "waterfall": [
+              {
+                "connector": {
+                  "line": {
+                    "color": "#000036",
+                    "width": 2
+                  }
+                },
+                "decreasing": {
+                  "marker": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "marker": {
+                    "color": "#000032"
+                  }
+                },
+                "totals": {
+                  "marker": {
+                    "color": "#000034"
+                  }
+                },
+                "type": "waterfall"
+              }
+            ]
+          },
+          "layout": {
+            "coloraxis": {
+              "colorscale": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorscale": {
+              "diverging": [
+                [
+                  0.0,
+                  "#000021"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000022"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000023"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000024"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000025"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000026"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000027"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000028"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000029"
+                ],
+                [
+                  1.0,
+                  "#000030"
+                ]
+              ],
+              "sequential": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ],
+              "sequentialminus": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorway": [
+              "#000001",
+              "#000002",
+              "#000003",
+              "#000004",
+              "#000005",
+              "#000006",
+              "#000007",
+              "#000008",
+              "#000009",
+              "#000010"
+            ]
+          }
+        },
+        "xaxis": {
+          "anchor": "y",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "n_critical"
+          }
+        },
+        "yaxis": {
+          "anchor": "x",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "avg_score"
+          }
+        },
+        "legend": {
+          "tracegroupgap": 0
+        },
+        "title": {
+          "text": "Average Inspection Score Rises Sharply with Number of Critical Violations"
+        },
+        "barmode": "relative"
+      }
+    },
+    {
+      "data": [
+        {
+          "hovertemplate": "n_noncritical=%{x}<br>avg_score=%{y}<extra></extra>",
+          "legendgroup": "",
+          "marker": {
+            "color": "#000001",
+            "pattern": {
+              "shape": ""
+            }
+          },
+          "name": "",
+          "orientation": "v",
+          "showlegend": false,
+          "textposition": "auto",
+          "x": {
+            "dtype": "f8",
+            "bdata": "AAAAAAAAAAAAAAAAAADwPwAAAAAAAABAAAAAAAAACEAAAAAAAAAQQAAAAAAAABRAAAAAAAAAGEAAAAAAAAAcQAAAAAAAACBAAAAAAAAAIkAAAAAAAAAkQA=="
+          },
+          "xaxis": "x",
+          "y": {
+            "dtype": "f8",
+            "bdata": "UUxpu85aIkB9hHiMwGkWQPoqYWwWVB9AG/oJtPbAI0AENdPxvQ4oQMNkqmBUUi1AKK+hvIZyMkACK4cW2c40QKL3TKL3TDpArkfhehTuO0B88MEHH3w6QA=="
+          },
+          "yaxis": "y",
+          "type": "bar"
+        }
+      ],
+      "layout": {
+        "template": {
+          "data": {
+            "candlestick": [
+              {
+                "decreasing": {
+                  "line": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "line": {
+                    "color": "#000032"
+                  }
+                },
+                "type": "candlestick"
+              }
+            ],
+            "contourcarpet": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contourcarpet"
+              }
+            ],
+            "contour": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contour"
+              }
+            ],
+            "heatmap": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "heatmap"
+              }
+            ],
+            "histogram2d": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "histogram2d"
+              }
+            ],
+            "icicle": [
+              {
+                "textfont": {
+                  "color": "white"
+                },
+                "type": "icicle"
+              }
+            ],
+            "sankey": [
+              {
+                "textfont": {
+                  "color": "#000036"
+                },
+                "type": "sankey"
+              }
+            ],
+            "scatter": [
+              {
+                "marker": {
+                  "line": {
+                    "width": 0
+                  }
+                },
+                "type": "scatter"
+              }
+            ],
+            "table": [
+              {
+                "cells": {
+                  "fill": {
+                    "color": "#000038"
+                  },
+                  "font": {
+                    "color": "#000037"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "header": {
+                  "fill": {
+                    "color": "#000040"
+                  },
+                  "font": {
+                    "color": "#000036"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "type": "table"
+              }
+            ],
+            "waterfall": [
+              {
+                "connector": {
+                  "line": {
+                    "color": "#000036",
+                    "width": 2
+                  }
+                },
+                "decreasing": {
+                  "marker": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "marker": {
+                    "color": "#000032"
+                  }
+                },
+                "totals": {
+                  "marker": {
+                    "color": "#000034"
+                  }
+                },
+                "type": "waterfall"
+              }
+            ]
+          },
+          "layout": {
+            "coloraxis": {
+              "colorscale": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorscale": {
+              "diverging": [
+                [
+                  0.0,
+                  "#000021"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000022"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000023"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000024"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000025"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000026"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000027"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000028"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000029"
+                ],
+                [
+                  1.0,
+                  "#000030"
+                ]
+              ],
+              "sequential": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ],
+              "sequentialminus": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorway": [
+              "#000001",
+              "#000002",
+              "#000003",
+              "#000004",
+              "#000005",
+              "#000006",
+              "#000007",
+              "#000008",
+              "#000009",
+              "#000010"
+            ]
+          }
+        },
+        "xaxis": {
+          "anchor": "y",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "n_noncritical"
+          }
+        },
+        "yaxis": {
+          "anchor": "x",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "avg_score"
+          }
+        },
+        "legend": {
+          "tracegroupgap": 0
+        },
+        "title": {
+          "text": "Average Inspection Score Rises More Gradually with Number of Non-Critical Violations"
+        },
+        "barmode": "relative"
+      }
+    },
+    {
+      "data": [
+        {
+          "domain": {
+            "x": [
+              0.0,
+              1.0
+            ],
+            "y": [
+              0.0,
+              1.0
+            ]
+          },
+          "hovertemplate": "violation_type=%{label}<br>violation_count=%{value}<extra></extra>",
+          "labels": [
+            false,
+            true
+          ],
+          "legendgroup": "",
+          "name": "",
+          "showlegend": true,
+          "values": {
+            "dtype": "i2",
+            "bdata": "Q1faJQ=="
+          },
+          "type": "pie"
+        }
+      ],
+      "layout": {
+        "template": {
+          "data": {
+            "candlestick": [
+              {
+                "decreasing": {
+                  "line": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "line": {
+                    "color": "#000032"
+                  }
+                },
+                "type": "candlestick"
+              }
+            ],
+            "contourcarpet": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contourcarpet"
+              }
+            ],
+            "contour": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contour"
+              }
+            ],
+            "heatmap": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "heatmap"
+              }
+            ],
+            "histogram2d": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "histogram2d"
+              }
+            ],
+            "icicle": [
+              {
+                "textfont": {
+                  "color": "white"
+                },
+                "type": "icicle"
+              }
+            ],
+            "sankey": [
+              {
+                "textfont": {
+                  "color": "#000036"
+                },
+                "type": "sankey"
+              }
+            ],
+            "scatter": [
+              {
+                "marker": {
+                  "line": {
+                    "width": 0
+                  }
+                },
+                "type": "scatter"
+              }
+            ],
+            "table": [
+              {
+                "cells": {
+                  "fill": {
+                    "color": "#000038"
+                  },
+                  "font": {
+                    "color": "#000037"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "header": {
+                  "fill": {
+                    "color": "#000040"
+                  },
+                  "font": {
+                    "color": "#000036"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "type": "table"
+              }
+            ],
+            "waterfall": [
+              {
+                "connector": {
+                  "line": {
+                    "color": "#000036",
+                    "width": 2
+                  }
+                },
+                "decreasing": {
+                  "marker": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "marker": {
+                    "color": "#000032"
+                  }
+                },
+                "totals": {
+                  "marker": {
+                    "color": "#000034"
+                  }
+                },
+                "type": "waterfall"
+              }
+            ]
+          },
+          "layout": {
+            "coloraxis": {
+              "colorscale": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorscale": {
+              "diverging": [
+                [
+                  0.0,
+                  "#000021"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000022"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000023"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000024"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000025"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000026"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000027"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000028"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000029"
+                ],
+                [
+                  1.0,
+                  "#000030"
+                ]
+              ],
+              "sequential": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ],
+              "sequentialminus": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorway": [
+              "#000001",
+              "#000002",
+              "#000003",
+              "#000004",
+              "#000005",
+              "#000006",
+              "#000007",
+              "#000008",
+              "#000009",
+              "#000010"
+            ]
+          }
+        },
+        "legend": {
+          "tracegroupgap": 0
+        },
+        "title": {
+          "text": "Share of Cited Violations that are Critical vs Non-Critical (SLCHD Inspections)"
+        }
+      }
+    }
+  ],
+  "candidate_pool_raw": [],
+  "duration_seconds": 36.09,
+  "usage": {
+    "available": true,
+    "per_call": [
+      {
+        "input_tokens": 3675,
+        "output_tokens": 173,
+        "total_tokens": 3848
+      },
+      {
+        "input_tokens": 7367,
+        "output_tokens": 365,
+        "total_tokens": 7732
+      },
+      {
+        "input_tokens": 9778,
+        "output_tokens": 41,
+        "total_tokens": 9819
+      },
+      {
+        "input_tokens": 11232,
+        "output_tokens": 912,
+        "total_tokens": 12144
+      },
+      {
+        "input_tokens": 13345,
+        "output_tokens": 1131,
+        "total_tokens": 14476
+      },
+      {
+        "input_tokens": 14743,
+        "output_tokens": 974,
+        "total_tokens": 15717
+      }
+    ],
+    "input_tokens": 60140,
+    "output_tokens": 3596,
+    "total_tokens": 63736
+  },
+  "tokens_per_minute": 105964.4,
+  "estimated_cost_usd": 0.15624,
+  "success": true,
+  "error": null,
+  "chart_image_files": [
+    "2026-08-15T09-08-02.578884+00-00_v2_memory_70ba52ec_chart0.png",
+    "2026-08-15T09-08-02.578884+00-00_v2_memory_70ba52ec_chart1.png"
+  ]
+}

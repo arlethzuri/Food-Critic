@@ -1,0 +1,194 @@
+Question: For which restaurants has the number of critical violations increased, and for which has it decreased over the last 5 years? Show me a detailed visual analysis.
+
+Variant: v1_memory | Provider: anthropic | Model: claude-sonnet-5
+Timestamp: 2026-08-15T09:21:21.339599+00:00 | Duration: 97.38s
+
+--- Answer ---
+## Critical Violation Trend Analysis — Last 5 Years (2021‑07‑17 → 2026‑07‑17*)
+
+*\*The most recent inspection date in the data is 2026‑07‑17, so I used that as the anchor and split the 5‑year window into an "earlier" half (2021‑07‑17–2024‑01‑17) and a "recent" half (2024‑01‑17–2026‑07‑17), comparing average critical violations **per inspection** in each half (not raw totals) — raw totals are misleading here because the recent half actually contains more inspections overall (3,470 vs 2,156) across more establishments (1,312 vs 907), so a rate-based comparison is the fair way to detect real trend direction.*
+
+**Important caveat on grounding:** this analysis draws from the SLCHD inspection tables (`establishment_keys`/`inspections`/`violations`), which are only linked to Google-mapped listings (`establishments`) for **1.6%** of restaurants overall. When I tried to pin the top trending names (e.g., "Top Stop #C-23", "Kokopelli's Koffee House") onto the map via `search_establishments`, most had no `slchd_establishment_key` match to a Google listing, so they can't be shown as pins on the interactive map — the numbers below come directly from the inspection records themselves.
+
+### Findings
+Restricting to the 659 establishments with at least 2 inspections in **both** halves (enough data to call a real trend):
+- **187 restaurants got worse** (higher avg. critical violations/inspection recently)
+- **356 restaurants improved** (lower avg. critical violations/inspection recently)
+- **116 were unchanged**
+
+**Most worsened** (biggest rate increase): Top Stop #C‑23 (SLC, 0.5→4.0 crit/inspection), Arivo Cafe (Kearns, 0→2.4), Manolis (SLC, 1.3→3.7), Wendy's #6098 (West Jordan, 0.7→2.75), Garden Espresso (Murray, 1.3→3.3).
+
+**Most improved** (biggest rate decrease): Kokopelli's Koffee House (Holladay, 5.5→1.0), Cafe Rio – West Valley City (5.7→1.2), Jersey Mike's Subs – Herriman (5.75→1.4), Rancheritos Draper (6.2→2.3), Navajo Hogan (South Salt Lake, 4.4→0.67).
+
+The scatter plot shows all 659 restaurants plotted by earlier-period vs. recent-period rate — points below the diagonal improved, points above worsened, confirming decreases (356) outnumber increases (187) overall, i.e. more restaurants trended toward better food-safety compliance than worse over this window.
+
+--- Reasoning trace ---
+Action: get_schema({})
+
+Observation: Project food_health_viz {
+  database_type: 'DuckDB'
+}
+
+Table establishment_keys {
+  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']
+  name varchar [not null]
+  address varchar [not null]
+  city varchar [not null]
+  city_state_zip varchar
+  establishment_type varchar
+  source varchar [note: 'friend_slc | own_scrape']
+  slchd_lat double
+  slchd_lon double
+  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']
+
+  Note: 'SLCHD establishment list, one row per portal listing.'
+}
+
+Table category {
+  category_id integer [pk]
+  category varchar
+}
+
+Table establishments {
+  gmap_id varchar [pk]
+  name varchar
+  address varchar
+  description varchar
+  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']
+  avg_rating double
+  num_of_reviews integer
+  price varchar
+  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']
+
+  Note: 'One row per Google Local place — all restaurants, not just SLCHD-matched.'
+}
+
+Table establishment_attributes {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  attribute varchar [not null]
+
+  indexes { (gmap_id, attribute) [pk] }
+
+  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. "Service options") dropped.'
+}
+
+Table establishment_categories {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  category_id integer [ref: > category.category_id, not null]
+
+  indexes { (gmap_id, category_id) [pk] }
+}
+
+Table gmap_hours {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  day integer [not null, note: '0=Sun … 6=Sat']
+  open_min bigint
+  open_max bigint
+
+  indexes { (gmap_id, day) [pk] }
+
+  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'
+}
+
+Table review {
+  user_id varchar
+  name varchar
+  time bigint
+  rating double
+  text varchar
+  resp varchar
+  gmap_id varchar [ref: > establishments.gmap_id]
+}
+
+Table inspection_types {
+  inspection_type_id integer [pk, note: 'parsed leading number, e.g. "01 - Routine" -> 1']
+  description varchar [note: 'e.g. "Routine"']
+}
+
+Table inspections {
+  inspection_id bigint [pk, increment]
+  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]
+  inspection_date date [not null]
+  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable — 27 rows have no type']
+  inspection_score integer
+
+  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'
+}
+
+Table violation_codes {
+  violation_code_id integer [pk, increment]
+  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. "4.5.18"']
+  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']
+  critical boolean [not null]
+}
+
+Table violations {
+  violation_id bigint [pk, increment]
+  inspection_id bigint [ref: > inspections.inspection_id, not null]
+  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]
+  violation_description varchar [note: 'per-occurrence free text']
+  violation_occurrences integer
+  violation_cos boolean [note: 'corrected on site']
+  violation_phr varchar [note: 'public health rationale']
+
+  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'
+}
+
+
+Action: run_sql({'query': 'SELECT max(inspection_date) as max_date, min(inspection_date) as min_date FROM inspections'})
+
+Observation: {"row_count": 1, "truncated": false, "rows": [{"max_date": "2026-07-17 00:00:00", "min_date": "2009-01-09 00:00:00"}]}
+
+Action: run_sql({'query': "\nWITH window_insp AS (\n  SELECT i.slchd_establishment_key, i.inspection_id, i.inspection_date,\n    CASE WHEN i.inspection_date >= DATE '2024-01-17' THEN 'recent' ELSE 'earlier' END AS period\n  FROM inspections i\n  WHERE i.inspection_date >= DATE '2021-07-17' AND i.inspection_date <= DATE '2026-07-17'\n),\ncrit AS (\n  SELECT w.slchd_establishment_key, w.period, w.inspection_id,\n    COUNT(*) FILTER (WHERE vc.critical) AS crit_count\n  FROM window_insp w\n  LEFT JOIN violations v ON v.inspection_id = w.inspection_id\n  LEFT JOIN violation_codes vc ON vc.violation_code_id = v.violation_code_id\n  GROUP BY w.slchd_establishment_key, w.period, w.inspection_id\n),\nagg AS (\n  SELECT slchd_establishment_key, period, SUM(crit_count) AS total_crit, COUNT(*) AS num_inspections\n  FROM crit\n  GROUP BY slchd_establishment_key, period\n),\npiv AS (\n  SELECT slchd_establishment_key,\n    MAX(CASE WHEN period='earlier' THEN total_crit ELSE 0 END) AS earlier_crit,\n    MAX(CASE WHEN period='recent' THEN total_crit ELSE 0 END) AS recent_crit,\n    MAX(CASE WHEN period='earlier' THEN num_inspections ELSE 0 END) AS earlier_insp,\n    MAX(CASE WHEN period='recent' THEN num_inspections ELSE 0 END) AS recent_insp\n  FROM agg\n  GROUP BY slchd_establishment_key\n)\nSELECT ek.name, ek.city, p.earlier_crit, p.recent_crit, (p.recent_crit - p.earlier_crit) AS delta, p.earlier_insp, p.recent_insp\nFROM piv p\nJOIN establishment_keys ek ON ek.slchd_establishment_key = p.slchd_establishment_key\nWHERE p.earlier_insp > 0 AND p.recent_insp > 0\nORDER BY delta DESC\nLIMIT 15\n"})
+
+Observation: {"row_count": 15, "truncated": false, "rows": [{"name": "CAFE RIO", "city": "SOUTH JORDAN", "earlier_crit": 2.0, "recent_crit": 48.0, "delta": 46.0, "earlier_insp": 1, "recent_insp": 9}, {"name": "YANNIS GREEK EXPRESS", "city": "SALT LAKE CITY", "earlier_crit": 1.0, "recent_crit": 22.0, "delta": 21.0, "earlier_insp": 1, "recent_insp": 4}, {"name": "ANGELAS CATERING", "city": "MILLCREEK TS", "earlier_crit": 0.0, "recent_crit": 15.0, "delta": 15.0, "earlier_insp": 1, "recent_insp": 4}, {"name": "BON APPETIT @ WGU", "city": "MILLCREEK", "earlier_crit": 5.0, "recent_crit": 19.0, "delta": 14.0, "earlier_insp": 2, "recent_insp": 6}, {"name": "ARCTIC CIRCLE 202", "city": "MILLCREEK TS", "earlier_crit": 1.0, "recent_crit": 14.0, "delta": 13.0, "earlier_insp": 1, "recent_insp": 6}, {"name": "YOSHIS RESTAURANT", "city": "MURRAY", "earlier_crit": 3.0, "recent_crit": 16.0, "delta": 13.0, "earlier_insp": 3, "recent_insp": 7}, {"name": "SAOLA", "city": "COTTONWOOD HEIGHTS", "earlier_crit": 12.0, "recent_crit": 24.0, "delta": 12.0, "earlier_insp": 1, "recent_insp": 5}, {"name": "VOLUNTEERS OF AMERICA RECOVERY ON RDWD", "city": "SALT LAKE CITY", "earlier_crit": 3.0, "recent_crit": 15.0, "delta": 12.0, "earlier_insp": 1, "recent_insp": 5}, {"name": "ARIVO CAFE", "city": "KEARNS", "earlier_crit": 0.0, "recent_crit": 12.0, "delta": 12.0, "earlier_insp": 2, "recent_insp": 5}, {"name": "TAQUERIA 27 HOLLADAY", "city": "HOLLADAY", "earlier_crit": 0.0, "recent_crit": 12.0, "delta": 12.0, "earlier_insp": 1, "recent_insp": 5}, {"name": "MENCHIES", "city": "MILLCREEK TS", "earlier_crit": 0.0, "recent_crit": 11.0, "delta": 11.0, "earlier_insp": 1, "recent_insp": 4}, {"name": "OLD TOWNE TAVERN", "city": "MIDVALE", "earlier_crit": 5.0, "recent_crit": 16.0, "delta": 11.0, "earlier_insp": 1, "recent_insp": 4}, {"name": "WENDYS #6064", "city": "MAGNA", "earlier_crit": 3.0, "recent_crit": 13.0, "delta": 10.0, "earlier_insp": 1, "recent_insp": 9}, {"name": "AMERICAN FOOD & VENDING CORP @ ZIONS BANCORP TECH", "city": "MIDVALE", "earlier_crit": 2.0, "recent_crit": 12.0, "delta": 10.0, "earlier_insp": 1, "recent_insp": 4}, {"name": "TABLE X", "city": "MILLCREEK TS", "earlier_crit": 1.0, "recent_crit": 11.0, "delta": 10.0, "earlier_insp": 1, "recent_insp": 3}]}
+
+Action: run_sql({'query': "\nSELECT CASE WHEN inspection_date >= DATE '2024-01-17' THEN 'recent' ELSE 'earlier' END AS period,\nCOUNT(*) AS num_inspections, COUNT(DISTINCT slchd_establishment_key) as num_establishments\nFROM inspections\nWHERE inspection_date >= DATE '2021-07-17' AND inspection_date <= DATE '2026-07-17'\nGROUP BY period\n"})
+
+Observation: {"row_count": 2, "truncated": false, "rows": [{"period": "earlier", "num_inspections": 2156, "num_establishments": 907}, {"period": "recent", "num_inspections": 3470, "num_establishments": 1312}]}
+
+Action: run_sql({'query': "\nWITH window_insp AS (\n  SELECT i.slchd_establishment_key, i.inspection_id, i.inspection_date,\n    CASE WHEN i.inspection_date >= DATE '2024-01-17' THEN 'recent' ELSE 'earlier' END AS period\n  FROM inspections i\n  WHERE i.inspection_date >= DATE '2021-07-17' AND i.inspection_date <= DATE '2026-07-17'\n),\ncrit AS (\n  SELECT w.slchd_establishment_key, w.period, w.inspection_id,\n    COUNT(*) FILTER (WHERE vc.critical) AS crit_count\n  FROM window_insp w\n  LEFT JOIN violations v ON v.inspection_id = w.inspection_id\n  LEFT JOIN violation_codes vc ON vc.violation_code_id = v.violation_code_id\n  GROUP BY w.slchd_establishment_key, w.period, w.inspection_id\n),\nagg AS (\n  SELECT slchd_establishment_key, period, SUM(crit_count)*1.0/COUNT(*) AS avg_crit, COUNT(*) AS num_inspections, SUM(crit_count) as total_crit\n  FROM crit\n  GROUP BY slchd_establishment_key, period\n),\npiv AS (\n  SELECT slchd_establishment_key,\n    MAX(CASE WHEN period='earlier' THEN avg_crit END) AS earlier_avg,\n    MAX(CASE WHEN period='recent' THEN avg_crit END) AS recent_avg,\n    MAX(CASE WHEN period='earlier' THEN num_inspections END) AS earlier_insp,\n    MAX(CASE WHEN period='recent' THEN num_inspections END) AS recent_insp,\n    MAX(CASE WHEN period='earlier' THEN total_crit END) AS earlier_total,\n    MAX(CASE WHEN period='recent' THEN total_crit END) AS recent_total\n  FROM agg\n  GROUP BY slchd_establishment_key\n)\nSELECT ek.name, ek.city, p.earlier_avg, p.recent_avg, (p.recent_avg-p.earlier_avg) AS delta_rate,\np.earlier_insp, p.recent_insp, p.earlier_total, p.recent_total\nFROM piv p\nJOIN establishment_keys ek ON ek.slchd_establishment_key = p.slchd_establishment_key\nWHERE p.earlier_insp >= 2 AND p.recent_insp >= 2\nORDER BY delta_rate DESC\nLIMIT 12\n"})
+
+Observation: {"row_count": 12, "truncated": false, "rows": [{"name": "TOP STOP #C-23", "city": "SALT LAKE CITY", "earlier_avg": 0.5, "recent_avg": 4.0, "delta_rate": 3.5, "earlier_insp": 2, "recent_insp": 2, "earlier_total": 1.0, "recent_total": 8.0}, {"name": "ARIVO CAFE", "city": "KEARNS", "earlier_avg": 0.0, "recent_avg": 2.4, "delta_rate": 2.4, "earlier_insp": 2, "recent_insp": 5, "earlier_total": 0.0, "recent_total": 12.0}, {"name": "MANOLIS", "city": "SALT LAKE CITY", "earlier_avg": 1.3333333333333333, "recent_avg": 3.6666666666666665, "delta_rate": 2.333333333333333, "earlier_insp": 3, "recent_insp": 3, "earlier_total": 4.0, "recent_total": 11.0}, {"name": "WENDYS #6098", "city": "WEST JORDAN", "earlier_avg": 0.6666666666666666, "recent_avg": 2.75, "delta_rate": 2.0833333333333335, "earlier_insp": 3, "recent_insp": 4, "earlier_total": 2.0, "recent_total": 11.0}, {"name": "GARDEN ESPRESSO", "city": "MURRAY", "earlier_avg": 1.3333333333333333, "recent_avg": 3.3333333333333335, "delta_rate": 2.0, "earlier_insp": 3, "recent_insp": 3, "earlier_total": 4.0, "recent_total": 10.0}, {"name": "U OF U RICE ECCLES STADIUM - 35S", "city": "SALT LAKE CITY", "earlier_avg": 0.5, "recent_avg": 2.5, "delta_rate": 2.0, "earlier_insp": 2, "recent_insp": 2, "earlier_total": 1.0, "recent_total": 5.0}, {"name": "GOOD2GO STORES", "city": "HERRIMAN", "earlier_avg": 0.0, "recent_avg": 2.0, "delta_rate": 2.0, "earlier_insp": 2, "recent_insp": 3, "earlier_total": 0.0, "recent_total": 6.0}, {"name": "APPLEBEES WEST VALLEY", "city": "WEST VALLEY CITY", "earlier_avg": 0.5, "recent_avg": 2.5, "delta_rate": 2.0, "earlier_insp": 2, "recent_insp": 4, "earlier_total": 1.0, "recent_total": 10.0}, {"name": "TARGET T1751 STARBUCKS", "city": "COTTONWOOD HEIGHTS", "earlier_avg": 0.3333333333333333, "recent_avg": 2.0, "delta_rate": 1.6666666666666667, "earlier_insp": 3, "recent_insp": 3, "earlier_total": 1.0, "recent_total": 6.0}, {"name": "MANNYS NEIGHBORHOOD BAR", "city": "SALT LAKE CITY", "earlier_avg": 0.5, "recent_avg": 2.0, "delta_rate": 1.5, "earlier_insp": 2, "recent_insp": 2, "earlier_total": 1.0, "recent_total": 4.0}, {"name": "ARBYS #8541", "city": "MIDVALE", "earlier_avg": 0.0, "recent_avg": 1.5, "delta_rate": 1.5, "earlier_insp": 3, "recent_insp": 2, "earlier_total": 0.0, "recent_total": 3.0}, {"name": "ARCTIC CIRCLE 111", "city": "WEST JORDAN", "earlier_avg": 2.0, "recent_avg": 3.3333333333333335, "delta_rate": 1.3333333333333335, "earlier_insp": 3, "recent_insp": 3, "earlier_total": 6.0, "recent_total": 10.0}]}
+
+Action: run_sql({'query': "\nWITH window_insp AS (\n  SELECT i.slchd_establishment_key, i.inspection_id, i.inspection_date,\n    CASE WHEN i.inspection_date >= DATE '2024-01-17' THEN 'recent' ELSE 'earlier' END AS period\n  FROM inspections i\n  WHERE i.inspection_date >= DATE '2021-07-17' AND i.inspection_date <= DATE '2026-07-17'\n),\ncrit AS (\n  SELECT w.slchd_establishment_key, w.period, w.inspection_id,\n    COUNT(*) FILTER (WHERE vc.critical) AS crit_count\n  FROM window_insp w\n  LEFT JOIN violations v ON v.inspection_id = w.inspection_id\n  LEFT JOIN violation_codes vc ON vc.violation_code_id = v.violation_code_id\n  GROUP BY w.slchd_establishment_key, w.period, w.inspection_id\n),\nagg AS (\n  SELECT slchd_establishment_key, period, SUM(crit_count)*1.0/COUNT(*) AS avg_crit, COUNT(*) AS num_inspections, SUM(crit_count) as total_crit\n  FROM crit\n  GROUP BY slchd_establishment_key, period\n),\npiv AS (\n  SELECT slchd_establishment_key,\n    MAX(CASE WHEN period='earlier' THEN avg_crit END) AS earlier_avg,\n    MAX(CASE WHEN period='recent' THEN avg_crit END) AS recent_avg,\n    MAX(CASE WHEN period='earlier' THEN num_inspections END) AS earlier_insp,\n    MAX(CASE WHEN period='recent' THEN num_inspections END) AS recent_insp,\n    MAX(CASE WHEN period='earlier' THEN total_crit END) AS earlier_total,\n    MAX(CASE WHEN period='recent' THEN total_crit END) AS recent_total\n  FROM agg\n  GROUP BY slchd_establishment_key\n)\nSELECT ek.name, ek.city, p.earlier_avg, p.recent_avg, (p.recent_avg-p.earlier_avg) AS delta_rate,\np.earlier_insp, p.recent_insp, p.earlier_total, p.recent_total\nFROM piv p\nJOIN establishment_keys ek ON ek.slchd_establishment_key = p.slchd_establishment_key\nWHERE p.earlier_insp >= 2 AND p.recent_insp >= 2\nORDER BY delta_rate ASC\nLIMIT 12\n"})
+
+Observation: {"row_count": 12, "truncated": false, "rows": [{"name": "KOKOPELLIS KOFFEE HOUSE", "city": "HOLLADAY", "earlier_avg": 5.5, "recent_avg": 1.0, "delta_rate": -4.5, "earlier_insp": 2, "recent_insp": 3, "earlier_total": 11.0, "recent_total": 3.0}, {"name": "CAFE RIO", "city": "WEST VALLEY CITY", "earlier_avg": 5.666666666666667, "recent_avg": 1.2, "delta_rate": -4.466666666666667, "earlier_insp": 3, "recent_insp": 5, "earlier_total": 17.0, "recent_total": 6.0}, {"name": "JERSEY MIKES SUBS", "city": "HERRIMAN", "earlier_avg": 5.75, "recent_avg": 1.4, "delta_rate": -4.35, "earlier_insp": 4, "recent_insp": 5, "earlier_total": 23.0, "recent_total": 7.0}, {"name": "RANCHERITOS DRAPER", "city": "DRAPER", "earlier_avg": 6.2, "recent_avg": 2.3333333333333335, "delta_rate": -3.8666666666666667, "earlier_insp": 5, "recent_insp": 3, "earlier_total": 31.0, "recent_total": 7.0}, {"name": "NAVAJO HOGAN", "city": "SOUTH SALT LAKE", "earlier_avg": 4.4, "recent_avg": 0.6666666666666666, "delta_rate": -3.733333333333334, "earlier_insp": 5, "recent_insp": 3, "earlier_total": 22.0, "recent_total": 2.0}, {"name": "COSTA VIDA GATEWAY", "city": "SALT LAKE CITY", "earlier_avg": 5.0, "recent_avg": 1.3333333333333333, "delta_rate": -3.666666666666667, "earlier_insp": 2, "recent_insp": 3, "earlier_total": 10.0, "recent_total": 4.0}, {"name": "SEVEN ELEVEN #12957A", "city": "MIDVALE", "earlier_avg": 6.25, "recent_avg": 2.6666666666666665, "delta_rate": -3.5833333333333335, "earlier_insp": 4, "recent_insp": 3, "earlier_total": 25.0, "recent_total": 8.0}, {"name": "SEVEN ELEVEN #41131A", "city": "MAGNA", "earlier_avg": 3.5, "recent_avg": 0.0, "delta_rate": -3.5, "earlier_insp": 2, "recent_insp": 3, "earlier_total": 7.0, "recent_total": 0.0}, {"name": "SEVEN ELEVEN STORE #23850C", "city": "MURRAY", "earlier_avg": 4.666666666666667, "recent_avg": 1.3333333333333333, "delta_rate": -3.333333333333334, "earlier_insp": 3, "recent_insp": 3, "earlier_total": 14.0, "recent_total": 4.0}, {"name": "BAMBARA/HOTEL MONACO MAIN KITCHEN", "city": "SALT LAKE CITY", "earlier_avg": 5.0, "recent_avg": 1.6666666666666667, "delta_rate": -3.333333333333333, "earlier_insp": 2, "recent_insp": 3, "earlier_total": 10.0, "recent_total": 5.0}, {"name": "APOLLO BURGER", "city": "SALT LAKE CITY", "earlier_avg": 4.0, "recent_avg": 0.8, "delta_rate": -3.2, "earlier_insp": 3, "recent_insp": 5, "earlier_total": 12.0, "recent_total": 4.0}, {"name": "SEVEN ELEVEN STORE #26838C", "city": "WEST VALLEY CITY", "earlier_avg": 3.5, "recent_avg": 0.3333333333333333, "delta_rate": -3.1666666666666665, "earlier_insp": 2, "recent_insp": 3, "earlier_total": 7.0, "recent_total": 1.0}]}
+
+Action: run_sql({'query': "\nWITH window_insp AS (\n  SELECT i.slchd_establishment_key, i.inspection_id, i.inspection_date,\n    CASE WHEN i.inspection_date >= DATE '2024-01-17' THEN 'recent' ELSE 'earlier' END AS period\n  FROM inspections i\n  WHERE i.inspection_date >= DATE '2021-07-17' AND i.inspection_date <= DATE '2026-07-17'\n),\ncrit AS (\n  SELECT w.slchd_establishment_key, w.period, w.inspection_id,\n    COUNT(*) FILTER (WHERE vc.critical) AS crit_count\n  FROM window_insp w\n  LEFT JOIN violations v ON v.inspection_id = w.inspection_id\n  LEFT JOIN violation_codes vc ON vc.violation_code_id = v.violation_code_id\n  GROUP BY w.slchd_establishment_key, w.period, w.inspection_id\n),\nagg AS (\n  SELECT slchd_establishment_key, period, SUM(crit_count)*1.0/COUNT(*) AS avg_crit, COUNT(*) AS num_inspections\n  FROM crit\n  GROUP BY slchd_establishment_key, period\n),\npiv AS (\n  SELECT slchd_establishment_key,\n    MAX(CASE WHEN period='earlier' THEN avg_crit END) AS earlier_avg,\n    MAX(CASE WHEN period='recent' THEN avg_crit END) AS recent_avg,\n    MAX(CASE WHEN period='earlier' THEN num_inspections END) AS earlier_insp,\n    MAX(CASE WHEN period='recent' THEN num_inspections END) AS recent_insp\n  FROM agg\n  GROUP BY slchd_establishment_key\n)\nSELECT\n  SUM(CASE WHEN recent_avg > earlier_avg THEN 1 ELSE 0 END) AS increased,\n  SUM(CASE WHEN recent_avg < earlier_avg THEN 1 ELSE 0 END) AS decreased,\n  SUM(CASE WHEN recent_avg = earlier_avg THEN 1 ELSE 0 END) AS unchanged,\n  COUNT(*) AS total_with_both_periods\nFROM piv\nWHERE earlier_insp >= 2 AND recent_insp >= 2\n"})
+
+Observation: {"row_count": 1, "truncated": false, "rows": [{"increased": 187.0, "decreased": 356.0, "unchanged": 116.0, "total_with_both_periods": 659}]}
+
+Action: search_establishments({'name_contains': 'TOP STOP', 'require_inspection_data': True})
+
+Action: search_establishments({'name_contains': 'KOKOPELLIS KOFFEE HOUSE', 'require_inspection_data': True})
+
+Action: plot_chart({'query': "\nWITH window_insp AS (\n  SELECT i.slchd_establishment_key, i.inspection_id, i.inspection_date,\n    CASE WHEN i.inspection_date >= DATE '2024-01-17' THEN 'recent' ELSE 'earlier' END AS period\n  FROM inspections i\n  WHERE i.inspection_date >= DATE '2021-07-17' AND i.inspection_date <= DATE '2026-07-17'\n),\ncrit AS (\n  SELECT w.slchd_establishment_key, w.period, w.inspection_id,\n    COUNT(*) FILTER (WHERE vc.critical) AS crit_count\n  FROM window_insp w\n  LEFT JOIN violations v ON v.inspection_id = w.inspection_id\n  LEFT JOIN violation_codes vc ON vc.violation_code_id = v.violation_code_id\n  GROUP BY w.slchd_establishment_key, w.period, w.inspection_id\n),\nagg AS (\n  SELECT slchd_establishment_key, period, SUM(crit_count)*1.0/COUNT(*) AS avg_crit, COUNT(*) AS num_inspections\n  FROM crit\n  GROUP BY slchd_establishment_key, period\n),\npiv AS (\n  SELECT slchd_establishment_key,\n    MAX(CASE WHEN period='earlier' THEN avg_crit END) AS earlier_avg,\n    MAX(CASE WHEN period='recent' THEN avg_crit END) AS recent_avg,\n    MAX(CASE WHEN period='earlier' THEN num_inspections END) AS earlier_insp,\n    MAX(CASE WHEN period='recent' THEN num_inspections END) AS recent_insp\n  FROM agg\n  GROUP BY slchd_establishment_key\n)\nSELECT\n  CASE WHEN recent_avg > earlier_avg THEN 'Increased'\n       WHEN recent_avg < earlier_avg THEN 'Decreased'\n       ELSE 'Unchanged' END AS trend,\n  COUNT(*) AS num_establishments\nFROM piv\nWHERE earlier_insp >= 2 AND recent_insp >= 2\nGROUP BY trend\n", 'chart_type': 'pie', 'x': 'trend', 'y': 'num_establishments', 'title': 'Share of Restaurants: Critical Violation Rate Trend (Earlier 2021-2023 vs Recent 2024-2026)'})
+
+Observation: {"row_count": 0, "rows": []}
+
+Observation: {"row_count": 0, "rows": []}
+
+Observation: Chart created: 'Share of Restaurants: Critical Violation Rate Trend (Earlier 2021-2023 vs Recent 2024-2026)' (pie, 3 rows). It will be shown to the user below your answer.
+
+Action: search_establishments({'name_contains': 'Top Stop'})
+
+Action: search_establishments({'name_contains': 'Kokopelli'})
+
+Observation: {"row_count": 0, "rows": []}
+
+Observation: {"row_count": 1, "rows": [{"gmap_id": "0x875261c2b0e2108b:0xb6159cea1605ebaa", "name": "Kokopelli's koffee", "address": "Kokopelli's koffee, 3955 Highland Dr, Millcreek, UT 84124", "latitude": 40.685779, "longitude": -111.84436, "avg_rating": 4.1, "num_of_reviews": 118, "price": "$", "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}]}
+
+Action: plot_chart({'query': "\nWITH window_insp AS (\n  SELECT i.slchd_establishment_key, i.inspection_id, i.inspection_date,\n    CASE WHEN i.inspection_date >= DATE '2024-01-17' THEN 'recent' ELSE 'earlier' END AS period\n  FROM inspections i\n  WHERE i.inspection_date >= DATE '2021-07-17' AND i.inspection_date <= DATE '2026-07-17'\n),\ncrit AS (\n  SELECT w.slchd_establishment_key, w.period, w.inspection_id,\n    COUNT(*) FILTER (WHERE vc.critical) AS crit_count\n  FROM window_insp w\n  LEFT JOIN violations v ON v.inspection_id = w.inspection_id\n  LEFT JOIN violation_codes vc ON vc.violation_code_id = v.violation_code_id\n  GROUP BY w.slchd_establishment_key, w.period, w.inspection_id\n),\nagg AS (\n  SELECT slchd_establishment_key, period, SUM(crit_count)*1.0/COUNT(*) AS avg_crit, COUNT(*) AS num_inspections\n  FROM crit\n  GROUP BY slchd_establishment_key, period\n),\npiv AS (\n  SELECT slchd_establishment_key,\n    MAX(CASE WHEN period='earlier' THEN avg_crit END) AS earlier_avg,\n    MAX(CASE WHEN period='recent' THEN avg_crit END) AS recent_avg,\n    MAX(CASE WHEN period='earlier' THEN num_inspections END) AS earlier_insp,\n    MAX(CASE WHEN period='recent' THEN num_inspections END) AS recent_insp\n  FROM agg\n  GROUP BY slchd_establishment_key\n)\nSELECT ek.name || ' (' || ek.city || ')' AS restaurant, (p.recent_avg - p.earlier_avg) AS delta_rate\nFROM piv p\nJOIN establishment_keys ek ON ek.slchd_establishment_key = p.slchd_establishment_key\nWHERE p.earlier_insp >= 2 AND p.recent_insp >= 2\nORDER BY delta_rate DESC\nLIMIT 10\n", 'chart_type': 'bar', 'x': 'restaurant', 'y': 'delta_rate', 'title': 'Top 10 Restaurants: Increase in Avg Critical Violations per Inspection (2021-23 vs 2024-26)'})
+
+Action: plot_chart({'query': "\nWITH window_insp AS (\n  SELECT i.slchd_establishment_key, i.inspection_id, i.inspection_date,\n    CASE WHEN i.inspection_date >= DATE '2024-01-17' THEN 'recent' ELSE 'earlier' END AS period\n  FROM inspections i\n  WHERE i.inspection_date >= DATE '2021-07-17' AND i.inspection_date <= DATE '2026-07-17'\n),\ncrit AS (\n  SELECT w.slchd_establishment_key, w.period, w.inspection_id,\n    COUNT(*) FILTER (WHERE vc.critical) AS crit_count\n  FROM window_insp w\n  LEFT JOIN violations v ON v.inspection_id = w.inspection_id\n  LEFT JOIN violation_codes vc ON vc.violation_code_id = v.violation_code_id\n  GROUP BY w.slchd_establishment_key, w.period, w.inspection_id\n),\nagg AS (\n  SELECT slchd_establishment_key, period, SUM(crit_count)*1.0/COUNT(*) AS avg_crit, COUNT(*) AS num_inspections\n  FROM crit\n  GROUP BY slchd_establishment_key, period\n),\npiv AS (\n  SELECT slchd_establishment_key,\n    MAX(CASE WHEN period='earlier' THEN avg_crit END) AS earlier_avg,\n    MAX(CASE WHEN period='recent' THEN avg_crit END) AS recent_avg,\n    MAX(CASE WHEN period='earlier' THEN num_inspections END) AS earlier_insp,\n    MAX(CASE WHEN period='recent' THEN num_inspections END) AS recent_insp\n  FROM agg\n  GROUP BY slchd_establishment_key\n)\nSELECT ek.name || ' (' || ek.city || ')' AS restaurant, (p.recent_avg - p.earlier_avg) AS delta_rate\nFROM piv p\nJOIN establishment_keys ek ON ek.slchd_establishment_key = p.slchd_establishment_key\nWHERE p.earlier_insp >= 2 AND p.recent_insp >= 2\nORDER BY delta_rate ASC\nLIMIT 10\n", 'chart_type': 'bar', 'x': 'restaurant', 'y': 'delta_rate', 'title': 'Top 10 Restaurants: Decrease in Avg Critical Violations per Inspection (2021-23 vs 2024-26)'})
+
+Action: plot_chart({'query': "\nWITH window_insp AS (\n  SELECT i.slchd_establishment_key, i.inspection_id, i.inspection_date,\n    CASE WHEN i.inspection_date >= DATE '2024-01-17' THEN 'recent' ELSE 'earlier' END AS period\n  FROM inspections i\n  WHERE i.inspection_date >= DATE '2021-07-17' AND i.inspection_date <= DATE '2026-07-17'\n),\ncrit AS (\n  SELECT w.slchd_establishment_key, w.period, w.inspection_id,\n    COUNT(*) FILTER (WHERE vc.critical) AS crit_count\n  FROM window_insp w\n  LEFT JOIN violations v ON v.inspection_id = w.inspection_id\n  LEFT JOIN violation_codes vc ON vc.violation_code_id = v.violation_code_id\n  GROUP BY w.slchd_establishment_key, w.period, w.inspection_id\n),\nagg AS (\n  SELECT slchd_establishment_key, period, SUM(crit_count)*1.0/COUNT(*) AS avg_crit, COUNT(*) AS num_inspections\n  FROM crit\n  GROUP BY slchd_establishment_key, period\n),\npiv AS (\n  SELECT slchd_establishment_key,\n    MAX(CASE WHEN period='earlier' THEN avg_crit END) AS earlier_avg,\n    MAX(CASE WHEN period='recent' THEN avg_crit END) AS recent_avg,\n    MAX(CASE WHEN period='earlier' THEN num_inspections END) AS earlier_insp,\n    MAX(CASE WHEN period='recent' THEN num_inspections END) AS recent_insp\n  FROM agg\n  GROUP BY slchd_establishment_key\n)\nSELECT p.earlier_avg AS avg_crit_2021_2023, p.recent_avg AS avg_crit_2024_2026,\n  CASE WHEN p.recent_avg > p.earlier_avg THEN 'Increased'\n       WHEN p.recent_avg < p.earlier_avg THEN 'Decreased'\n       ELSE 'Unchanged' END AS trend\nFROM piv p\nWHERE p.earlier_insp >= 2 AND p.recent_insp >= 2\n", 'chart_type': 'scatter', 'x': 'avg_crit_2021_2023', 'y': 'avg_crit_2024_2026', 'color': 'trend', 'title': 'Avg Critical Violations per Inspection: Earlier (2021-23) vs Recent (2024-26), All 659 Restaurants with Data in Both Periods'})
+
+Observation: Chart created: 'Top 10 Restaurants: Increase in Avg Critical Violations per Inspection (2021-23 vs 2024-26)' (bar, 10 rows). It will be shown to the user below your answer.
+
+Observation: Chart created: 'Top 10 Restaurants: Decrease in Avg Critical Violations per Inspection (2021-23 vs 2024-26)' (bar, 10 rows). It will be shown to the user below your answer.
+
+Observation: Chart created: 'Avg Critical Violations per Inspection: Earlier (2021-23) vs Recent (2024-26), All 659 Restaurants with Data in Both Periods' (scatter, 659 rows). It will be shown to the user below your answer.
+
+--- Usage: 135438 tokens, ~$0.3592 ---

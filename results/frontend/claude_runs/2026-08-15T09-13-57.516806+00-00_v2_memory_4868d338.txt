@@ -1,0 +1,493 @@
+Question: What does the issue category "cold holding" mean?
+
+Variant: v2_memory | Provider: anthropic | Model: claude-sonnet-5
+Timestamp: 2026-08-15T09:13:57.516806+00:00 | Duration: 30.29s
+
+--- Answer ---
+## What "cold holding" means
+
+"Cold holding" refers to keeping **potentially hazardous (Time/Temperature Control for Safety) food at or below 41°F (5°C)** any time it isn't actively being prepared, cooked, or cooled. This is governed by Utah's R392-100 Food Service Sanitation Rule (based on FDA Food Code 2013), notably:
+
+- **§3-501.16 (Time/Temperature Control for Safety Food, Hot and Cold Holding)** — the core rule requiring cold TCS food to stay ≤41°F except during prep/cooking/cooling.
+- **§3-202.11 (Temperature at Receiving)** — refrigerated TCS food must arrive at ≤41°F.
+- **§3-501.19 (Time as a Public Health Control)** — an alternative to temperature control, but food must start at ≤41°F when time-tracking begins.
+
+In the inspection data, "cold holding" as an issue category actually spans several distinct violation codes cited by SLC Health Department inspectors, ranging from the equipment/support issues to the critical temperature failure itself:
+
+| Code | Critical? | Times cited | What it covers |
+|---|---|---|---|
+| 4.4.85 | No | 2,176 | Cold holding equipment (inside/outside) unclean |
+| 4.6.41 | No | 1,975 | Floor dirty beneath cold holding equipment |
+| 4.4.63 | No | 1,661 | Cold holding unit malfunction (e.g., condenser leaking, ice buildup) |
+| **4.3.59** | **Yes** | **1,022** | **Food actually held out of temperature** (e.g., "shredded cheese held at 56°F on a counter cold holding unit") — this is the direct violation of the 41°F rule |
+| 4.4.37 | No/Yes (mixed) | 48 | Cold holding unit lacks a thermometer to verify temperature |
+| 4.3.57 | Yes | 35 | Related cold-holding temperature control failure |
+
+The **critical** version (4.3.59, cited 1,022 times) is the one that matters most for public health — it means food was actually measured out of the safe temperature range, which allows bacterial growth and is a direct foodborne-illness risk. The non-critical codes (dirty equipment, no thermometer, malfunctioning unit) are supporting/preventive issues that can lead to an actual temperature failure if uncorrected.
+
+The chart above shows how often each of these cold-holding-related codes has been cited across Salt Lake County inspections in the dataset — equipment cleanliness/floor issues are the most frequently cited, but the critical "food held out of temperature" violation (4.3.59) is still cited over 1,000 times, making it one of the more common critical violations countywide.
+
+--- Reasoning trace ---
+Action: retrieve_regulation({'query': 'cold holding temperature requirement'})
+
+Action: get_schema({})
+
+Observation: [R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 4-204.13 Dispensing Equipment, Protection of, p.123]
+122  
+(1) In a refrigerated vending machine, the ambient air 
+temperature may not exceed 5oC (41oF) for more than 30 
+minutes immediately after the machine is filled, serviced, or 
+restocked; P or 
+ 
+(2) In a hot holding vending machine, the ambient air 
+temperature may not be less than 57 oC (135 oF) for more 
+than 120 minutes immediately after the machine is filled, 
+serviced, or restocked. P 
+ 
+ 
+ 
+4-204.112 Temperature Measuring Devices. 
+ 
+(A) In a mechanically refrigerated or hot FOOD storage unit, the 
+sensor of a TEMPERATURE MEASURING DEVICE shall be located to 
+measure the air temperature or a simulated product 
+temperature in the warmest part of a mechanically refrigerated 
+unit and in the coolest part of a hot FOOD storage unit. 
+ 
+(B) Except as specified in ¶ (C) of this section, cold or hot 
+holding EQUIPMENT used for TIME/TEMPERATURE CONTROL FOR 
+SAFETY FOOD shall be designed to include and shall be 
+equipped with at least one integral or permanently affixed
+
+---
+
+[R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 4-204.13 Dispensing Equipment, Protection of, p.122]
+condition that results in an internal machine temperature 
+that cannot maintain FOOD temperatures as specified under 
+Chapter 3; P and 
+ 
+(2) If a condition specified under Subparagraph (A)(1) of 
+this section occurs, until the machine is serviced and 
+restocked with FOOD that has been maintained at 
+temperatures specified under Chapter 3. P 
+ 
+(B) When the automatic shutoff within a machine vending 
+TIME/TEMPERATURE CONTROL FOR SAFETY FOOD is activated:
+
+---
+
+[R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 3-502 Specialized Processing Methods, p.92]
+91  
+(1) Placing the FOOD in shallow pans; Pf 
+ 
+(2) Separating the FOOD into smaller or thinner portions; Pf 
+ 
+(3) Using rapid cooling EQUIPMENT; Pf 
+ 
+(4) Stirring the FOOD in a container placed in an ice water 
+bath; Pf 
+ 
+(5) Using containers that facilitate heat transfer; Pf 
+ 
+(6) Adding ice as an ingredient; Pf or 
+ 
+(7) Other effective methods. Pf 
+ 
+(B) When placed in cooling or cold holding EQUIPMENT, FOOD 
+containers in which FOOD is being cooled shall be: 
+ 
+(1) Arranged in the EQUIPMENT to provide maximum heat 
+transfer through the container walls; and 
+ 
+(2) Loosely covered, or uncovered if protected from overhead 
+contamination as specified under Subparagraph 
+3-305.11(A)(2), during the cooling period to facilitate heat 
+transfer from the surface of the FOOD. 
+ 
+ 
+3-501.16 Time/Temperature Control for Safety Food, Hot 
+and Cold Holding. 
+ 
+(A) Except during preparation, cooking, or cooling, or when time
+
+---
+
+[R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 3-502 Specialized Processing Methods, p.89]
+persons with weakened immune systems.” Pf 
+ 
+ 
+ 
+3-5  LIMITATION OF GROWTH OF ORGANISMS OF PUBLIC HEALTH 
+CONCERN 
+ 
+Subparts 
+ 
+3-501 Temperature and Time Control 
+3-502 Specialized Processing Methods 
+ 
+ 
+Temperature 
+and Time 
+Control 
+3-501.11 Frozen Food. 
+ 
+Stored frozen FOODS shall be maintained frozen. 
+ 
+ 
+ 
+3-501.12 Time/Temperature Control for Safety Food, 
+Slacking. 
+ 
+Frozen TIME/TEMPERATURE CONTROL FOR SAFETY FOOD that is 
+slacked to moderate the temperature shall be held:
+
+Observation: Project food_health_viz {
+  database_type: 'DuckDB'
+}
+
+Table establishment_keys {
+  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']
+  name varchar [not null]
+  address varchar [not null]
+  city varchar [not null]
+  city_state_zip varchar
+  establishment_type varchar
+  source varchar [note: 'friend_slc | own_scrape']
+  slchd_lat double
+  slchd_lon double
+  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']
+
+  Note: 'SLCHD establishment list, one row per portal listing.'
+}
+
+Table category {
+  category_id integer [pk]
+  category varchar
+}
+
+Table establishments {
+  gmap_id varchar [pk]
+  name varchar
+  address varchar
+  description varchar
+  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']
+  avg_rating double
+  num_of_reviews integer
+  price varchar
+  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']
+
+  Note: 'One row per Google Local place — all restaurants, not just SLCHD-matched.'
+}
+
+Table establishment_attributes {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  attribute varchar [not null]
+
+  indexes { (gmap_id, attribute) [pk] }
+
+  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. "Service options") dropped.'
+}
+
+Table establishment_categories {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  category_id integer [ref: > category.category_id, not null]
+
+  indexes { (gmap_id, category_id) [pk] }
+}
+
+Table gmap_hours {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  day integer [not null, note: '0=Sun … 6=Sat']
+  open_min bigint
+  open_max bigint
+
+  indexes { (gmap_id, day) [pk] }
+
+  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'
+}
+
+Table review {
+  user_id varchar
+  name varchar
+  time bigint
+  rating double
+  text varchar
+  resp varchar
+  gmap_id varchar [ref: > establishments.gmap_id]
+}
+
+Table inspection_types {
+  inspection_type_id integer [pk, note: 'parsed leading number, e.g. "01 - Routine" -> 1']
+  description varchar [note: 'e.g. "Routine"']
+}
+
+Table inspections {
+  inspection_id bigint [pk, increment]
+  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]
+  inspection_date date [not null]
+  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable — 27 rows have no type']
+  inspection_score integer
+
+  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'
+}
+
+Table violation_codes {
+  violation_code_id integer [pk, increment]
+  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. "4.5.18"']
+  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']
+  critical boolean [not null]
+}
+
+Table violations {
+  violation_id bigint [pk, increment]
+  inspection_id bigint [ref: > inspections.inspection_id, not null]
+  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]
+  violation_description varchar [note: 'per-occurrence free text']
+  violation_occurrences integer
+  violation_cos boolean [note: 'corrected on site']
+  violation_phr varchar [note: 'public health rationale']
+
+  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'
+}
+
+
+Action: run_sql({'query': "SELECT DISTINCT vc.code_text, vc.critical, v.violation_description\nFROM violations v JOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\nWHERE lower(v.violation_description) LIKE '%cold holding%'\nLIMIT 10"})
+
+Observation: {"row_count": 10, "truncated": false, "rows": [{"code_text": "4.4.85", "critical": false, "violation_description": "The inside and outside of cold holding equipment is unclean."}, {"code_text": "4.3.64", "critical": true, "violation_description": "The establishment is packaging potentially hazardous food using a reduced oxygen packaging method without a HACCP plan.\nCook-chill reduced oxygen packaged food is held in a refrigeration unit that lacks electronic monitoring of time and temperature.\nCook-chill reduced oxygen packaged food is not labeled with the product name and date packaged.\nCooling and cold holding records for cook-chill reduced oxygen packaged foods are not available for inspection.\nCooling and cold holding records for cook-chill reduced oxygen packaged foods are not held for 6 months."}, {"code_text": "4.4.37", "critical": false, "violation_description": "Cold holding unit lacks an ambient thermometer. (Meat reach-in)."}, {"code_text": "4.4.63", "critical": false, "violation_description": "The condenser unit in the walk-in freezer and in the fry cold holding unit is leaking and creating ice build up."}, {"code_text": "4.6.41", "critical": false, "violation_description": "The floor is dirty beneath cold holding equipment."}, {"code_text": "7.4.4 (ii)", "critical": true, "violation_description": "Establishment is being closed for insufficient cold holding capacity."}, {"code_text": "4.3.64", "critical": true, "violation_description": "The establishment is packaging potentially hazardous food using a reduced oxygen packaging method without a HACCP plan.\nCook-chill reduced oxygen packaged food is held in a refrigeration unit that lacks electronic monitoring of time and temperature.\nTime and temperature of cook-chill reduced oxygen packaged food is not electronically monitored during transportation.\nCooling and cold holding records for cook-chill reduced oxygen packaged foods are not available for inspection."}, {"code_text": "4.2.2", "critical": true, "violation_description": "The person in charge is unable to demonstrate adequate knowledge of proper hot and cold holding temperatures for potentially hazardous foods.\nThe person in charge is unable to demonstrate adequate knowledge of proper thawing and cooling procedures of potentially hazardous foods."}, {"code_text": "4.3.59", "critical": true, "violation_description": "Shredded cheese is being held out of temperature control at 56\u00b0F on a counter cold holding unit."}, {"code_text": "4.4.37", "critical": false, "violation_description": "Cold holding display unit lacks an internal ambient thermometer.  The walkin lacks an internal ambient thermometer."}]}
+
+Action: run_sql({'query': "SELECT vc.code_text, vc.critical, count(*) cnt\nFROM violations v JOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\nWHERE lower(v.violation_description) LIKE '%held out of temperature%' OR lower(v.violation_description) LIKE '%cold holding temperature%' OR lower(v.violation_description) LIKE '%41%f%'\nGROUP BY 1,2 ORDER BY cnt DESC LIMIT 10"})
+
+Action: retrieve_regulation({'query': 'Time/Temperature Control for Safety Food Hot and Cold Holding 41 degrees'})
+
+Observation: {"row_count": 10, "truncated": false, "rows": [{"code_text": "4.4.63", "critical": false, "cnt": 250}, {"code_text": "4.3.59", "critical": true, "cnt": 161}, {"code_text": "4.3.57", "critical": true, "cnt": 32}, {"code_text": "4.4.51", "critical": true, "cnt": 14}, {"code_text": "4.2.2", "critical": true, "cnt": 12}, {"code_text": "7.4.4 (ii)", "critical": true, "cnt": 4}, {"code_text": "4.3.64", "critical": true, "cnt": 2}, {"code_text": "4.4.78", "critical": false, "cnt": 1}, {"code_text": "4.3.60", "critical": true, "cnt": 1}, {"code_text": "4.3.9", "critical": true, "cnt": 1}]}
+
+Observation: [R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 3-404 Other Methods, p.88]
+(165oF) for 15 seconds. P 
+ 
+(B) Except as specified under ¶ (C) of this section, 
+TIME/TEMPERATURE CONTROL FOR SAFETY FOOD reheated in a 
+microwave oven for hot holding shall be reheated so that all parts 
+of the FOOD reach a temperature of at least 74oC (165oF) and the 
+FOOD is rotated or stirred, covered, and allowed to stand covered 
+for 2 minutes after reheating. P 
+ 
+(C) READY-TO-EAT TIME/TEMPERATURE CONTROL FOR SAFETY FOOD 
+that has been commercially processed and PACKAGED in a FOOD 
+PROCESSING PLANT that is inspected by the REGULATORY 
+AUTHORITY that has jurisdiction over the plant, shall be heated to 
+a temperature of at least 57oC (135oF) when being reheated for 
+hot holding. P 
+ 
+(D) Reheating for hot holding as specified under ¶¶ (A) - (C) of 
+this section shall be done rapidly and the time the FOOD is 
+between 5ºC (41ºF) and the temperatures specified under ¶¶  (A) 
+- (C) of this section may not exceed 2 hours. P
+
+---
+
+[R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 3-502 Specialized Processing Methods, p.96]
+or C)(1)-(5) of this section; Pf and 
+ 
+(b) Methods of compliance with § 3-501.14 for FOOD that is 
+prepared, cooked, and refrigerated before time is used as 
+a public health control. Pf 
+ 
+Time –   (B) If time without temperature control is used as the public 
+maximum up to 4  health control up to a maximum of 4 hours.  
+ hours 
+(1) The FOOD shall have an initial temperature of 5ºC (41ºF) or 
+less when removed from cold holding temperature control, or 
+57°C (135°F) or greater when removed from hot holding 
+temperature control; P 
+ 
+(2) Only one time marking scheme may be used, and it 
+must be used consistently throughout the food 
+establishment.  The food shall be marked with either: 
+ 
+(a) the time food is removed from temperature control; or  
+ 
+(b) the time before which the food shall be cooked and 
+served at any temperature if ready-to-eat, or discarded. 
+ 
+ 
+ 
+(3) The 
+FOOD shall be cooked and served, served at any 
+temperature if READY-TO-EAT, or discarded, within 4 hours
+
+---
+
+[R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 3-502 Specialized Processing Methods, p.97]
+96  
+from the point in time when the FOOD is removed from 
+temperature control; P and 
+ 
+(4) The FOOD in unmarked containers or PACKAGES, or 
+marked to exceed a 4-hour limit shall be discarded. P 
+ 
+Time –   (C) If time without temperature control is used as the public health 
+maximum up to control up to a maximum of 6 hours: 
+6 hours 
+(1) The FOOD shall have an initial temperature of 5ºC (41ºF) or 
+less when removed from temperature control and the FOOD 
+temperature may not exceed 21ºC (70ºF) within a maximum 
+time period of 6 hours; P 
+ 
+(2) The FOOD shall be monitored to ensure the warmest 
+portion of the FOOD does not exceed 21ºC (70ºF) during the 
+6-hour period, unless an ambient air temperature is 
+maintained that ensures the FOOD does not exceed 21ºC 
+(70ºF) during the 6-hour holding period; Pf 
+ 
+(3) The FOOD shall be marked or otherwise identified to 
+indicate: Pf 
+ 
+(a) The time when the FOOD is removed from 5ºC (41ºF) or 
+less cold holding temperature control, Pf and
+
+---
+
+[R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 3-502 Specialized Processing Methods, p.96]
+95  
+(B) Refrigerated, READY-TO-EAT, TIME/TEMPERATURE CONTROL FOR 
+SAFETY FOOD prepared in a FOOD ESTABLISHMENT and dispensed 
+through a VENDING MACHINE with an automatic shutoff control shall 
+be discarded if it exceeds a temperature and time combination as 
+specified in ¶ 3-501.17(A). P 
+ 
+ 
+3-501.19 Time as a Public Health Control. 
+ 
+(A) Except as specified under ¶ (D) of this section, if time without 
+temperature control is used as the public health control for a 
+working supply of TIME/TEMPERATURE CONTROL FOR SAFETY FOOD 
+before cooking, or for READY-TO-EAT TIME/TEMPERATURE CONTROL 
+FOR SAFETY FOOD that is displayed or held for sale or service: 
+ 
+(1) Written procedures shall be prepared in advance, 
+maintained in the FOOD ESTABLISHMENT and made available to 
+the REGULATORY AUTHORITY upon request that specify: Pf 
+ 
+(a) Methods of compliance with Subparagraphs (B)(1)-(3) 
+or C)(1)-(5) of this section; Pf and 
+ 
+(b) Methods of compliance with § 3-501.14 for FOOD that is
+
+Action: retrieve_regulation({'query': '3-501.16 potentially hazardous food shall be maintained at 41 F or less holding temperature'})
+
+Action: run_sql({'query': "\nSELECT vc.code_text, vc.critical,\n  count(*) AS times_cited\nFROM violations v JOIN violation_codes vc ON v.violation_code_id=vc.violation_code_id\nWHERE vc.code_text IN ('4.3.59','4.3.57','4.4.63','4.4.37','4.4.85','4.6.41')\nGROUP BY 1,2 ORDER BY times_cited DESC\n"})
+
+Observation: [R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 3-404 Other Methods, p.86]
+85  
+(E) Cooled according to the time and temperature parameters 
+specified for cooked TIME /TEMPERATURE CONTROL FOR SAFETY 
+FOOD under ¶ 3-501.14(A) if not either hot held as specified 
+under ¶3-501.16(A), served immediately, or held using time 
+as a public health control as specified under §3-501.19 after 
+complete cooking; P and 
+(F) Prepared and stored according to written procedures that: 
+(1) Have obtained prior APPROVAL from the REGULATORY 
+AUTHORITY; Pf
+ 
+ 
+(2) Are maintained in the FOOD ESTABLISHMENT and are 
+available to the REGULATORY AUTHORITY upon request; Pf 
+ 
+(3) Describe how the requirements specified under ¶ (A)- 
+(E) of this Section are to be monitored and documented 
+by the PERMIT HOLDER and the corrective actions to be 
+taken if the requirements are not met; Pf 
+ 
+(4) Describe how the FOODS, after initial heating, but prior 
+to complete cooking, are to be marked or otherwise 
+identified as FOODS that must be cooked as specified
+
+---
+
+[R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 3-404 Other Methods, p.88]
+(165oF) for 15 seconds. P 
+ 
+(B) Except as specified under ¶ (C) of this section, 
+TIME/TEMPERATURE CONTROL FOR SAFETY FOOD reheated in a 
+microwave oven for hot holding shall be reheated so that all parts 
+of the FOOD reach a temperature of at least 74oC (165oF) and the 
+FOOD is rotated or stirred, covered, and allowed to stand covered 
+for 2 minutes after reheating. P 
+ 
+(C) READY-TO-EAT TIME/TEMPERATURE CONTROL FOR SAFETY FOOD 
+that has been commercially processed and PACKAGED in a FOOD 
+PROCESSING PLANT that is inspected by the REGULATORY 
+AUTHORITY that has jurisdiction over the plant, shall be heated to 
+a temperature of at least 57oC (135oF) when being reheated for 
+hot holding. P 
+ 
+(D) Reheating for hot holding as specified under ¶¶ (A) - (C) of 
+this section shall be done rapidly and the time the FOOD is 
+between 5ºC (41ºF) and the temperatures specified under ¶¶  (A) 
+- (C) of this section may not exceed 2 hours. P
+
+---
+
+[R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 3-203 Original Containers and Records, p.59]
+the inspection program. P 
+ 
+(B) A GAME ANIMAL may not be received for sale or service if it is 
+a species of wildlife that is listed in 50 CFR 17 Endangered and 
+threatened wildlife and plants. 
+ 
+ 
+Specifications 
+for Receiving 
+3-202.11 Temperature. 
+ 
+(A) Except as specified in ¶ (B) of this section, refrigerated, 
+TIME/TEMPERATURE CONTROL FOR SAFETY FOOD shall be at a 
+temperature of 5oC (41oF) or below when received. P 
+ 
+(B) If a temperature other than 5°C (41°F) for a TIME/TEMPERATURE 
+CONTROL FOR SAFETY FOOD is specified in LAW governing its 
+distribution, such as LAWS governing milk and MOLLUSCAN 
+SHELLFISH, the FOOD may be received at the specified 
+temperature. 
+ 
+(C) Raw EGGS shall be received in refrigerated equipment that 
+maintains an ambient air temperature of 7oC (45oF) or less. P
+
+---
+
+[R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 180 Tolerances for pesticides chemicals in food, and, p.60]
+59  
+(D) TIME/TEMPERATURE CONTROL FOR SAFETY FOOD that is cooked to 
+a temperature and for a time specified under §§ 3-401.11 - 
+3-401.13 and received hot shall be at a temperature of 57oC 
+(135oF) or above. P 
+ 
+(E) A FOOD that is labeled frozen and shipped frozen by a FOOD 
+PROCESSING PLANT shall be received frozen. Pf 
+ 
+(F) Upon receipt, TIME/TEMPERATURE CONTROL FOR SAFETY FOOD 
+shall be free of evidence of previous temperature abuse. Pf 
+ 
+ 
+3-202.12 Additives. 
+ 
+FOOD may not contain unAPPROVED FOOD ADDITIVES or ADDITIVES 
+that exceed amounts specified in 21 CFR 170-180 relating to 
+FOOD ADDITIVES, generally recognized as safe or prior sanctioned 
+substances that exceed amounts specified in 21 CFR 181-186, 
+substances that exceed amounts specified in 9 CFR Subpart C 
+Section 424.21(b) Food ingredients and sources of radiation, or 
+pesticide residues that exceed provisions specified in 40 CFR 
+180 Tolerances for pesticides chemicals in food, and 
+exceptions. P 
+ 
+ 
+3-202.13 Eggs.
+
+Observation: {"row_count": 7, "truncated": false, "rows": [{"code_text": "4.4.85", "critical": false, "times_cited": 2176}, {"code_text": "4.6.41", "critical": false, "times_cited": 1975}, {"code_text": "4.4.63", "critical": false, "times_cited": 1661}, {"code_text": "4.3.59", "critical": true, "times_cited": 1022}, {"code_text": "4.4.37", "critical": false, "times_cited": 46}, {"code_text": "4.3.57", "critical": true, "times_cited": 35}, {"code_text": "4.4.37", "critical": true, "times_cited": 2}]}
+
+Action: plot_chart({'query': "\nSELECT vc.code_text || CASE WHEN vc.critical THEN ' (critical)' ELSE ' (non-critical)' END AS violation_code,\n       count(*) AS times_cited\nFROM violations v JOIN violation_codes vc ON v.violation_code_id=vc.violation_code_id\nWHERE vc.code_text IN ('4.3.59','4.3.57','4.4.63','4.4.37','4.4.85','4.6.41')\nGROUP BY 1\nORDER BY times_cited DESC\n", 'chart_type': 'bar', 'x': 'violation_code', 'y': 'times_cited', 'title': 'Cold-Holding Related Violation Codes: Citation Frequency (Salt Lake County Inspections)'})
+
+Observation: Chart created: 'Cold-Holding Related Violation Codes: Citation Frequency (Salt Lake County Inspections)' (bar, 7 rows). It will be shown to the user below your answer.
+
+--- Usage: 59019 tokens, ~$0.1380 ---

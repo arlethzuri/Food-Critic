@@ -1,0 +1,156 @@
+Question: What does the issue category "cold holding" mean?
+
+Variant: v1_memory | Provider: anthropic | Model: claude-sonnet-5
+Timestamp: 2026-08-15T09:13:55.589499+00:00 | Duration: 31.97s
+
+--- Answer ---
+## What "cold holding" means in this dataset
+
+There isn't a literal database column called "issue category" with a value "cold holding" — the schema stores each cited violation as a specific health‑code number (`violation_codes.code_text`) plus a free‑text description (`violations.violation_description`) and a `critical` flag. "Cold holding" is the informal grouping name for the set of citations dealing with keeping potentially‑hazardous ("TCS" – time/temperature‑control‑for‑safety) foods properly refrigerated.
+
+Searching violation descriptions for "cold holding"/"cold plate" text turns up **85 violation records across 14 distinct codes**, split **32 critical / 53 non‑critical**. They cover things like:
+
+- **Temperature failures (critical)** — e.g. code 4.3.59: "Shredded cheese is being held out of temperature control at 56°F on a counter cold holding unit"; code 4.4.51: a cold plate unable to hold food ≤41°F.
+- **Knowledge/process failures (critical)** — code 4.2.2: staff unable to demonstrate knowledge of proper hot/cold holding temps; code 4.3.64: missing electronic time/temperature monitoring records for cook‑chill reduced‑oxygen‑packaged food; code 7.4.4(ii): inadequate power to run cold holding/handwashing systems.
+- **Equipment condition (non‑critical)** — code 4.4.37 (by far the most common, 42 occurrences): cold holding units lacking an ambient thermometer; code 4.4.63: units leaking/not maintaining temperature; code 4.4.85/4.6.41: dirty/unclean cold holding equipment or floors beneath it.
+
+So functionally, "cold holding" as an issue category refers to any violation tied to refrigeration equipment or practices meant to keep hazardous food at or below 41°F — ranging from a missing thermometer (minor) up to food actually found out of safe temperature (critical, direct foodborne‑illness risk). The bar chart above breaks down the 14 specific codes behind this label and shows which ones are flagged critical vs. non‑critical.
+
+--- Reasoning trace ---
+Action: get_column_glossary({'table_dot_column': 'violation_codes.category'})
+
+Observation: No glossary entry for 'violation_codes.category' — it's probably self-explanatory from get_schema.
+
+Action: get_schema({})
+
+Observation: Project food_health_viz {
+  database_type: 'DuckDB'
+}
+
+Table establishment_keys {
+  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']
+  name varchar [not null]
+  address varchar [not null]
+  city varchar [not null]
+  city_state_zip varchar
+  establishment_type varchar
+  source varchar [note: 'friend_slc | own_scrape']
+  slchd_lat double
+  slchd_lon double
+  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']
+
+  Note: 'SLCHD establishment list, one row per portal listing.'
+}
+
+Table category {
+  category_id integer [pk]
+  category varchar
+}
+
+Table establishments {
+  gmap_id varchar [pk]
+  name varchar
+  address varchar
+  description varchar
+  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']
+  avg_rating double
+  num_of_reviews integer
+  price varchar
+  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']
+
+  Note: 'One row per Google Local place — all restaurants, not just SLCHD-matched.'
+}
+
+Table establishment_attributes {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  attribute varchar [not null]
+
+  indexes { (gmap_id, attribute) [pk] }
+
+  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. "Service options") dropped.'
+}
+
+Table establishment_categories {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  category_id integer [ref: > category.category_id, not null]
+
+  indexes { (gmap_id, category_id) [pk] }
+}
+
+Table gmap_hours {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  day integer [not null, note: '0=Sun … 6=Sat']
+  open_min bigint
+  open_max bigint
+
+  indexes { (gmap_id, day) [pk] }
+
+  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'
+}
+
+Table review {
+  user_id varchar
+  name varchar
+  time bigint
+  rating double
+  text varchar
+  resp varchar
+  gmap_id varchar [ref: > establishments.gmap_id]
+}
+
+Table inspection_types {
+  inspection_type_id integer [pk, note: 'parsed leading number, e.g. "01 - Routine" -> 1']
+  description varchar [note: 'e.g. "Routine"']
+}
+
+Table inspections {
+  inspection_id bigint [pk, increment]
+  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]
+  inspection_date date [not null]
+  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable — 27 rows have no type']
+  inspection_score integer
+
+  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'
+}
+
+Table violation_codes {
+  violation_code_id integer [pk, increment]
+  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. "4.5.18"']
+  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']
+  critical boolean [not null]
+}
+
+Table violations {
+  violation_id bigint [pk, increment]
+  inspection_id bigint [ref: > inspections.inspection_id, not null]
+  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]
+  violation_description varchar [note: 'per-occurrence free text']
+  violation_occurrences integer
+  violation_cos boolean [note: 'corrected on site']
+  violation_phr varchar [note: 'public health rationale']
+
+  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'
+}
+
+
+Action: run_sql({'query': "SELECT DISTINCT vc.code_text, vc.critical, v.violation_description\nFROM violations v JOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\nWHERE v.violation_description ILIKE '%cold holding%'\nLIMIT 10"})
+
+Observation: {"row_count": 10, "truncated": false, "rows": [{"code_text": "4.6.41", "critical": false, "violation_description": "The floor is dirty beneath cold holding equipment."}, {"code_text": "7.4.4 (ii)", "critical": true, "violation_description": "Establishment is being closed for insufficient cold holding capacity."}, {"code_text": "4.3.64", "critical": true, "violation_description": "The establishment is packaging potentially hazardous food using a reduced oxygen packaging method without a HACCP plan.\nCook-chill reduced oxygen packaged food is held in a refrigeration unit that lacks electronic monitoring of time and temperature.\nTime and temperature of cook-chill reduced oxygen packaged food is not electronically monitored during transportation.\nCooling and cold holding records for cook-chill reduced oxygen packaged foods are not available for inspection."}, {"code_text": "4.4.85", "critical": false, "violation_description": "The inside and outside of cold holding equipment is unclean."}, {"code_text": "4.3.64", "critical": true, "violation_description": "The establishment is packaging potentially hazardous food using a reduced oxygen packaging method without a HACCP plan.\nCook-chill reduced oxygen packaged food is held in a refrigeration unit that lacks electronic monitoring of time and temperature.\nCook-chill reduced oxygen packaged food is not labeled with the product name and date packaged.\nCooling and cold holding records for cook-chill reduced oxygen packaged foods are not available for inspection.\nCooling and cold holding records for cook-chill reduced oxygen packaged foods are not held for 6 months."}, {"code_text": "4.4.37", "critical": false, "violation_description": "Cold holding unit lacks an ambient thermometer. (Meat reach-in)."}, {"code_text": "4.4.63", "critical": false, "violation_description": "The condenser unit in the walk-in freezer and in the fry cold holding unit is leaking and creating ice build up."}, {"code_text": "7.4.4 (ii)", "critical": true, "violation_description": "Food truck has inadequate power supply to operate cold holding, and handwashing systems. Refrigeration is not holding TCS foods at or below 41F. No hot water is supplied at hand washing sinks."}, {"code_text": "4.2.2", "critical": true, "violation_description": "The person in charge is unable to demonstrate adequate knowledge of proper hot and cold holding temperatures for potentially hazardous foods.\nThe person in charge is unable to demonstrate adequate knowledge of proper thawing and cooling procedures of potentially hazardous foods."}, {"code_text": "4.3.59", "critical": true, "violation_description": "Shredded cheese is being held out of temperature control at 56\u00b0F on a counter cold holding unit."}]}
+
+Action: run_sql({'query': "SELECT DISTINCT vc.code_text, vc.critical, v.violation_description\nFROM violations v JOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\nWHERE v.violation_description ILIKE '%41%F%' AND v.violation_description ILIKE '%cold%'\nLIMIT 10"})
+
+Observation: {"row_count": 5, "truncated": false, "rows": [{"code_text": "4.4.51", "critical": true, "violation_description": "The cold plate on the line is unable to hold potentially hazardous foods at or below 41\u00b0F."}, {"code_text": "7.4.4 (ii)", "critical": true, "violation_description": "Food truck has inadequate power supply to operate cold holding, and handwashing systems. Refrigeration is not holding TCS foods at or below 41F. No hot water is supplied at hand washing sinks."}, {"code_text": "4.4.63", "critical": false, "violation_description": "Cheese cold holding unit is not operating properly/ is not maintained to hold potentially hazardous food at or below 41\u00b0F."}, {"code_text": "4.4.63", "critical": false, "violation_description": "A reach-in is not properly cold holdig foods are 41F or below,"}, {"code_text": "4.4.63", "critical": false, "violation_description": "The condenser unit in the walk-in freezer is leaking and creating ice build up.\nA cold holding drawer is not maintained to hold potentially hazardous food at or below 41\u00b0F."}]}
+
+Action: run_sql({'query': "SELECT vc.critical, COUNT(*) AS n\nFROM violations v JOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\nWHERE v.violation_description ILIKE '%cold holding%' OR v.violation_description ILIKE '%cold plate%'\nGROUP BY vc.critical"})
+
+Observation: {"row_count": 2, "truncated": false, "rows": [{"critical": false, "n": 53}, {"critical": true, "n": 32}]}
+
+Action: run_sql({'query': "SELECT vc.code_text, vc.critical, COUNT(*) AS n\nFROM violations v JOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\nWHERE v.violation_description ILIKE '%cold holding%' OR v.violation_description ILIKE '%cold plate%'\nGROUP BY vc.code_text, vc.critical\nORDER BY n DESC"})
+
+Observation: {"row_count": 14, "truncated": false, "rows": [{"code_text": "4.4.37", "critical": false, "n": 42}, {"code_text": "4.2.2", "critical": true, "n": 12}, {"code_text": "4.3.64", "critical": true, "n": 8}, {"code_text": "4.3.59", "critical": true, "n": 8}, {"code_text": "4.4.63", "critical": false, "n": 3}, {"code_text": "4.4.85", "critical": false, "n": 2}, {"code_text": "7.4.4 (ii)", "critical": true, "n": 2}, {"code_text": "4.6.41", "critical": false, "n": 2}, {"code_text": "4.4.11", "critical": false, "n": 1}, {"code_text": "4.1.2", "critical": false, "n": 1}, {"code_text": "R392-102", "critical": false, "n": 1}, {"code_text": "4.4.62", "critical": false, "n": 1}, {"code_text": "4.4.82", "critical": true, "n": 1}, {"code_text": "4.4.51", "critical": true, "n": 1}]}
+
+Action: plot_chart({'query': "SELECT vc.code_text, vc.critical, COUNT(*) AS n\nFROM violations v JOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\nWHERE v.violation_description ILIKE '%cold holding%' OR v.violation_description ILIKE '%cold plate%'\nGROUP BY vc.code_text, vc.critical\nORDER BY n DESC\nLIMIT 14", 'chart_type': 'bar', 'x': 'code_text', 'y': 'n', 'color': 'critical', 'title': '"Cold Holding" related violation codes, by frequency and criticality'})
+
+Observation: Chart created: '"Cold Holding" related violation codes, by frequency and criticality' (bar, 14 rows). It will be shown to the user below your answer.
+
+--- Usage: 51353 tokens, ~$0.1215 ---

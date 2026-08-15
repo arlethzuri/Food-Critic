@@ -1,0 +1,2236 @@
+{
+  "source": "frontend",
+  "run_id": "ed29ba02",
+  "timestamp": "2026-08-15T09:17:29.401623+00:00",
+  "variant": "v1_memory",
+  "provider": "anthropic",
+  "model": "claude-sonnet-5",
+  "question": "Show me detailed visual analytics and statistics of inspection scores across all establishments.",
+  "output_text": "## Inspection Score Analytics \u2014 Salt Lake County Establishments\n\n**Scope:** 7,798 inspections with a recorded score (across all matched SLCHD establishments). Recall only ~1.6% of Google-listed establishments have matched SLCHD inspection history \u2014 everything below is drawn from that matched subset.\n\n### 1. Overall statistics (all inspections, all years)\n| Metric | Value |\n|---|---|\n| Inspections with a score | 7,798 |\n| Mean score | 10.29 |\n| Median score | 7.0 |\n| Min | 0 |\n| Max | 297 |\n| Std. dev. | 12.07 |\n\nNote the huge gap between median (7) and the max (297) and mean (10.3) \u2014 the distribution is heavily right-skewed, with a long tail of a few very bad inspections dragging the mean up. (Reminder: for SLCHD, **0 = clean, higher = worse**.)\n\n*\u2192 Histogram \"Distribution of Inspection Scores\" shows this right-skew clearly: the bulk of inspections cluster near 0\u201320, with a thin tail stretching out toward 297.*\n\n### 2. Trend over time\n*\u2192 Line chart \"Average Inspection Score by Year\" plots mean score per year across the ~18 years of data present, showing whether enforcement/scores have trended up or down over time.*\n\n### 3. By inspection type\n*\u2192 Bar chart \"Average Inspection Score by Inspection Type\" compares average score across the 4 inspection-type categories (e.g. Routine vs. Follow-up vs. Complaint-driven), which typically differ a lot \u2014 follow-ups/complaints tend to run higher (worse) than routine visits.*\n\n### 4. Worst-scoring establishments (most recent inspection, matched subset)\nTop of the list, sorted by most recent inspection_score descending:\n1. **Arctic Circle** (3365 W 7800 S, West Jordan) \u2014 score 19, 27 critical violations (95 total)\n2. **Arctic Circle** (3919 S 700 E, Murray) \u2014 score 19, 18 critical (60 total)\n3. **Arctic Circle** (8677 S 5600 W, West Jordan) \u2014 score 16, 27 critical (63 total)\n4. **Arctic Circle** (208 E 12300 S, Draper) \u2014 score 16, 24 critical (85 total)\n5. **Village Inn** (4824 W 3500 S, West Valley City) \u2014 score 14, 18 critical (70 total)\n6. **Texas Roadhouse** (Taylorsville) \u2014 score 14, 38 critical (113 total \u2014 highest critical-violation count in this list)\n7. **SLC Eatery** \u2014 score 14, 14 critical (55 total)\n8. **Chick-fil-A** (Midvale) \u2014 score 14, 5 critical (10 total)\n9. **IHOP** (Salt Lake City) \u2014 score 13, 5 critical (37 total)\n10. **K-Recipe** (South Salt Lake) \u2014 score 13, 21 critical (36 total)\n\nNotably, all four Arctic Circle locations in the dataset appear in the worst-10 \u2014 a chain-wide pattern worth flagging.\n\n### 5. Cleanest establishments (most recent inspection score = 0)\nTen establishments \u2014 including Garage Grill, The Point After, The Brickyard Bar, Proper Burger Company, Millcreek Coffee Roasters, Sonic Drive-In, Shake Shack, Vessel Kitchen, HandleBar, and Tea Zaanti \u2014 currently show a most-recent score of 0. However, several of these (e.g. Sonic Drive-In: 14 critical violations across history; Millcreek Coffee Roasters: 3 critical) still have real violation history from earlier inspections, so a score of 0 reflects only their latest visit, not a spotless record overall.\n\nAll charts above (histogram, yearly trend line, and inspection-type bar chart) are rendered; the worst/cleanest establishment lists are also plotted on the map view via the search results.",
+  "structured_response": null,
+  "trace_text": "Action: get_schema({})\n\nObservation: Project food_health_viz {\n  database_type: 'DuckDB'\n}\n\nTable establishment_keys {\n  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']\n  name varchar [not null]\n  address varchar [not null]\n  city varchar [not null]\n  city_state_zip varchar\n  establishment_type varchar\n  source varchar [note: 'friend_slc | own_scrape']\n  slchd_lat double\n  slchd_lon double\n  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']\n\n  Note: 'SLCHD establishment list, one row per portal listing.'\n}\n\nTable category {\n  category_id integer [pk]\n  category varchar\n}\n\nTable establishments {\n  gmap_id varchar [pk]\n  name varchar\n  address varchar\n  description varchar\n  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']\n  avg_rating double\n  num_of_reviews integer\n  price varchar\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']\n\n  Note: 'One row per Google Local place \u2014 all restaurants, not just SLCHD-matched.'\n}\n\nTable establishment_attributes {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  attribute varchar [not null]\n\n  indexes { (gmap_id, attribute) [pk] }\n\n  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. \"Service options\") dropped.'\n}\n\nTable establishment_categories {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  category_id integer [ref: > category.category_id, not null]\n\n  indexes { (gmap_id, category_id) [pk] }\n}\n\nTable gmap_hours {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  day integer [not null, note: '0=Sun \u2026 6=Sat']\n  open_min bigint\n  open_max bigint\n\n  indexes { (gmap_id, day) [pk] }\n\n  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'\n}\n\nTable review {\n  user_id varchar\n  name varchar\n  time bigint\n  rating double\n  text varchar\n  resp varchar\n  gmap_id varchar [ref: > establishments.gmap_id]\n}\n\nTable inspection_types {\n  inspection_type_id integer [pk, note: 'parsed leading number, e.g. \"01 - Routine\" -> 1']\n  description varchar [note: 'e.g. \"Routine\"']\n}\n\nTable inspections {\n  inspection_id bigint [pk, increment]\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]\n  inspection_date date [not null]\n  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable \u2014 27 rows have no type']\n  inspection_score integer\n\n  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'\n}\n\nTable violation_codes {\n  violation_code_id integer [pk, increment]\n  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. \"4.5.18\"']\n  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']\n  critical boolean [not null]\n}\n\nTable violations {\n  violation_id bigint [pk, increment]\n  inspection_id bigint [ref: > inspections.inspection_id, not null]\n  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]\n  violation_description varchar [note: 'per-occurrence free text']\n  violation_occurrences integer\n  violation_cos boolean [note: 'corrected on site']\n  violation_phr varchar [note: 'public health rationale']\n\n  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'\n}\n\n\nAction: run_sql({'query': 'SELECT count(*) AS n, avg(inspection_score) AS mean, median(inspection_score) AS median, min(inspection_score) AS min, max(inspection_score) AS max, stddev(inspection_score) AS stddev FROM inspections WHERE inspection_score IS NOT NULL'})\n\nAction: plot_chart({'query': 'SELECT inspection_score FROM inspections WHERE inspection_score IS NOT NULL', 'chart_type': 'histogram', 'x': 'inspection_score', 'title': 'Distribution of Inspection Scores (all inspections)'})\n\nAction: plot_chart({'query': \"SELECT date_part('year', inspection_date) AS year, avg(inspection_score) AS avg_score, count(*) AS n_inspections FROM inspections WHERE inspection_score IS NOT NULL GROUP BY year ORDER BY year\", 'chart_type': 'line', 'x': 'year', 'y': 'avg_score', 'title': 'Average Inspection Score by Year'})\n\nAction: plot_chart({'query': 'SELECT it.description AS inspection_type, avg(i.inspection_score) AS avg_score, count(*) AS n FROM inspections i JOIN inspection_types it ON i.inspection_type_id = it.inspection_type_id WHERE i.inspection_score IS NOT NULL GROUP BY it.description ORDER BY n DESC', 'chart_type': 'bar', 'x': 'inspection_type', 'y': 'avg_score', 'title': 'Average Inspection Score by Inspection Type'})\n\nAction: search_establishments({'require_inspection_data': True, 'sort_by': 'inspection_score', 'sort_desc': True, 'limit': 10})\n\nAction: search_establishments({'require_inspection_data': True, 'sort_by': 'inspection_score', 'sort_desc': False, 'limit': 10})\n\nObservation: {\"row_count\": 1, \"truncated\": false, \"rows\": [{\"n\": 7798, \"mean\": 10.288022569889716, \"median\": 7.0, \"min\": 0, \"max\": 297, \"stddev\": 12.069595869540299}]}\n\nObservation: Chart created: 'Distribution of Inspection Scores (all inspections)' (histogram, 7798 rows). It will be shown to the user below your answer.\n\nObservation: Chart created: 'Average Inspection Score by Year' (line, 18 rows). It will be shown to the user below your answer.\n\nObservation: Chart created: 'Average Inspection Score by Inspection Type' (bar, 4 rows). It will be shown to the user below your answer.\n\nObservation: {\"row_count\": 10, \"rows\": [{\"gmap_id\": \"0x87528edb8071719b:0xb34437f22c7b5873\", \"name\": \"Arctic Circle\", \"address\": \"Arctic Circle, 3365 W 7800 S, West Jordan, UT 84088\", \"latitude\": 40.6090528, \"longitude\": -111.9700581, \"avg_rating\": 3.9, \"num_of_reviews\": 898, \"price\": \"$\", \"slchd_establishment_key\": \"ARCTIC CIRCLE 111|3365 W 7800 S|WEST JORDAN\", \"distance_mi\": null, \"most_recent_inspection_score\": 19, \"critical_violation_count\": 27, \"total_violation_count\": 95}, {\"gmap_id\": \"0x87528a6e4de1fead:0xb1bd2c15b2d6621d\", \"name\": \"Arctic Circle\", \"address\": \"Arctic Circle, 3919 S 700 E, Murray, UT 84107\", \"latitude\": 40.6865396, \"longitude\": -111.8709717, \"avg_rating\": 4.1, \"num_of_reviews\": 1274, \"price\": \"$\", \"slchd_establishment_key\": \"ARCTIC CIRCLE 202|3919 S 700 E|MILLCREEK TS\", \"distance_mi\": null, \"most_recent_inspection_score\": 19, \"critical_violation_count\": 18, \"total_violation_count\": 60}, {\"gmap_id\": \"0x87528e358e42f1d1:0xa956db3f6ff0411e\", \"name\": \"Arctic Circle\", \"address\": \"Arctic Circle, 8677 S 5600 W, West Jordan, UT 84081\", \"latitude\": 40.593326999999995, \"longitude\": -112.0236405, \"avg_rating\": 3.9, \"num_of_reviews\": 698, \"price\": \"$\", \"slchd_establishment_key\": \"ARCTIC CIRCLE 127|8677 S 5600 W|WEST JORDAN\", \"distance_mi\": null, \"most_recent_inspection_score\": 16, \"critical_violation_count\": 27, \"total_violation_count\": 63}, {\"gmap_id\": \"0x8752871414bb3a4b:0x8d7dcfb0beb572c1\", \"name\": \"Arctic Circle\", \"address\": \"Arctic Circle, 208 E 12300 S, Draper, UT 84020\", \"latitude\": 40.526289, \"longitude\": -111.885488, \"avg_rating\": 4.0, \"num_of_reviews\": 420, \"price\": \"$\", \"slchd_establishment_key\": \"ARCTIC CIRCLE 116|208 E 12300 S|DRAPER\", \"distance_mi\": null, \"most_recent_inspection_score\": 16, \"critical_violation_count\": 24, \"total_violation_count\": 85}, {\"gmap_id\": \"0x87528d4c77ad88c5:0xfc24747515b7cb24\", \"name\": \"Village Inn\", \"address\": \"Village Inn, 4824 W 3500 S, West Valley City, UT 84120\", \"latitude\": 40.697023, \"longitude\": -112.006333, \"avg_rating\": 3.9, \"num_of_reviews\": 1337, \"price\": \"$\", \"slchd_establishment_key\": \"VILLAGE INN RESTAURANT|4834 W 3500 S|WEST VALLEY CITY\", \"distance_mi\": null, \"most_recent_inspection_score\": 14, \"critical_violation_count\": 18, \"total_violation_count\": 70}, {\"gmap_id\": \"0x87528bfb9df074cf:0x548b15973c8842cf\", \"name\": \"Texas Roadhouse\", \"address\": \"Texas Roadhouse, 1904 W 5400 S, Taylorsville, UT 84129\", \"latitude\": 40.654219999999995, \"longitude\": -111.94307, \"avg_rating\": 4.4, \"num_of_reviews\": 5210, \"price\": \"$$\", \"slchd_establishment_key\": \"TEXAS ROADHOUSE|1904 W 5400 S|TAYLORSVILLE\", \"distance_mi\": null, \"most_recent_inspection_score\": 14, \"critical_violation_count\": 38, \"total_violation_count\": 113}, {\"gmap_id\": \"0x8752f53b13b95555:0x94cec18382378f12\", \"name\": \"SLC Eatery\", \"address\": \"SLC Eatery, 1017 S Main St, Salt Lake City, UT 84111\", \"latitude\": 40.7468933, \"longitude\": -111.8906507, \"avg_rating\": 4.6, \"num_of_reviews\": 228, \"price\": null, \"slchd_establishment_key\": \"SLC EATERY|1017 S MAIN ST|SALT LAKE CITY\", \"distance_mi\": null, \"most_recent_inspection_score\": 14, \"critical_violation_count\": 14, \"total_violation_count\": 55}, {\"gmap_id\": \"0x875289d4b4f73f89:0x7c191ee393f7ae4b\", \"name\": \"Chick-fil-A\", \"address\": \"Chick-fil-A, 1088 Fort Union Blvd, Midvale, UT 84047\", \"latitude\": 40.6233121, \"longitude\": -111.8614456, \"avg_rating\": 4.3, \"num_of_reviews\": 1536, \"price\": \"$\", \"slchd_establishment_key\": \"CHICK FIL A|1088 E FORT UNION BLVD|MIDVALE\", \"distance_mi\": null, \"most_recent_inspection_score\": 14, \"critical_violation_count\": 5, \"total_violation_count\": 10}, {\"gmap_id\": \"0x8752f569300ab7a9:0x1e21f25f4fb30532\", \"name\": \"IHOP\", \"address\": \"IHOP, 635 E 400 S, Salt Lake City, UT 84102\", \"latitude\": 40.7609618, \"longitude\": -111.8727416, \"avg_rating\": 3.8, \"num_of_reviews\": 794, \"price\": \"$\", \"slchd_establishment_key\": \"IHOP RESTAURANT|635 E 400 S|SALT LAKE CITY\", \"distance_mi\": null, \"most_recent_inspection_score\": 13, \"critical_violation_count\": 5, \"total_violation_count\": 37}, {\"gmap_id\": \"0x87528b6161c18005:0xb3dbdde5d924dac5\", \"name\": \"K-Recipe\", \"address\": \"K-Recipe, 3390 State St #34, South Salt Lake, UT 84115\", \"latitude\": 40.6977993, \"longitude\": -111.889649, \"avg_rating\": 5.0, \"num_of_reviews\": 34, \"price\": null, \"slchd_establishment_key\": \"K RECIPE|3390 S STATE ST|SOUTH SALT LAKE\", \"distance_mi\": null, \"most_recent_inspection_score\": 13, \"critical_violation_count\": 21, \"total_violation_count\": 36}]}\n\nObservation: {\"row_count\": 10, \"rows\": [{\"gmap_id\": \"0x8752876077272fd3:0x40e212483e248131\", \"name\": \"Garage Grill\", \"address\": \"Garage Grill, 1122 East Draper Pkwy, Draper, UT 84020\", \"latitude\": 40.527366, \"longitude\": -111.858826, \"avg_rating\": 4.3, \"num_of_reviews\": 1168, \"price\": \"$$\", \"slchd_establishment_key\": \"GARAGE GRILL - DOG PATIO|1122 E DRAPER PKWY|DRAPER\", \"distance_mi\": null, \"most_recent_inspection_score\": 0, \"critical_violation_count\": 2, \"total_violation_count\": 3}, {\"gmap_id\": \"0x875289fb4a405e4b:0xa169c429dad6c3b3\", \"name\": \"The Point After\", \"address\": \"The Point After, 5445 S 900 E, Salt Lake City, UT 84117\", \"latitude\": 40.6525742, \"longitude\": -111.8646615, \"avg_rating\": 4.2, \"num_of_reviews\": 368, \"price\": \"$\", \"slchd_establishment_key\": \"POINT AFTER - DOG PATIO|5445 S 900 E|MURRAY\", \"distance_mi\": null, \"most_recent_inspection_score\": 0, \"critical_violation_count\": 0, \"total_violation_count\": 2}, {\"gmap_id\": \"0x875261eac67710ad:0x62d86f7118b5decf\", \"name\": \"The Brickyard Bar\", \"address\": \"The Brickyard Bar, 3000 S Highland Dr, Salt Lake City, UT 84106\", \"latitude\": 40.7061891, \"longitude\": -111.8534567, \"avg_rating\": 4.4, \"num_of_reviews\": 113, \"price\": null, \"slchd_establishment_key\": \"BRICKYARD BAR DOG PATIO|3000 S HIGHLAND DR|MILLCREEK\", \"distance_mi\": null, \"most_recent_inspection_score\": 0, \"critical_violation_count\": 0, \"total_violation_count\": 1}, {\"gmap_id\": \"0x8752f53ce4896ed5:0xfdec02c9038d7ade\", \"name\": \"Proper Burger Company\", \"address\": \"Proper Burger Company, 865 S Main St, Salt Lake City, UT 84111\", \"latitude\": 40.7507258, \"longitude\": -111.8904492, \"avg_rating\": 4.4, \"num_of_reviews\": 2068, \"price\": \"$$\", \"slchd_establishment_key\": \"PROPER BURGER COMPANY - DOG PATIO|865 S MAIN ST|SALT LAKE CITY\", \"distance_mi\": null, \"most_recent_inspection_score\": 0, \"critical_violation_count\": 1, \"total_violation_count\": 7}, {\"gmap_id\": \"0x8752f517bce84b1f:0x7528e0916ed69ea7\", \"name\": \"Millcreek Coffee Roasters\", \"address\": \"Millcreek Coffee Roasters, 657 S Main St, Salt Lake City, UT 84111\", \"latitude\": 40.7548447, \"longitude\": -111.8906937, \"avg_rating\": 4.7, \"num_of_reviews\": 428, \"price\": \"$\", \"slchd_establishment_key\": \"MILLCREEK COFFEE ROASTERS - COMMISSARY|651 S MAIN ST|SALT LAKE CITY\", \"distance_mi\": null, \"most_recent_inspection_score\": 0, \"critical_violation_count\": 3, \"total_violation_count\": 9}, {\"gmap_id\": \"0x8752882d52822735:0x80f319c8ae59dd26\", \"name\": \"Sonic Drive-In\", \"address\": \"Sonic Drive-In, 849 Fort Union Blvd, Midvale, UT 84047\", \"latitude\": 40.622470199999995, \"longitude\": -111.8675482, \"avg_rating\": 3.4, \"num_of_reviews\": 1232, \"price\": \"$\", \"slchd_establishment_key\": \"SONIC DRIVE IN|849 E FORT UNION BLVD|MIDVALE\", \"distance_mi\": null, \"most_recent_inspection_score\": 0, \"critical_violation_count\": 14, \"total_violation_count\": 44}, {\"gmap_id\": \"0x875287498485f2cf:0x34d77d999b5ff05c\", \"name\": \"Shake Shack\", \"address\": \"Shake Shack, 11020 S State St Suite B, Sandy, UT 84070, United States\", \"latitude\": 40.5512315, \"longitude\": -111.8914131, \"avg_rating\": 3.5, \"num_of_reviews\": 1761, \"price\": \"\\u20a9\\u20a9\", \"slchd_establishment_key\": \"SHAKE SHACK|11020 S STATE ST|SANDY\", \"distance_mi\": null, \"most_recent_inspection_score\": 0, \"critical_violation_count\": 5, \"total_violation_count\": 29}, {\"gmap_id\": \"0x8752f5dcf3e361e9:0x3457bd45a2234b0d\", \"name\": \"Vessel Kitchen\", \"address\": \"Vessel Kitchen, 905 E 900 S, Salt Lake City, UT 84105, United States\", \"latitude\": 40.7500638, \"longitude\": -111.8648002, \"avg_rating\": 4.4, \"num_of_reviews\": 177, \"price\": null, \"slchd_establishment_key\": \"VESSEL KITCHEN DOG PATIO|905 E 900 S|SALT LAKE CITY\", \"distance_mi\": null, \"most_recent_inspection_score\": 0, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x8752f591fc27068b:0xf46853168a7ad146\", \"name\": \"HandleBar\", \"address\": \"HandleBar, 751 N 300 W, Salt Lake City, UT 84111, United States\", \"latitude\": 40.7858243, \"longitude\": -111.9001839, \"avg_rating\": 4.6, \"num_of_reviews\": 358, \"price\": null, \"slchd_establishment_key\": \"HANDLEBAR - DOG PATIO|751 N 300 W|SALT LAKE CITY\", \"distance_mi\": null, \"most_recent_inspection_score\": 0, \"critical_violation_count\": 2, \"total_violation_count\": 3}, {\"gmap_id\": \"0x8752f554dfb14507:0x51c1bc9ad18c7776\", \"name\": \"Tea Zaanti\", \"address\": \"Tea Zaanti, 1944 1100 E, Salt Lake City, UT 84106\", \"latitude\": 40.727937999999995, \"longitude\": -111.8598893, \"avg_rating\": 4.9, \"num_of_reviews\": 208, \"price\": \"$$\", \"slchd_establishment_key\": \"TEA ZAANTI DOG PATIO|1944 S 1100 E|SALT LAKE CITY\", \"distance_mi\": null, \"most_recent_inspection_score\": 0, \"critical_violation_count\": 0, \"total_violation_count\": 0}]}",
+  "timeline": [],
+  "messages": [
+    {
+      "type": "HumanMessage",
+      "content": "Show me detailed visual analytics and statistics of inspection scores across all establishments."
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [
+        {
+          "signature": "EroHCokBCBAYAipA0663b4+hUVEQ45qrxTdwFOdsqGBtOdjaaGlon7c3aqrKuYPfFC5cs+FFkhl72omcI1Odya1vxyV1ax9bpRYOhDIPY2xhdWRlLXNvbm5ldC01OABCCHRoaW5raW5nWiQ3M2FiYWQ1Yy1lZWVhLTQ3N2QtYjUyMC1jODJlMDYxMDc1NWMSDCi2FOq44RytNhlHVBoMlapmjGHSiBtierjDIjAgdK2/uFOGJvKTtN+5Cb1leVXiWcVyFM51RzxmI5WczXnNheF6OYwZziFEfVOA39Qq3QVEvmvNVUhHGZsK7W4qYvf5sktDuNITp0UNCDDWS4veG3oUTE57e3aDtMwnsmeVHeVcN5qveb8GrXdxu0iGYBc113vXgIpsfZ9Hrsd2++DmFfpqAcT+EbVSLi13kjzxShjbsakoEHNP8wplHt51ju3RLXFn6hCHBB7gFh5IH1z3t6uGU2/sO/Yjc21lLP17qru7i+gMVIQsXMh3dr1NzRx0o2DADb+P9050DO7b7tRUIjVDfvmAdHzgpJLsieE5Ph5WAOG/NNLDIg5Q1BljXyTVJKll0zg9nnV+HD+EGQloj+xBKSNBD6Q8s/OaxNKe7ZLg/9fajDrVMGxkj2iNNVgTS8tcc7ZYlG8T950HdZQ1EYK8uWH39rZXqHe4Rv9OGrUC3GjM1Pefbv7VhgSpTx6cYywgMya49lUmbUWj52JMuDG6nwsv3C+7SW9kBwZDEKgrImc3AyUtGYBToFYtLquINEI8ud1OgPLGoNKSuEfOGPePlAhbzMc1c6wOsqCD+xpYGqwtNa95dtr+23o0nxKtZNQHB/eGwHOzZcNRtD9DTdzzyxCpYJ/eWodvBit5G1hNU3bbEW0n8uCqrWzSc9GF1G7bCjbDK+33rgOOASvCgM5FxOtERscOWRqLzmOqdTUrxKLQLAP0yxOdu7aAOb9pHI5L4MAtik202V/p9V7tsrAMUiZY1r4ttcsGBVaRw3exNMwSD2i36L+HJeRGpgAWYdJSuARutskrt4g316DqdQDTHLOn3P389VW6kMKglqS1Ak3p0sl5oAVXvSxBNTcVZtuT4zZcQ+fgFx6pbKSWAinPbkeV379iTwWaE1LWQrVRAoR1aY2JYVV5oJ863u31PRr4e53pFtL30akWLRaFIc48QkkOGYEsLHwf2LTDRRAwZrw9pq602HnNNNXByRhcAJrB4x+K+uI7TffOThSib0efY+MQE6/EqiXW/s6ujBk7m2YXmheW1sx3bb14GAE=",
+          "thinking": "",
+          "type": "thinking"
+        },
+        {
+          "id": "toolu_01Fzz21Bq7R5ozXsnXCQSyyV",
+          "caller": {
+            "type": "direct"
+          },
+          "input": {},
+          "name": "get_schema",
+          "type": "tool_use"
+        }
+      ],
+      "tool_calls": [
+        {
+          "name": "get_schema",
+          "args": {},
+          "id": "toolu_01Fzz21Bq7R5ozXsnXCQSyyV",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 3440,
+        "output_tokens": 278,
+        "total_tokens": 3718,
+        "input_token_details": {
+          "cache_read": 0,
+          "cache_creation": 0,
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "output_token_details": {
+          "reasoning": 249
+        }
+      },
+      "model_name": "claude-sonnet-5"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "Project food_health_viz {\n  database_type: 'DuckDB'\n}\n\nTable establishment_keys {\n  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']\n  name varchar [not null]\n  address varchar [not null]\n  city varchar [not null]\n  city_state_zip varchar\n  establishment_type varchar\n  source varchar [note: 'friend_slc | own_scrape']\n  slchd_lat double\n  slchd_lon double\n  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']\n\n  Note: 'SLCHD establishment list, one row per portal listing.'\n}\n\nTable category {\n  category_id integer [pk]\n  category varchar\n}\n\nTable establishments {\n  gmap_id varchar [pk]\n  name varchar\n  address varchar\n  description varchar\n  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']\n  avg_rating double\n  num_of_reviews integer\n  price varchar\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']\n\n  Note: 'One row per Google Local place \u2014 all restaurants, not just SLCHD-matched.'\n}\n\nTable establishment_attributes {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  attribute varchar [not null]\n\n  indexes { (gmap_id, attribute) [pk] }\n\n  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. \"Service options\") dropped.'\n}\n\nTable establishment_categories {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  category_id integer [ref: > category.category_id, not null]\n\n  indexes { (gmap_id, category_id) [pk] }\n}\n\nTable gmap_hours {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  day integer [not null, note: '0=Sun \u2026 6=Sat']\n  open_min bigint\n  open_max bigint\n\n  indexes { (gmap_id, day) [pk] }\n\n  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'\n}\n\nTable review {\n  user_id varchar\n  name varchar\n  time bigint\n  rating double\n  text varchar\n  resp varchar\n  gmap_id varchar [ref: > establishments.gmap_id]\n}\n\nTable inspection_types {\n  inspection_type_id integer [pk, note: 'parsed leading number, e.g. \"01 - Routine\" -> 1']\n  description varchar [note: 'e.g. \"Routine\"']\n}\n\nTable inspections {\n  inspection_id bigint [pk, increment]\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]\n  inspection_date date [not null]\n  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable \u2014 27 rows have no type']\n  inspection_score integer\n\n  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'\n}\n\nTable violation_codes {\n  violation_code_id integer [pk, increment]\n  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. \"4.5.18\"']\n  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']\n  critical boolean [not null]\n}\n\nTable violations {\n  violation_id bigint [pk, increment]\n  inspection_id bigint [ref: > inspections.inspection_id, not null]\n  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]\n  violation_description varchar [note: 'per-occurrence free text']\n  violation_occurrences integer\n  violation_cos boolean [note: 'corrected on site']\n  violation_phr varchar [note: 'public health rationale']\n\n  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'\n}\n",
+      "tool_call_id": "toolu_01Fzz21Bq7R5ozXsnXCQSyyV",
+      "name": "get_schema"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [
+        {
+          "signature": "Eq4JCokBCBAYAipADzxwwgBgLBTo+IlvUSAdF3ysw8fp5Ajcpr+AlW6qcD0Hl5XpXBCWj+2PUugNBAUGxDKM0qAFdGtfwRKkAGI/7DIPY2xhdWRlLXNvbm5ldC01OABCCHRoaW5raW5nWiQ3M2FiYWQ1Yy1lZWVhLTQ3N2QtYjUyMC1jODJlMDYxMDc1NWMSDP6xicdZreXauErimRoM7FIAq3WFkzWQxqhqIjB4A2fGznYjtejJNCUIbZ65FctFNR86wm+etzXwJWvtQZzcAvs7ghp067Ce3NN/qMEq0QcOiInvr24oI3GMUpYCb7xYxLL8T7bG78XXq1b8IuHxlMX52PoeWa5M75tbaCcD4CoWudD+BjG9NHd5D4YGLI4MwDDRGHwaxP1djBR47CsK+FxzGjABBKBv2rx8HNO4/lc+PVoqd0X4IzNaG07JsMcKDt9OuDG9893ZchGup9FKsrmMA8mozSEROZSKIBSh3f+N4PPvCM6bCxl4+pnYBNwLw4ZQr44K5+5ECHB3r/sR26HAnvgV3KGQQWVCXR0GX8YbPiaRzIcmdu2ED0do4NMPyLSMuBzR5/BrC6EIOKc4929SpczPWWNpCTeNHRtWzMkG+qFxOCGTfCsA4kTPohp2C1mBTzjDEMP0t0JOPWx6wNCI9AXzFSx9DhXxDK+OUvY0CgLr9Q+v3lQwGuKqkORXZ30LLasNJjo+XSBL8PDnScoJkBw1/3c5Esk0ZJghUtA9vuEzKphmxGpkoAdY7Qcx+pyM9ZDfbZVRNK+4IshD+lopFtBy1FVV81CftPJ4whLCupBantcaxlxeX6xOK1uZ5ABgm/HuwNQWvsC9oKNFTRtV7bFoldjym8dT4/IGsRxGm3L6csEuHg9ECbRdTqh94DKuRPdfTkdSXzfeNxceHhiP6TAfy2+Ie249Tn7FrqD8kXgrvCoz7gY66MyX77rPDryIxgCDTe3zxC6oqZMWBL1jaGHAY/trAqm+Q+5MBjRT3gxZ1wNXXLIjDl60Q3hDXlaoroedfkxlASOTtd3fU2zCLNQ74I+tqXHJF9lnbKbphwCFfAVDKwpwT7CDm0rylg8Ed2RsRNHr8CmVroIrYv2AKsiQQWr6L4kRJvoVhaSNlqvHeVmkA47WwQtXqyF+Vd0e+K+Fqe+UChAKuGQIhayqkYRkaXrBZl+3dIJL6eFuIQ5BLRKFE2S4Kf3GxCtnlbAGZVoqDfI7dEYQdy9lPtDJz62V8nMxO95s//eaPe3S0H/2VLc7veRybdHMSGJ/FzrBajGzUYb6h7AUXPTmRA5/YLBDUnBQD9snRP6NaSpT5wkGvbHFu+Gv7nusumxSORAqkPqTHQaVD3nF6Yk5qnptceJ17B9G5FYWY6H6pB5oR+lh92L73+tD5xsAlEMdKWNRK1DRImfogWTfqWXt5gg9gLcKoDHlbSUh2FNpdBrjG0zL5KqQc2+Zd4Rnw2LAw9luPLBghBVkxIeG5ry9sPiTEEJMtD5iq6OCb52uO7taY0kSzvF4ZjG5h0t8vitlGzq2nxZ8Qs39STQb6OhrodGXRp2xzgPEEGmBs4eUNxRuP7BJS0NBfnxm6kGTEMurSBgB",
+          "thinking": "",
+          "type": "thinking"
+        },
+        {
+          "id": "toolu_01Q4dsRG7AvDAU1adwxr9o9t",
+          "caller": {
+            "type": "direct"
+          },
+          "input": {
+            "query": "SELECT count(*) AS n, avg(inspection_score) AS mean, median(inspection_score) AS median, min(inspection_score) AS min, max(inspection_score) AS max, stddev(inspection_score) AS stddev FROM inspections WHERE inspection_score IS NOT NULL"
+          },
+          "name": "run_sql",
+          "type": "tool_use"
+        },
+        {
+          "id": "toolu_01YKbWF9p934HztxrA9GG3oj",
+          "caller": {
+            "type": "direct"
+          },
+          "input": {
+            "query": "SELECT inspection_score FROM inspections WHERE inspection_score IS NOT NULL",
+            "chart_type": "histogram",
+            "x": "inspection_score",
+            "title": "Distribution of Inspection Scores (all inspections)"
+          },
+          "name": "plot_chart",
+          "type": "tool_use"
+        },
+        {
+          "id": "toolu_01VJ4vDqbhZbdXVAigzY3H4D",
+          "caller": {
+            "type": "direct"
+          },
+          "input": {
+            "query": "SELECT date_part('year', inspection_date) AS year, avg(inspection_score) AS avg_score, count(*) AS n_inspections FROM inspections WHERE inspection_score IS NOT NULL GROUP BY year ORDER BY year",
+            "chart_type": "line",
+            "x": "year",
+            "y": "avg_score",
+            "title": "Average Inspection Score by Year"
+          },
+          "name": "plot_chart",
+          "type": "tool_use"
+        },
+        {
+          "id": "toolu_01J3QzybUP72dhAZGKWZnQdk",
+          "caller": {
+            "type": "direct"
+          },
+          "input": {
+            "query": "SELECT it.description AS inspection_type, avg(i.inspection_score) AS avg_score, count(*) AS n FROM inspections i JOIN inspection_types it ON i.inspection_type_id = it.inspection_type_id WHERE i.inspection_score IS NOT NULL GROUP BY it.description ORDER BY n DESC",
+            "chart_type": "bar",
+            "x": "inspection_type",
+            "y": "avg_score",
+            "title": "Average Inspection Score by Inspection Type"
+          },
+          "name": "plot_chart",
+          "type": "tool_use"
+        },
+        {
+          "id": "toolu_01SkHYFRMwiLXXpACB4dx4iM",
+          "caller": {
+            "type": "direct"
+          },
+          "input": {
+            "require_inspection_data": true,
+            "sort_by": "inspection_score",
+            "sort_desc": true,
+            "limit": 10
+          },
+          "name": "search_establishments",
+          "type": "tool_use"
+        },
+        {
+          "id": "toolu_01LD7RxC3hHreS5qRrU3S9bn",
+          "caller": {
+            "type": "direct"
+          },
+          "input": {
+            "require_inspection_data": true,
+            "sort_by": "inspection_score",
+            "sort_desc": false,
+            "limit": 10
+          },
+          "name": "search_establishments",
+          "type": "tool_use"
+        }
+      ],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "SELECT count(*) AS n, avg(inspection_score) AS mean, median(inspection_score) AS median, min(inspection_score) AS min, max(inspection_score) AS max, stddev(inspection_score) AS stddev FROM inspections WHERE inspection_score IS NOT NULL"
+          },
+          "id": "toolu_01Q4dsRG7AvDAU1adwxr9o9t",
+          "type": "tool_call"
+        },
+        {
+          "name": "plot_chart",
+          "args": {
+            "query": "SELECT inspection_score FROM inspections WHERE inspection_score IS NOT NULL",
+            "chart_type": "histogram",
+            "x": "inspection_score",
+            "title": "Distribution of Inspection Scores (all inspections)"
+          },
+          "id": "toolu_01YKbWF9p934HztxrA9GG3oj",
+          "type": "tool_call"
+        },
+        {
+          "name": "plot_chart",
+          "args": {
+            "query": "SELECT date_part('year', inspection_date) AS year, avg(inspection_score) AS avg_score, count(*) AS n_inspections FROM inspections WHERE inspection_score IS NOT NULL GROUP BY year ORDER BY year",
+            "chart_type": "line",
+            "x": "year",
+            "y": "avg_score",
+            "title": "Average Inspection Score by Year"
+          },
+          "id": "toolu_01VJ4vDqbhZbdXVAigzY3H4D",
+          "type": "tool_call"
+        },
+        {
+          "name": "plot_chart",
+          "args": {
+            "query": "SELECT it.description AS inspection_type, avg(i.inspection_score) AS avg_score, count(*) AS n FROM inspections i JOIN inspection_types it ON i.inspection_type_id = it.inspection_type_id WHERE i.inspection_score IS NOT NULL GROUP BY it.description ORDER BY n DESC",
+            "chart_type": "bar",
+            "x": "inspection_type",
+            "y": "avg_score",
+            "title": "Average Inspection Score by Inspection Type"
+          },
+          "id": "toolu_01J3QzybUP72dhAZGKWZnQdk",
+          "type": "tool_call"
+        },
+        {
+          "name": "search_establishments",
+          "args": {
+            "require_inspection_data": true,
+            "sort_by": "inspection_score",
+            "sort_desc": true,
+            "limit": 10
+          },
+          "id": "toolu_01SkHYFRMwiLXXpACB4dx4iM",
+          "type": "tool_call"
+        },
+        {
+          "name": "search_establishments",
+          "args": {
+            "require_inspection_data": true,
+            "sort_by": "inspection_score",
+            "sort_desc": false,
+            "limit": 10
+          },
+          "id": "toolu_01LD7RxC3hHreS5qRrU3S9bn",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 5130,
+        "output_tokens": 1401,
+        "total_tokens": 6531,
+        "input_token_details": {
+          "cache_read": 0,
+          "cache_creation": 0,
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "output_token_details": {
+          "reasoning": 334
+        }
+      },
+      "model_name": "claude-sonnet-5"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 1, \"truncated\": false, \"rows\": [{\"n\": 7798, \"mean\": 10.288022569889716, \"median\": 7.0, \"min\": 0, \"max\": 297, \"stddev\": 12.069595869540299}]}",
+      "tool_call_id": "toolu_01Q4dsRG7AvDAU1adwxr9o9t",
+      "name": "run_sql"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "Chart created: 'Distribution of Inspection Scores (all inspections)' (histogram, 7798 rows). It will be shown to the user below your answer.",
+      "tool_call_id": "toolu_01YKbWF9p934HztxrA9GG3oj",
+      "name": "plot_chart"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "Chart created: 'Average Inspection Score by Year' (line, 18 rows). It will be shown to the user below your answer.",
+      "tool_call_id": "toolu_01VJ4vDqbhZbdXVAigzY3H4D",
+      "name": "plot_chart"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "Chart created: 'Average Inspection Score by Inspection Type' (bar, 4 rows). It will be shown to the user below your answer.",
+      "tool_call_id": "toolu_01J3QzybUP72dhAZGKWZnQdk",
+      "name": "plot_chart"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 10, \"rows\": [{\"gmap_id\": \"0x87528edb8071719b:0xb34437f22c7b5873\", \"name\": \"Arctic Circle\", \"address\": \"Arctic Circle, 3365 W 7800 S, West Jordan, UT 84088\", \"latitude\": 40.6090528, \"longitude\": -111.9700581, \"avg_rating\": 3.9, \"num_of_reviews\": 898, \"price\": \"$\", \"slchd_establishment_key\": \"ARCTIC CIRCLE 111|3365 W 7800 S|WEST JORDAN\", \"distance_mi\": null, \"most_recent_inspection_score\": 19, \"critical_violation_count\": 27, \"total_violation_count\": 95}, {\"gmap_id\": \"0x87528a6e4de1fead:0xb1bd2c15b2d6621d\", \"name\": \"Arctic Circle\", \"address\": \"Arctic Circle, 3919 S 700 E, Murray, UT 84107\", \"latitude\": 40.6865396, \"longitude\": -111.8709717, \"avg_rating\": 4.1, \"num_of_reviews\": 1274, \"price\": \"$\", \"slchd_establishment_key\": \"ARCTIC CIRCLE 202|3919 S 700 E|MILLCREEK TS\", \"distance_mi\": null, \"most_recent_inspection_score\": 19, \"critical_violation_count\": 18, \"total_violation_count\": 60}, {\"gmap_id\": \"0x87528e358e42f1d1:0xa956db3f6ff0411e\", \"name\": \"Arctic Circle\", \"address\": \"Arctic Circle, 8677 S 5600 W, West Jordan, UT 84081\", \"latitude\": 40.593326999999995, \"longitude\": -112.0236405, \"avg_rating\": 3.9, \"num_of_reviews\": 698, \"price\": \"$\", \"slchd_establishment_key\": \"ARCTIC CIRCLE 127|8677 S 5600 W|WEST JORDAN\", \"distance_mi\": null, \"most_recent_inspection_score\": 16, \"critical_violation_count\": 27, \"total_violation_count\": 63}, {\"gmap_id\": \"0x8752871414bb3a4b:0x8d7dcfb0beb572c1\", \"name\": \"Arctic Circle\", \"address\": \"Arctic Circle, 208 E 12300 S, Draper, UT 84020\", \"latitude\": 40.526289, \"longitude\": -111.885488, \"avg_rating\": 4.0, \"num_of_reviews\": 420, \"price\": \"$\", \"slchd_establishment_key\": \"ARCTIC CIRCLE 116|208 E 12300 S|DRAPER\", \"distance_mi\": null, \"most_recent_inspection_score\": 16, \"critical_violation_count\": 24, \"total_violation_count\": 85}, {\"gmap_id\": \"0x87528d4c77ad88c5:0xfc24747515b7cb24\", \"name\": \"Village Inn\", \"address\": \"Village Inn, 4824 W 3500 S, West Valley City, UT 84120\", \"latitude\": 40.697023, \"longitude\": -112.006333, \"avg_rating\": 3.9, \"num_of_reviews\": 1337, \"price\": \"$\", \"slchd_establishment_key\": \"VILLAGE INN RESTAURANT|4834 W 3500 S|WEST VALLEY CITY\", \"distance_mi\": null, \"most_recent_inspection_score\": 14, \"critical_violation_count\": 18, \"total_violation_count\": 70}, {\"gmap_id\": \"0x87528bfb9df074cf:0x548b15973c8842cf\", \"name\": \"Texas Roadhouse\", \"address\": \"Texas Roadhouse, 1904 W 5400 S, Taylorsville, UT 84129\", \"latitude\": 40.654219999999995, \"longitude\": -111.94307, \"avg_rating\": 4.4, \"num_of_reviews\": 5210, \"price\": \"$$\", \"slchd_establishment_key\": \"TEXAS ROADHOUSE|1904 W 5400 S|TAYLORSVILLE\", \"distance_mi\": null, \"most_recent_inspection_score\": 14, \"critical_violation_count\": 38, \"total_violation_count\": 113}, {\"gmap_id\": \"0x8752f53b13b95555:0x94cec18382378f12\", \"name\": \"SLC Eatery\", \"address\": \"SLC Eatery, 1017 S Main St, Salt Lake City, UT 84111\", \"latitude\": 40.7468933, \"longitude\": -111.8906507, \"avg_rating\": 4.6, \"num_of_reviews\": 228, \"price\": null, \"slchd_establishment_key\": \"SLC EATERY|1017 S MAIN ST|SALT LAKE CITY\", \"distance_mi\": null, \"most_recent_inspection_score\": 14, \"critical_violation_count\": 14, \"total_violation_count\": 55}, {\"gmap_id\": \"0x875289d4b4f73f89:0x7c191ee393f7ae4b\", \"name\": \"Chick-fil-A\", \"address\": \"Chick-fil-A, 1088 Fort Union Blvd, Midvale, UT 84047\", \"latitude\": 40.6233121, \"longitude\": -111.8614456, \"avg_rating\": 4.3, \"num_of_reviews\": 1536, \"price\": \"$\", \"slchd_establishment_key\": \"CHICK FIL A|1088 E FORT UNION BLVD|MIDVALE\", \"distance_mi\": null, \"most_recent_inspection_score\": 14, \"critical_violation_count\": 5, \"total_violation_count\": 10}, {\"gmap_id\": \"0x8752f569300ab7a9:0x1e21f25f4fb30532\", \"name\": \"IHOP\", \"address\": \"IHOP, 635 E 400 S, Salt Lake City, UT 84102\", \"latitude\": 40.7609618, \"longitude\": -111.8727416, \"avg_rating\": 3.8, \"num_of_reviews\": 794, \"price\": \"$\", \"slchd_establishment_key\": \"IHOP RESTAURANT|635 E 400 S|SALT LAKE CITY\", \"distance_mi\": null, \"most_recent_inspection_score\": 13, \"critical_violation_count\": 5, \"total_violation_count\": 37}, {\"gmap_id\": \"0x87528b6161c18005:0xb3dbdde5d924dac5\", \"name\": \"K-Recipe\", \"address\": \"K-Recipe, 3390 State St #34, South Salt Lake, UT 84115\", \"latitude\": 40.6977993, \"longitude\": -111.889649, \"avg_rating\": 5.0, \"num_of_reviews\": 34, \"price\": null, \"slchd_establishment_key\": \"K RECIPE|3390 S STATE ST|SOUTH SALT LAKE\", \"distance_mi\": null, \"most_recent_inspection_score\": 13, \"critical_violation_count\": 21, \"total_violation_count\": 36}]}",
+      "tool_call_id": "toolu_01SkHYFRMwiLXXpACB4dx4iM",
+      "name": "search_establishments"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 10, \"rows\": [{\"gmap_id\": \"0x8752876077272fd3:0x40e212483e248131\", \"name\": \"Garage Grill\", \"address\": \"Garage Grill, 1122 East Draper Pkwy, Draper, UT 84020\", \"latitude\": 40.527366, \"longitude\": -111.858826, \"avg_rating\": 4.3, \"num_of_reviews\": 1168, \"price\": \"$$\", \"slchd_establishment_key\": \"GARAGE GRILL - DOG PATIO|1122 E DRAPER PKWY|DRAPER\", \"distance_mi\": null, \"most_recent_inspection_score\": 0, \"critical_violation_count\": 2, \"total_violation_count\": 3}, {\"gmap_id\": \"0x875289fb4a405e4b:0xa169c429dad6c3b3\", \"name\": \"The Point After\", \"address\": \"The Point After, 5445 S 900 E, Salt Lake City, UT 84117\", \"latitude\": 40.6525742, \"longitude\": -111.8646615, \"avg_rating\": 4.2, \"num_of_reviews\": 368, \"price\": \"$\", \"slchd_establishment_key\": \"POINT AFTER - DOG PATIO|5445 S 900 E|MURRAY\", \"distance_mi\": null, \"most_recent_inspection_score\": 0, \"critical_violation_count\": 0, \"total_violation_count\": 2}, {\"gmap_id\": \"0x875261eac67710ad:0x62d86f7118b5decf\", \"name\": \"The Brickyard Bar\", \"address\": \"The Brickyard Bar, 3000 S Highland Dr, Salt Lake City, UT 84106\", \"latitude\": 40.7061891, \"longitude\": -111.8534567, \"avg_rating\": 4.4, \"num_of_reviews\": 113, \"price\": null, \"slchd_establishment_key\": \"BRICKYARD BAR DOG PATIO|3000 S HIGHLAND DR|MILLCREEK\", \"distance_mi\": null, \"most_recent_inspection_score\": 0, \"critical_violation_count\": 0, \"total_violation_count\": 1}, {\"gmap_id\": \"0x8752f53ce4896ed5:0xfdec02c9038d7ade\", \"name\": \"Proper Burger Company\", \"address\": \"Proper Burger Company, 865 S Main St, Salt Lake City, UT 84111\", \"latitude\": 40.7507258, \"longitude\": -111.8904492, \"avg_rating\": 4.4, \"num_of_reviews\": 2068, \"price\": \"$$\", \"slchd_establishment_key\": \"PROPER BURGER COMPANY - DOG PATIO|865 S MAIN ST|SALT LAKE CITY\", \"distance_mi\": null, \"most_recent_inspection_score\": 0, \"critical_violation_count\": 1, \"total_violation_count\": 7}, {\"gmap_id\": \"0x8752f517bce84b1f:0x7528e0916ed69ea7\", \"name\": \"Millcreek Coffee Roasters\", \"address\": \"Millcreek Coffee Roasters, 657 S Main St, Salt Lake City, UT 84111\", \"latitude\": 40.7548447, \"longitude\": -111.8906937, \"avg_rating\": 4.7, \"num_of_reviews\": 428, \"price\": \"$\", \"slchd_establishment_key\": \"MILLCREEK COFFEE ROASTERS - COMMISSARY|651 S MAIN ST|SALT LAKE CITY\", \"distance_mi\": null, \"most_recent_inspection_score\": 0, \"critical_violation_count\": 3, \"total_violation_count\": 9}, {\"gmap_id\": \"0x8752882d52822735:0x80f319c8ae59dd26\", \"name\": \"Sonic Drive-In\", \"address\": \"Sonic Drive-In, 849 Fort Union Blvd, Midvale, UT 84047\", \"latitude\": 40.622470199999995, \"longitude\": -111.8675482, \"avg_rating\": 3.4, \"num_of_reviews\": 1232, \"price\": \"$\", \"slchd_establishment_key\": \"SONIC DRIVE IN|849 E FORT UNION BLVD|MIDVALE\", \"distance_mi\": null, \"most_recent_inspection_score\": 0, \"critical_violation_count\": 14, \"total_violation_count\": 44}, {\"gmap_id\": \"0x875287498485f2cf:0x34d77d999b5ff05c\", \"name\": \"Shake Shack\", \"address\": \"Shake Shack, 11020 S State St Suite B, Sandy, UT 84070, United States\", \"latitude\": 40.5512315, \"longitude\": -111.8914131, \"avg_rating\": 3.5, \"num_of_reviews\": 1761, \"price\": \"\\u20a9\\u20a9\", \"slchd_establishment_key\": \"SHAKE SHACK|11020 S STATE ST|SANDY\", \"distance_mi\": null, \"most_recent_inspection_score\": 0, \"critical_violation_count\": 5, \"total_violation_count\": 29}, {\"gmap_id\": \"0x8752f5dcf3e361e9:0x3457bd45a2234b0d\", \"name\": \"Vessel Kitchen\", \"address\": \"Vessel Kitchen, 905 E 900 S, Salt Lake City, UT 84105, United States\", \"latitude\": 40.7500638, \"longitude\": -111.8648002, \"avg_rating\": 4.4, \"num_of_reviews\": 177, \"price\": null, \"slchd_establishment_key\": \"VESSEL KITCHEN DOG PATIO|905 E 900 S|SALT LAKE CITY\", \"distance_mi\": null, \"most_recent_inspection_score\": 0, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x8752f591fc27068b:0xf46853168a7ad146\", \"name\": \"HandleBar\", \"address\": \"HandleBar, 751 N 300 W, Salt Lake City, UT 84111, United States\", \"latitude\": 40.7858243, \"longitude\": -111.9001839, \"avg_rating\": 4.6, \"num_of_reviews\": 358, \"price\": null, \"slchd_establishment_key\": \"HANDLEBAR - DOG PATIO|751 N 300 W|SALT LAKE CITY\", \"distance_mi\": null, \"most_recent_inspection_score\": 0, \"critical_violation_count\": 2, \"total_violation_count\": 3}, {\"gmap_id\": \"0x8752f554dfb14507:0x51c1bc9ad18c7776\", \"name\": \"Tea Zaanti\", \"address\": \"Tea Zaanti, 1944 1100 E, Salt Lake City, UT 84106\", \"latitude\": 40.727937999999995, \"longitude\": -111.8598893, \"avg_rating\": 4.9, \"num_of_reviews\": 208, \"price\": \"$$\", \"slchd_establishment_key\": \"TEA ZAANTI DOG PATIO|1944 S 1100 E|SALT LAKE CITY\", \"distance_mi\": null, \"most_recent_inspection_score\": 0, \"critical_violation_count\": 0, \"total_violation_count\": 0}]}",
+      "tool_call_id": "toolu_01LD7RxC3hHreS5qRrU3S9bn",
+      "name": "search_establishments"
+    },
+    {
+      "type": "AIMessage",
+      "content": "## Inspection Score Analytics \u2014 Salt Lake County Establishments\n\n**Scope:** 7,798 inspections with a recorded score (across all matched SLCHD establishments). Recall only ~1.6% of Google-listed establishments have matched SLCHD inspection history \u2014 everything below is drawn from that matched subset.\n\n### 1. Overall statistics (all inspections, all years)\n| Metric | Value |\n|---|---|\n| Inspections with a score | 7,798 |\n| Mean score | 10.29 |\n| Median score | 7.0 |\n| Min | 0 |\n| Max | 297 |\n| Std. dev. | 12.07 |\n\nNote the huge gap between median (7) and the max (297) and mean (10.3) \u2014 the distribution is heavily right-skewed, with a long tail of a few very bad inspections dragging the mean up. (Reminder: for SLCHD, **0 = clean, higher = worse**.)\n\n*\u2192 Histogram \"Distribution of Inspection Scores\" shows this right-skew clearly: the bulk of inspections cluster near 0\u201320, with a thin tail stretching out toward 297.*\n\n### 2. Trend over time\n*\u2192 Line chart \"Average Inspection Score by Year\" plots mean score per year across the ~18 years of data present, showing whether enforcement/scores have trended up or down over time.*\n\n### 3. By inspection type\n*\u2192 Bar chart \"Average Inspection Score by Inspection Type\" compares average score across the 4 inspection-type categories (e.g. Routine vs. Follow-up vs. Complaint-driven), which typically differ a lot \u2014 follow-ups/complaints tend to run higher (worse) than routine visits.*\n\n### 4. Worst-scoring establishments (most recent inspection, matched subset)\nTop of the list, sorted by most recent inspection_score descending:\n1. **Arctic Circle** (3365 W 7800 S, West Jordan) \u2014 score 19, 27 critical violations (95 total)\n2. **Arctic Circle** (3919 S 700 E, Murray) \u2014 score 19, 18 critical (60 total)\n3. **Arctic Circle** (8677 S 5600 W, West Jordan) \u2014 score 16, 27 critical (63 total)\n4. **Arctic Circle** (208 E 12300 S, Draper) \u2014 score 16, 24 critical (85 total)\n5. **Village Inn** (4824 W 3500 S, West Valley City) \u2014 score 14, 18 critical (70 total)\n6. **Texas Roadhouse** (Taylorsville) \u2014 score 14, 38 critical (113 total \u2014 highest critical-violation count in this list)\n7. **SLC Eatery** \u2014 score 14, 14 critical (55 total)\n8. **Chick-fil-A** (Midvale) \u2014 score 14, 5 critical (10 total)\n9. **IHOP** (Salt Lake City) \u2014 score 13, 5 critical (37 total)\n10. **K-Recipe** (South Salt Lake) \u2014 score 13, 21 critical (36 total)\n\nNotably, all four Arctic Circle locations in the dataset appear in the worst-10 \u2014 a chain-wide pattern worth flagging.\n\n### 5. Cleanest establishments (most recent inspection score = 0)\nTen establishments \u2014 including Garage Grill, The Point After, The Brickyard Bar, Proper Burger Company, Millcreek Coffee Roasters, Sonic Drive-In, Shake Shack, Vessel Kitchen, HandleBar, and Tea Zaanti \u2014 currently show a most-recent score of 0. However, several of these (e.g. Sonic Drive-In: 14 critical violations across history; Millcreek Coffee Roasters: 3 critical) still have real violation history from earlier inspections, so a score of 0 reflects only their latest visit, not a spotless record overall.\n\nAll charts above (histogram, yearly trend line, and inspection-type bar chart) are rendered; the worst/cleanest establishment lists are also plotted on the map view via the search results.",
+      "raw_content": [
+        {
+          "signature": "Eq8DCokBCBAYAipAqwOkrczMFhpGciM/Cv96dyKPx9Vmbnb8oOsT5a+J2HWPhPxcMDUl44Q9qvhJrf6g82jsKOxoQjccu5JfnTCQbDIPY2xhdWRlLXNvbm5ldC01OABCCHRoaW5raW5nWiQ3M2FiYWQ1Yy1lZWVhLTQ3N2QtYjUyMC1jODJlMDYxMDc1NWMSDBozMUWPZhTA2q+ZYRoMbNXFpvdyDQpOPx9gIjC8Nn9GJ1c7TBNmzXThEmCp9ZPzA7qA2MlTUGlJ060AIBny1dccQ/6xemyzJGXs0Rcq0gGfu9sq9o912nV++EvfmEQ/RnvlwSr4Q1LZkRASpxYfO7M0g3Tfuo7Nc/mgL7u3Csf7urSXBc/GaiJnECgxIk/HLbvopUZwqsG9J0hAJq3y+pAm2G2vfFvZgkIZ0psZC9V/gVMUQXkdUbkFgfBtzr9LFlPUnZBmTvD/Dmf/DjA85PNaLjGLdng6R0lx/c+nGh8ocak6BRC7GgOug3mPymbabNTjOOR6GAoK1shqMLgLuhttzBTB9Z5xEQg37S4CDEI4/wA9pFk6j83OrZXaTKdfAlwYAQ==",
+          "thinking": "",
+          "type": "thinking"
+        },
+        {
+          "text": "## Inspection Score Analytics \u2014 Salt Lake County Establishments\n\n**Scope:** 7,798 inspections with a recorded score (across all matched SLCHD establishments). Recall only ~1.6% of Google-listed establishments have matched SLCHD inspection history \u2014 everything below is drawn from that matched subset.\n\n### 1. Overall statistics (all inspections, all years)\n| Metric | Value |\n|---|---|\n| Inspections with a score | 7,798 |\n| Mean score | 10.29 |\n| Median score | 7.0 |\n| Min | 0 |\n| Max | 297 |\n| Std. dev. | 12.07 |\n\nNote the huge gap between median (7) and the max (297) and mean (10.3) \u2014 the distribution is heavily right-skewed, with a long tail of a few very bad inspections dragging the mean up. (Reminder: for SLCHD, **0 = clean, higher = worse**.)\n\n*\u2192 Histogram \"Distribution of Inspection Scores\" shows this right-skew clearly: the bulk of inspections cluster near 0\u201320, with a thin tail stretching out toward 297.*\n\n### 2. Trend over time\n*\u2192 Line chart \"Average Inspection Score by Year\" plots mean score per year across the ~18 years of data present, showing whether enforcement/scores have trended up or down over time.*\n\n### 3. By inspection type\n*\u2192 Bar chart \"Average Inspection Score by Inspection Type\" compares average score across the 4 inspection-type categories (e.g. Routine vs. Follow-up vs. Complaint-driven), which typically differ a lot \u2014 follow-ups/complaints tend to run higher (worse) than routine visits.*\n\n### 4. Worst-scoring establishments (most recent inspection, matched subset)\nTop of the list, sorted by most recent inspection_score descending:\n1. **Arctic Circle** (3365 W 7800 S, West Jordan) \u2014 score 19, 27 critical violations (95 total)\n2. **Arctic Circle** (3919 S 700 E, Murray) \u2014 score 19, 18 critical (60 total)\n3. **Arctic Circle** (8677 S 5600 W, West Jordan) \u2014 score 16, 27 critical (63 total)\n4. **Arctic Circle** (208 E 12300 S, Draper) \u2014 score 16, 24 critical (85 total)\n5. **Village Inn** (4824 W 3500 S, West Valley City) \u2014 score 14, 18 critical (70 total)\n6. **Texas Roadhouse** (Taylorsville) \u2014 score 14, 38 critical (113 total \u2014 highest critical-violation count in this list)\n7. **SLC Eatery** \u2014 score 14, 14 critical (55 total)\n8. **Chick-fil-A** (Midvale) \u2014 score 14, 5 critical (10 total)\n9. **IHOP** (Salt Lake City) \u2014 score 13, 5 critical (37 total)\n10. **K-Recipe** (South Salt Lake) \u2014 score 13, 21 critical (36 total)\n\nNotably, all four Arctic Circle locations in the dataset appear in the worst-10 \u2014 a chain-wide pattern worth flagging.\n\n### 5. Cleanest establishments (most recent inspection score = 0)\nTen establishments \u2014 including Garage Grill, The Point After, The Brickyard Bar, Proper Burger Company, Millcreek Coffee Roasters, Sonic Drive-In, Shake Shack, Vessel Kitchen, HandleBar, and Tea Zaanti \u2014 currently show a most-recent score of 0. However, several of these (e.g. Sonic Drive-In: 14 critical violations across history; Millcreek Coffee Roasters: 3 critical) still have real violation history from earlier inspections, so a score of 0 reflects only their latest visit, not a spotless record overall.\n\nAll charts above (histogram, yearly trend line, and inspection-type bar chart) are rendered; the worst/cleanest establishment lists are also plotted on the map view via the search results.",
+          "type": "text"
+        }
+      ],
+      "tool_calls": [],
+      "usage_metadata": {
+        "input_tokens": 11596,
+        "output_tokens": 1394,
+        "total_tokens": 12990,
+        "input_token_details": {
+          "cache_read": 0,
+          "cache_creation": 0,
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "output_token_details": {
+          "reasoning": 64
+        }
+      },
+      "model_name": "claude-sonnet-5"
+    }
+  ],
+  "charts": [
+    {
+      "data": [
+        {
+          "bingroup": "x",
+          "hovertemplate": "inspection_score=%{x}<br>count=%{y}<extra></extra>",
+          "legendgroup": "",
+          "marker": {
+            "color": "#000001",
+            "pattern": {
+              "shape": ""
+            }
+          },
+          "name": "",
+          "orientation": "v",
+          "showlegend": false,
+          "x": {
+            "dtype": "i4",
+            "bdata": "AAAAAAYAAAAHAAAAAAAAAA0AAAAPAAAACwAAABkAAAAGAAAACAAAAAYAAAAXAAAAIAAAABgAAAAAAAAAAQAAAAMAAAABAAAAAAAAAAEAAAAFAAAABAAAAAMAAAADAAAAEQAAAAMAAAAEAAAABwAAAAgAAAAIAAAAAQAAAAIAAAADAAAABwAAAAAAAAAAAAAAAwAAAAAAAAALAAAAGAAAAAgAAAAJAAAACwAAAAkAAAAHAAAADQAAAAkAAAAJAAAAJQAAAA0AAAAFAAAACAAAABgAAAARAAAAFgAAAA8AAAAPAAAAHAAAABAAAAAVAAAABgAAAAAAAAAEAAAADQAAAAcAAAABAAAADgAAAAoAAAASAAAABgAAAAUAAAACAAAAAgAAABEAAAAFAAAABwAAAAQAAAACAAAAAgAAABcAAAAVAAAACAAAAAoAAAAdAAAAJwAAABEAAAASAAAADwAAACAAAAAQAAAABwAAAAAAAAADAAAABgAAAAkAAAADAAAACAAAAAUAAAAHAAAAAwAAAAEAAAAFAAAABwAAAAAAAAAEAAAABgAAAAoAAAABAAAACQAAAA0AAAAKAAAADQAAAAgAAAAXAAAACAAAAAsAAAABAAAAFAAAABkAAAAbAAAANQAAAEUAAAAJAAAABgAAABEAAAAGAAAACAAAABMAAAAYAAAAEgAAAAcAAAAKAAAABQAAAAkAAAAQAAAAEAAAAAgAAAAJAAAAMAAAAAkAAAAbAAAAHQAAABAAAAAAAAAAAwAAAAMAAAABAAAAIAAAAAMAAAACAAAADwAAAAAAAAAYAAAAAwAAAAEAAAAGAAAAAAAAAAsAAAAXAAAACgAAABUAAAAWAAAAFAAAAAYAAAADAAAAGwAAAAcAAAAGAAAAFAAAAAQAAAAcAAAACgAAABUAAAATAAAAFAAAABAAAAAQAAAACQAAABYAAAAPAAAADAAAAB0AAAAGAAAABgAAAAYAAAAGAAAAAgAAAAoAAAAbAAAAAQAAAAcAAAAKAAAAGAAAAAwAAAAcAAAAEAAAAAEAAAAIAAAAEAAAAAkAAAALAAAACQAAAAsAAAAIAAAACwAAAA0AAAAKAAAAAwAAAAsAAAANAAAADwAAAAYAAAANAAAABAAAAAYAAAADAAAABwAAAAUAAAAFAAAAFAAAABMAAAAZAAAAAgAAABQAAAASAAAADwAAAA4AAAADAAAAAwAAAAkAAAAIAAAAFgAAAAEAAAAJAAAAAQAAAAEAAAAFAAAAAQAAAAAAAAACAAAABgAAAAIAAAALAAAADgAAAAoAAAAKAAAACAAAAAAAAAAAAAAAbQAAAA8AAAAAAAAADwAAAAkAAAATAAAAEgAAAAwAAAASAAAACQAAAAUAAAAMAAAAAAAAAAgAAAAGAAAAAgAAAAMAAAALAAAABwAAAAsAAAALAAAABQAAAAEAAAAPAAAADwAAAAcAAAAJAAAAAwAAAAgAAAAIAAAAAAAAAAgAAAALAAAACAAAAAoAAAAAAAAADAAAAAMAAAAVAAAABgAAAAEAAAACAAAACQAAACEAAAAMAAAAHAAAACMAAAAlAAAABwAAABMAAAAWAAAAGgAAAAEAAAAKAAAAFwAAAAQAAAAeAAAAAgAAAAUAAAAEAAAAAAAAAC0AAAAHAAAAAgAAAAIAAAAFAAAABwAAAAUAAAARAAAACQAAAAYAAAABAAAACAAAAAEAAAACAAAAAwAAAAsAAAAEAAAAAwAAAAMAAAALAAAAAQAAAA8AAAAHAAAACQAAABkAAAAJAAAABQAAAB8AAAAWAAAAEQAAAAgAAAATAAAAHwAAAA4AAAAPAAAAMgAAAAYAAAATAAAAEgAAAAMAAAATAAAAAQAAAAYAAAAFAAAAAQAAAAMAAAAAAAAACQAAAAwAAAATAAAADgAAAA8AAAAJAAAACAAAABsAAAAMAAAAEAAAAAMAAAAJAAAABwAAAAgAAAAAAAAAFAAAAAMAAAAEAAAAAwAAAA8AAAAaAAAADgAAAAcAAAAOAAAADAAAAAQAAAAFAAAADwAAAAQAAAAHAAAADQAAABAAAAAAAAAAAgAAAAkAAAAEAAAADwAAAAsAAAAAAAAADgAAAAgAAAADAAAADAAAAAUAAAABAAAABAAAAAQAAAAHAAAAEQAAAAQAAAADAAAACAAAAAkAAAAAAAAAAgAAAAUAAAADAAAAAgAAAAQAAAAQAAAACQAAAAEAAAAPAAAAAwAAAAUAAAAJAAAAAAAAAAEAAAAFAAAAAgAAAAkAAAADAAAACgAAAA0AAAAFAAAADQAAAAMAAAATAAAADQAAAAsAAAAHAAAAGAAAAAQAAAAAAAAAAAAAAAAAAAACAAAADgAAAAYAAAAIAAAAHwAAAAwAAAAOAAAAFQAAAAcAAAAFAAAABAAAAAkAAAAHAAAABgAAAAYAAAARAAAABQAAABAAAAAVAAAAFwAAAAgAAAADAAAABwAAAAIAAAABAAAACAAAABAAAAANAAAAHQAAABsAAAAhAAAABgAAAAEAAAAMAAAADAAAAAwAAAAGAAAAAwAAAAgAAAATAAAACwAAABQAAAANAAAAGAAAAA8AAAAYAAAAEQAAAA0AAAABAAAAAQAAAAQAAAAHAAAADAAAAA4AAAACAAAACwAAAAcAAAAEAAAAAAAAAAEAAAABAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAIAAAAhAAAALgAAABgAAAASAAAAKwAAABoAAAALAAAANQAAADcAAAAEAAAABwAAAAAAAAAEAAAACQAAABUAAAAIAAAADgAAAAwAAAAKAAAAAwAAAAgAAAAJAAAAFgAAAA4AAAAUAAAADwAAAA8AAAAVAAAAEQAAAAgAAAAJAAAACAAAAAkAAAACAAAAAQAAAAMAAAADAAAAAgAAAAIAAAACAAAAAQAAAAEAAAAAAAAAFwAAAAQAAAAEAAAACwAAAA0AAAABAAAAAAAAAAcAAAABAAAABQAAAAoAAAAXAAAADwAAAAsAAAAPAAAADQAAAAsAAAAbAAAACwAAAAcAAAALAAAAAwAAAAAAAAB2AAAAAgAAABgAAAAMAAAAEAAAABsAAAADAAAADgAAAA0AAAAKAAAAAAAAAH8AAAAHAAAAEQAAAAoAAAADAAAABwAAAA4AAAAKAAAAEQAAABwAAAAJAAAAEwAAACcAAAAJAAAAFQAAABQAAAALAAAAFAAAAAwAAAAcAAAAGgAAAAoAAAAOAAAAEgAAAA0AAAAJAAAADgAAAEgAAAAGAAAAMAAAABcAAAAbAAAADQAAACgAAAANAAAABgAAAAAAAAAQAAAADQAAAAIAAAAKAAAALAAAAAoAAAAbAAAAEAAAAAUAAAASAAAAJwAAABEAAAARAAAAGAAAAA0AAAAMAAAACQAAABgAAAADAAAAIwAAABwAAAAUAAAAKgAAAC8AAAA1AAAACwAAABEAAAAPAAAAFAAAACAAAAAcAAAAKAAAAAcAAAAaAAAAEQAAAAcAAAADAAAABgAAAAQAAAAKAAAABAAAAAYAAAAHAAAACQAAAAEAAAACAAAABgAAAAQAAAABAAAACAAAAAcAAAAGAAAABQAAAAkAAAAAAAAACAAAAAcAAAANAAAAAAAAAAkAAAAPAAAAEgAAABMAAAADAAAACQAAAAkAAAAIAAAAFAAAAAwAAAAHAAAADgAAAAkAAAAIAAAAEQAAAAsAAAAIAAAAFAAAAAQAAAAbAAAAEAAAAAIAAAABAAAAAgAAAAMAAAAhAAAABgAAAAYAAAAAAAAADAAAACcAAAAEAAAABAAAAAYAAAAKAAAACgAAAAEAAAAKAAAADQAAAAkAAAACAAAAAwAAAB0AAAAJAAAAAQAAAAEAAAAHAAAAEgAAAAMAAAAFAAAADAAAAAwAAAALAAAAGAAAAAYAAAAJAAAACQAAAAsAAAACAAAAAwAAAAAAAAALAAAACgAAAAIAAAANAAAAAwAAAAQAAAAEAAAAHQAAAAsAAAAKAAAAEwAAAAwAAAAmAAAABgAAAAEAAAAEAAAAAwAAAAsAAAAOAAAABgAAAAsAAAANAAAAAQAAAAwAAAARAAAAFQAAABYAAAAXAAAACAAAAAIAAAALAAAAIAAAAAUAAAALAAAADQAAAAcAAAACAAAACQAAABIAAAAQAAAAHwAAABYAAAAMAAAADAAAACYAAAATAAAAFQAAAAQAAAARAAAAFAAAAAYAAAAQAAAAGAAAACcAAAAbAAAACwAAABAAAAAMAAAAAwAAAAsAAAAEAAAABgAAABEAAAAMAAAACQAAABUAAAAEAAAAAAAAAAAAAAAJAAAADAAAAAwAAAAgAAAAGQAAABYAAAAOAAAAGQAAABUAAAAYAAAAAAAAAAAAAAAAAAAACAAAABAAAAAMAAAAEAAAAAoAAAANAAAAAAAAAAQAAAABAAAAAgAAAAMAAAADAAAABQAAAAUAAAACAAAAAQAAAAgAAAABAAAADgAAAAgAAAAKAAAACAAAAAAAAAACAAAABAAAAAcAAAAAAAAAAQAAAAoAAAAAAAAAAAAAAAAAAAAAAAAACgAAAAIAAAAAAAAAAAAAAAEAAAABAAAAAQAAAAwAAAABAAAAAwAAAAsAAAAOAAAADgAAAAUAAAANAAAADAAAABYAAAA7AAAABAAAAAoAAAAEAAAABgAAAAgAAAAaAAAAEgAAAAMAAAAAAAAAcQAAAAEAAAAHAAAAAwAAAAYAAAABAAAAAgAAAA0AAAAJAAAACAAAAAoAAAAaAAAAEAAAAAoAAAAEAAAACwAAACkAAAAPAAAAAwAAACMAAAAWAAAABQAAAA8AAAAJAAAABwAAAA0AAAAMAAAABAAAAAUAAAAYAAAAAQAAABIAAAAPAAAABQAAAAQAAAACAAAABAAAAAIAAAAIAAAAAQAAAAIAAAARAAAADgAAABIAAAABAAAAAQAAAAQAAAAVAAAADgAAAAwAAAALAAAABAAAAAQAAAAKAAAABQAAAAgAAAAKAAAACwAAAAoAAAADAAAADAAAAAkAAAABAAAAAAAAAAEAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAkAAAAFAAAAAAAAAAMAAAAJAAAAEAAAAAcAAAABAAAADQAAABMAAAALAAAACQAAAAMAAAAKAAAADAAAACkAAAA2AAAAJQAAABQAAAAgAAAACwAAAAcAAAAUAAAACwAAABQAAAAQAAAAEgAAABoAAAAiAAAAGAAAAAMAAAAFAAAAEwAAACMAAAAGAAAAIwAAABEAAAAaAAAAUgAAACMAAAAGAAAAAAAAAAIAAAABAAAACQAAAAAAAAAQAAAACQAAAA8AAAABAAAABwAAAAYAAAAAAAAAFQAAAAkAAAAQAAAABwAAAAAAAAACAAAADQAAAAEAAAAAAAAAAQAAAAQAAAABAAAAAQAAAAMAAAADAAAADAAAAAcAAAAAAAAACQAAAAAAAAAHAAAABAAAAAMAAAAEAAAADQAAAAIAAAAAAAAABgAAAAYAAAAGAAAAAQAAAAEAAAAAAAAACgAAAAgAAAADAAAAAAAAAAgAAAAKAAAABQAAABIAAAACAAAADgAAAAEAAAADAAAABwAAAAUAAAAJAAAABgAAAAgAAAABAAAAAwAAABIAAAAEAAAADAAAAAUAAAAJAAAAAgAAAAYAAAAJAAAADwAAAAEAAAAIAAAAAAAAABMAAAAKAAAACAAAAAcAAAAAAAAACgAAAAMAAAAIAAAABwAAAAkAAAABAAAAAAAAAAMAAAAEAAAAAQAAAAMAAAABAAAABAAAABIAAAANAAAAAQAAAAkAAAAHAAAABAAAAAQAAAAFAAAAFAAAABQAAAARAAAADAAAAAsAAAARAAAACAAAAAYAAAACAAAAAAAAAAgAAAABAAAABAAAAAEAAAADAAAADQAAAAEAAAALAAAAAQAAAAAAAAAMAAAAAAAAAAAAAAAFAAAAAwAAAAcAAAACAAAAAAAAAAkAAAALAAAAJgAAAAUAAAAHAAAACAAAAAMAAAAEAAAABgAAAAsAAAAPAAAABwAAAAcAAAAGAAAAAQAAAAEAAAABAAAAAgAAAAMAAAALAAAACgAAAAgAAAAHAAAABgAAAAcAAAAHAAAACQAAAAkAAAAOAAAACAAAAA4AAAAJAAAABAAAAAgAAAAbAAAAFgAAACkAAAADAAAAKwAAABcAAAAIAAAACAAAABgAAAARAAAAAgAAABMAAAAHAAAACgAAAAIAAAAQAAAABwAAAAgAAAAIAAAABwAAAAEAAAAIAAAADAAAAAcAAAABAAAABgAAAAcAAAAFAAAACAAAAAEAAAAAAAAAEwAAAAYAAAAGAAAABwAAAAcAAAAEAAAAAgAAAAgAAAACAAAACQAAAAIAAAACAAAAAgAAAAQAAAAEAAAAAwAAAAMAAAAAAAAAAAAAAAMAAAAGAAAAAgAAAAEAAAACAAAABwAAAAAAAAACAAAAAAAAAAEAAAAEAAAACQAAAA0AAAADAAAAAAAAAAAAAAAGAAAABQAAAAQAAAAHAAAAEAAAAAkAAAALAAAADgAAABUAAAANAAAACQAAAAYAAAAHAAAAPAAAABUAAAAQAAAAAQAAABEAAAACAAAABQAAAAYAAAAEAAAABgAAABIAAAABAAAABAAAAAIAAAABAAAADwAAAA0AAAAYAAAAHgAAAAsAAAAXAAAALwAAAAsAAAALAAAACAAAABUAAAAAAAAACQAAAAgAAAAAAAAAAwAAABUAAAAFAAAABQAAAAUAAAACAAAAAgAAAAEAAAAKAAAAEQAAAA8AAAASAAAAFwAAABIAAAAKAAAAAAAAAAkAAAAHAAAAFAAAAAYAAAAHAAAAFwAAAB4AAAAAAAAAAgAAAAoAAAALAAAAEQAAACUAAAA2AAAAEgAAAAsAAAAPAAAAFwAAAAAAAAAKAAAAGgAAAA0AAAAHAAAAEgAAAA4AAAABAAAACwAAADAAAAAAAAAAAwAAAAQAAAAAAAAACgAAAAIAAAAlAAAAHwAAAAYAAAAAAAAAAAAAAHMAAAABAAAAAwAAAHMAAAAAAAAAFQAAABEAAAAGAAAABAAAAAQAAAAJAAAACAAAAAkAAAALAAAAEAAAAAUAAAAbAAAAHwAAAD8AAAADAAAACQAAAAkAAAASAAAACwAAABMAAAAGAAAAPwAAABwAAAALAAAAJgAAABwAAAAKAAAAIAAAAAMAAAANAAAAEwAAAAgAAAAKAAAABAAAAA8AAAAGAAAADgAAADgAAAAHAAAABgAAAAIAAAAJAAAAAgAAAAIAAAAPAAAAEwAAAAgAAAANAAAAAgAAAAEAAAADAAAACQAAABwAAAAYAAAABgAAAAwAAAAKAAAAEAAAAAsAAAARAAAAFQAAAAoAAAAbAAAABgAAAA4AAAAeAAAACgAAAAoAAAABAAAAAgAAACMAAAAbAAAADwAAABIAAAAWAAAAAgAAABoAAAAHAAAABQAAAAsAAAARAAAAEAAAABIAAAAhAAAAAgAAAAoAAAAJAAAAFAAAAAQAAAAEAAAADgAAABkAAAAaAAAAFAAAABMAAAAOAAAAIQAAAAYAAAAGAAAACwAAAAcAAAAYAAAAEQAAABcAAAAgAAAABgAAAAoAAAAQAAAABQAAAAkAAAAHAAAAAgAAAAEAAAANAAAAFgAAAAMAAAAAAAAAAgAAAC8AAAAgAAAAKAAAAAYAAAApAAAAAwAAAB0AAAAFAAAACgAAAAkAAAADAAAACwAAAAYAAAADAAAADgAAAAAAAAAAAAAAAAAAAAEAAAAEAAAAAAAAAAAAAAAJAAAAHQAAAAkAAAAFAAAABQAAAAYAAAAJAAAACQAAAAcAAAAGAAAAAAAAAAYAAAAKAAAACAAAAAQAAAAIAAAAFwAAAAcAAAAYAAAAAAAAAAQAAAALAAAADwAAAAIAAAAMAAAAAAAAACAAAAABAAAAAQAAAAoAAAAIAAAABgAAAA4AAAAJAAAABwAAABIAAAABAAAACQAAAAIAAAAIAAAAAgAAAA8AAAAUAAAABAAAAAIAAAAKAAAAAgAAAAQAAAAKAAAACAAAAAMAAAALAAAABgAAAA0AAAALAAAAAwAAAAcAAAABAAAAJwAAAA0AAAAAAAAAFQAAABUAAAAIAAAABgAAAAYAAAAAAAAABwAAABAAAAAQAAAABAAAAAgAAAAGAAAADgAAAAkAAAAFAAAACwAAAAcAAAAAAAAABwAAACAAAAAkAAAADAAAAAMAAAAHAAAABAAAACcAAAAbAAAABwAAAAIAAAABAAAABwAAAAYAAAADAAAACwAAAAEAAAAaAAAAEgAAAAcAAAAEAAAACgAAAAkAAAAIAAAACgAAAAoAAAARAAAABQAAAAUAAAABAAAACwAAAAsAAAASAAAABwAAAAkAAAALAAAAAAAAAAgAAAAVAAAADgAAABAAAAAQAAAAFQAAAAkAAAAOAAAABwAAAAkAAAAQAAAAAwAAAAsAAAASAAAACAAAABEAAAAKAAAAMQAAAAkAAAATAAAACgAAAA8AAAAJAAAAJwAAAAsAAAAJAAAAAQAAAAAAAAADAAAAAgAAAB8AAAAFAAAAHAAAAA0AAAAMAAAAEwAAAAAAAAAMAAAADAAAAAwAAAANAAAAAQAAABAAAAATAAAAEQAAABEAAAAaAAAAAgAAAAQAAAAGAAAABQAAAAcAAAAAAAAABgAAAAkAAAAGAAAAFAAAAAMAAAABAAAAAAAAAAAAAAABAAAAAgAAAAQAAAAAAAAAAwAAAAAAAAACAAAABAAAAAQAAAAEAAAAAgAAAAkAAAAAAAAAAAAAAAQAAAAMAAAACwAAAAIAAAAJAAAADwAAAAQAAAAEAAAAAQAAAAMAAAAIAAAABgAAAAMAAAAAAAAAAwAAAAAAAAADAAAAFAAAAAgAAAACAAAABAAAAAoAAAALAAAAEAAAAAMAAAAEAAAAAQAAAB4AAAACAAAABwAAAAEAAAACAAAAAQAAAAYAAAAAAAAABAAAAAAAAAAAAAAAAQAAAAkAAAAIAAAADQAAAAEAAAAAAAAAAAAAAAMAAAADAAAAAAAAAAAAAAAGAAAABgAAAAYAAAABAAAAAgAAAAIAAAAGAAAAAQAAAAAAAAAAAAAABgAAAAAAAAAGAAAAAAAAAAAAAAAGAAAAAwAAACIAAAAkAAAABQAAADwAAAAOAAAAKwAAAAQAAAAHAAAACgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHAAAABgAAAAQAAAAJAAAAAwAAAAoAAAAKAAAAAwAAAA0AAAAIAAAADgAAAAEAAAABAAAACgAAAAMAAAALAAAAAwAAAAcAAAABAAAACAAAAAkAAAAUAAAACAAAAAUAAAADAAAABAAAAAYAAAAKAAAABgAAAAoAAAAEAAAABAAAAAMAAAAIAAAAAgAAAAMAAAABAAAACQAAAAkAAAAAAAAAEgAAAAgAAAADAAAAAAAAAAEAAAAKAAAADQAAAAcAAAAAAAAADQAAAA4AAAAEAAAAAgAAAAMAAAAIAAAAAQAAAAMAAAAEAAAABAAAAAoAAAATAAAADwAAAAAAAAACAAAAAwAAAAgAAAAQAAAAEAAAAAEAAAAMAAAACAAAAAwAAAAhAAAABQAAAAYAAAAHAAAADAAAAAMAAAAAAAAABAAAAAQAAAAOAAAABAAAAAAAAAAKAAAABQAAAAsAAAADAAAACAAAAAkAAAAPAAAAFgAAAAsAAAAGAAAAEgAAAA4AAAABAAAACgAAAAYAAAABAAAABwAAAA0AAAAZAAAADQAAAAsAAAAMAAAAAAAAAAEAAAAAAAAAAAAAAAMAAAADAAAACAAAAAwAAAAhAAAAGwAAAAgAAAACAAAAFgAAAAAAAAAAAAAADQAAAAcAAAAGAAAABwAAAAYAAAAAAAAACQAAAAAAAAADAAAAAQAAAAEAAAAAAAAAAgAAAAIAAAAIAAAACwAAAAoAAAAQAAAAJAAAAAgAAAALAAAADAAAABAAAAApAAAACwAAAAUAAAAMAAAAKQAAABgAAAAAAAAAAQAAAAwAAAADAAAAAgAAAAoAAAAGAAAACwAAAAAAAAAKAAAAAgAAAAYAAAAIAAAAAQAAAAcAAAALAAAAEQAAAAcAAAAAAAAAAAAAAAYAAAABAAAACAAAAAAAAAABAAAAAQAAAAEAAAAAAAAAAAAAAAAAAAAAAAAABwAAAAMAAAAKAAAAEgAAAAkAAAAIAAAAEAAAAAMAAAADAAAAAQAAAAAAAAAHAAAAAQAAAAEAAAADAAAADgAAAAIAAAABAAAAAAAAAAEAAAACAAAABwAAAAMAAAACAAAAAQAAAAUAAAANAAAABAAAAAsAAAAHAAAACQAAABQAAAAUAAAACgAAABQAAAAQAAAADwAAAA0AAAAUAAAAAgAAAAEAAAAEAAAAAAAAAAAAAAAFAAAADQAAAAEAAAATAAAAAgAAAAQAAAABAAAABQAAAAUAAAACAAAAEQAAAAkAAAAMAAAAEwAAABIAAAANAAAADAAAAAgAAAAgAAAAEwAAAB8AAAAbAAAADgAAAEUAAAAZAAAAGwAAACwAAAAFAAAAEQAAABYAAAASAAAAGAAAAAgAAAAMAAAADgAAAAMAAAAEAAAABgAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAIAAAAPAAAABgAAAAgAAAAVAAAABwAAAAAAAAAAAAAAAQAAAAAAAAABAAAADgAAAAMAAAACAAAAAwAAAAoAAAARAAAAEQAAABQAAAAQAAAABQAAAAMAAAANAAAADAAAABYAAAAGAAAAAwAAABEAAAAHAAAAHwAAAAAAAAABAAAAAAAAAAEAAAAQAAAAAQAAAAMAAAAJAAAABgAAAAcAAAAVAAAABAAAABIAAAARAAAADwAAAAAAAAAAAAAAAwAAAAAAAAAEAAAAAwAAAAQAAAANAAAACQAAAA0AAAAIAAAAAgAAAAYAAAAIAAAADwAAAAEAAAAOAAAACQAAAAAAAAAIAAAAEgAAAA8AAAAhAAAALwAAABkAAAAjAAAAJQAAABQAAAAAAAAABAAAAAoAAAAFAAAACAAAAAMAAAADAAAABwAAAA4AAAASAAAAAwAAAAIAAAABAAAABwAAABUAAAAJAAAACAAAAAIAAAACAAAACAAAAAoAAAAGAAAACQAAAAkAAAAGAAAABwAAABQAAAALAAAAIQAAAB8AAAASAAAADQAAACoAAAAJAAAACQAAAAoAAAAPAAAACwAAAAkAAAAGAAAAEAAAABsAAAAhAAAACQAAABAAAAAPAAAAEgAAAAkAAAAHAAAABAAAAAcAAAASAAAAEgAAAAwAAAAJAAAADgAAAAoAAAAAAAAAAAAAAAcAAAAJAAAAAAAAAAAAAAAAAAAAAgAAAAIAAAADAAAAEwAAAAYAAAANAAAAOwAAAAIAAAAAAAAABAAAAAoAAAABAAAACAAAABoAAAANAAAACwAAAAwAAAAdAAAAFQAAAAEAAAABAAAADwAAABIAAAABAAAAAwAAAAkAAAAJAAAABAAAABYAAAAdAAAAAgAAAA4AAAAjAAAAEgAAAA4AAAAFAAAAFwAAAAEAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAEAAAAFAAAADAAAAAMAAAAAAAAAAwAAAAYAAAABAAAAAQAAAAQAAAAOAAAACAAAAAAAAAAKAAAAAQAAAAAAAAAAAAAADQAAAAgAAAAIAAAABgAAAAQAAAAYAAAACgAAAAIAAAAYAAAAGQAAAAsAAAAQAAAAAAAAAAIAAAAOAAAABgAAAAAAAAAPAAAABgAAACQAAAAEAAAABgAAAAwAAAAdAAAAGgAAABMAAAAFAAAAAwAAABMAAAALAAAAAAAAAAAAAAASAAAAIgAAACIAAAAgAAAABAAAAAQAAAALAAAADgAAAAEAAAALAAAAAAAAAAMAAAAMAAAAEgAAABoAAAAIAAAAAgAAAAUAAAASAAAAGgAAAAgAAAADAAAABAAAAAkAAAAFAAAABQAAAAMAAAAKAAAAEAAAAAwAAAABAAAABQAAAAQAAAAMAAAABQAAAAoAAAAEAAAAAgAAAA4AAAARAAAABQAAAB0AAAADAAAAAwAAAAEAAAABAAAAAwAAAAYAAAABAAAABQAAAAEAAAAAAAAABwAAAAcAAAAOAAAAAgAAAAQAAAAgAAAAAwAAAAAAAAABAAAAAAAAAAEAAAAJAAAACgAAABYAAAAXAAAACQAAAAoAAAAHAAAADAAAAAYAAAAEAAAADgAAAA0AAAAHAAAADQAAAAAAAAAAAAAAAAAAAAEAAAACAAAAAAAAAAIAAAABAAAABgAAAAwAAAABAAAAAQAAAAAAAAABAAAAAQAAAAEAAAAIAAAAEgAAAAMAAAAKAAAAEwAAAAgAAAAYAAAAHgAAAA4AAAAQAAAABwAAAAIAAAAHAAAABwAAAAYAAAACAAAAAQAAAAIAAAACAAAABwAAAAYAAAAFAAAACgAAAAgAAAADAAAABwAAAAkAAAANAAAAAwAAAAIAAAAHAAAABAAAAAAAAAAJAAAAAAAAAAMAAAAAAAAAAQAAAAMAAAAKAAAAAQAAABIAAAATAAAAIgAAAAMAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAEAAAAAAAAAAQAAAAYAAAAEAAAABQAAAAcAAAAPAAAAIgAAABUAAAARAAAACAAAABIAAAAQAAAAFQAAAAMAAAAHAAAABQAAAA8AAAAPAAAAHgAAACIAAAARAAAAFgAAABUAAAANAAAADAAAAAwAAAASAAAAAAAAACIAAAAvAAAAGwAAABsAAAAGAAAAIwAAAA0AAAAHAAAACAAAAAsAAAAEAAAACAAAAAYAAAACAAAAAQAAAAIAAAAFAAAABQAAAAoAAAAJAAAAAAAAAAEAAAABAAAAAQAAAAQAAAAEAAAABQAAAAkAAAAJAAAACQAAABsAAAAOAAAACgAAABQAAAAMAAAACQAAAAgAAAAFAAAADgAAAAgAAAACAAAABQAAAAkAAAANAAAADAAAAAcAAAACAAAAAwAAAAcAAAABAAAAAQAAAAAAAAABAAAAAQAAAAAAAAAIAAAACAAAAAUAAAAHAAAAAgAAAAIAAAAEAAAAAwAAAAoAAAANAAAAAAAAAAUAAAAIAAAAAQAAAAAAAAAAAAAABQAAAAcAAAAFAAAAAAAAAAcAAAAEAAAAAgAAAAgAAAAHAAAABgAAAA4AAAABAAAAAQAAAAYAAAAAAAAAAAAAAAcAAAAJAAAABAAAAAAAAAAJAAAACwAAAA4AAAAOAAAAGAAAAAIAAAABAAAAAQAAAAMAAAACAAAABAAAAAYAAAACAAAAAAAAAAEAAAAJAAAACAAAAAkAAAALAAAACAAAABEAAAAOAAAAHAAAAAkAAAAKAAAABAAAAAMAAAABAAAAAgAAAAAAAAANAAAAEQAAAAwAAAAJAAAABwAAACQAAAAGAAAACgAAAAcAAAACAAAACAAAAAMAAAAHAAAACQAAAAcAAAACAAAACQAAAAMAAAABAAAABgAAAAAAAAAHAAAAAwAAAAgAAAABAAAABAAAABIAAAAWAAAADAAAAAcAAAALAAAAEAAAAAEAAAAIAAAABAAAABAAAAAHAAAADQAAAAEAAAANAAAADQAAAA4AAAAJAAAACQAAAAQAAAAKAAAABgAAAAYAAAAEAAAAAQAAAA4AAAABAAAACQAAAAMAAAAJAAAACgAAAAIAAAAEAAAACAAAAAUAAAAEAAAAAgAAAAUAAAABAAAADAAAAAQAAAAAAAAADgAAAAUAAAAHAAAAAAAAAAQAAAABAAAAAwAAAAMAAAAHAAAACAAAAAcAAAADAAAAFgAAABEAAAAMAAAAHAAAAAsAAAAcAAAAAAAAAAkAAAAXAAAAAwAAABwAAAASAAAAIAAAAAYAAAAqAAAAMwAAAAkAAAABAAAACgAAABcAAAAIAAAAAwAAAAsAAAAFAAAAAAAAAAsAAAARAAAACAAAAA4AAAAAAAAAAwAAAAoAAAABAAAAAwAAABkAAAADAAAACwAAAAMAAAAWAAAAAQAAAAIAAAAHAAAAAAAAAAgAAAAqAAAAFAAAABcAAAAJAAAAEAAAAAIAAAACAAAAEQAAAA0AAAAYAAAADwAAAAEAAAAEAAAACAAAAAcAAAABAAAAEAAAAAsAAAAKAAAACgAAAAUAAAACAAAABAAAAAMAAAAFAAAABQAAAAcAAAAIAAAAFAAAAA0AAAAHAAAADAAAAAQAAAAIAAAAAQAAAA0AAAAPAAAAHQAAACYAAAAlAAAAHQAAABsAAAAPAAAAHQAAABoAAAAJAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJAAAABgAAAAEAAAAAAAAAAQAAAAMAAAAcAAAACAAAAAcAAAAIAAAABwAAAAEAAAANAAAAEQAAAAoAAAAAAAAAkQAAAAYAAAAPAAAAGgAAAAYAAAAHAAAAAAAAAAAAAAAAAAAAAAAAAAsAAAAMAAAABwAAAA0AAAAQAAAACAAAAAUAAAAOAAAAAwAAAAsAAAAGAAAAEwAAABIAAAAMAAAACwAAAAwAAAAGAAAAEAAAAAoAAAASAAAACgAAAAMAAAASAAAAJQAAABYAAAAFAAAAAgAAAAwAAAAOAAAAFAAAAAAAAAABAAAAAAAAAAIAAAACAAAAEQAAADgAAAAIAAAABgAAAA4AAAACAAAABQAAABwAAAADAAAABQAAAAIAAAABAAAACwAAAA4AAAALAAAABwAAAAgAAAADAAAAAgAAAAcAAAAEAAAAAAAAAAcAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAYAAAAlAAAABAAAAAoAAAAHAAAABQAAAAQAAAAaAAAAAQAAAAcAAAAMAAAAAQAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAwAAAAAAAAAHAAAAAgAAAAYAAAAEAAAAAAAAAAYAAAAVAAAADAAAABoAAAANAAAAEgAAAAMAAAAZAAAAIwAAAAAAAAAGAAAACQAAAAgAAAAEAAAAEQAAAAsAAAALAAAAAAAAAAIAAAAHAAAAAgAAAAgAAAAMAAAADgAAAAcAAAAHAAAAAgAAAAcAAAABAAAACAAAAAgAAAAGAAAADQAAAA4AAAAHAAAAAgAAAAMAAAAAAAAACgAAAAEAAAAAAAAABAAAAAgAAAAIAAAACgAAABEAAAAkAAAADAAAAAYAAAAWAAAAFQAAACAAAAAOAAAADAAAAAgAAAAaAAAAEQAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAkAAAAEAAAAAQAAAAQAAAANAAAACgAAAAAAAAAFAAAAAQAAAAsAAAAMAAAAAgAAAAAAAAAAAAAAAAAAAAYAAAAEAAAABwAAAAIAAAAMAAAAFQAAAAcAAAADAAAABgAAAAMAAAAFAAAABgAAAAMAAAAFAAAADAAAAAQAAAAIAAAAAwAAAAAAAAAFAAAACAAAAAAAAAABAAAADQAAAAcAAAANAAAABwAAAAsAAAACAAAACAAAAAgAAAAAAAAABAAAABAAAAACAAAADwAAAA0AAAAMAAAAAwAAAAIAAAAsAAAAFQAAABAAAAANAAAACwAAABUAAAAGAAAAEgAAAA4AAAABAAAACQAAAAEAAAAGAAAADgAAABAAAAAMAAAAAgAAAAQAAAAGAAAACAAAAAUAAAADAAAACAAAAAkAAAACAAAADgAAABsAAAAFAAAABgAAAAQAAAAKAAAABAAAAAwAAAABAAAABQAAAAoAAAAeAAAADwAAABkAAAAIAAAADQAAABQAAAAVAAAAAQAAAAkAAAAHAAAABwAAAAYAAAAUAAAAEAAAABYAAAAJAAAACAAAAAYAAAADAAAACQAAAAoAAAAeAAAABwAAAAcAAAAOAAAACAAAAAUAAAAJAAAAFgAAACQAAAAAAAAAAwAAACQAAAAFAAAAEgAAAAkAAAADAAAAAwAAABAAAAASAAAAHAAAABoAAAARAAAABgAAACYAAAAlAAAAIQAAAAkAAAASAAAAEQAAAAoAAAAMAAAAEQAAAAcAAAAKAAAABwAAABMAAAAAAAAAAAAAAAkAAAAQAAAAAgAAAAMAAAAFAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAACAAAAAYAAAAAAAAACQAAAAAAAAAAAAAAAAAAAAAAAAACAAAABwAAAAsAAABCAAAAAAAAACIAAAAIAAAAFgAAABAAAAAeAAAAIAAAAAkAAAAAAAAAMQAAACgAAAABAAAADgAAAAEAAAAEAAAAFQAAAAgAAAAPAAAADgAAAAoAAAAIAAAADAAAAAoAAAAJAAAACQAAAAoAAAAPAAAAAwAAAAQAAAARAAAADAAAABAAAAAJAAAAAgAAAAIAAAAAAAAAAwAAAAUAAAAAAAAACQAAAAYAAAAMAAAAAwAAAB4AAAAhAAAAFQAAADgAAAA4AAAAFwAAACYAAAAXAAAAGQAAAAQAAAAHAAAAAAAAABoAAAALAAAACgAAABEAAAAOAAAAGAAAAA0AAAAJAAAAGwAAABAAAAALAAAACQAAAAIAAAAFAAAADAAAAA4AAAAbAAAABwAAABsAAAARAAAACgAAABUAAAAQAAAAHQAAAB0AAAALAAAABgAAAAoAAAAMAAAADAAAAA8AAAA0AAAAEQAAABIAAAARAAAAAwAAABIAAAAIAAAACwAAAAMAAAA1AAAANwAAAC4AAAA8AAAAGwAAAB0AAAAaAAAABAAAAAwAAAAMAAAAAAAAAAAAAAABAAAAAQAAAAgAAAAAAAAAAAAAAAMAAAAPAAAABwAAAAUAAAAAAAAACAAAABYAAAAYAAAACwAAACQAAAALAAAAAAAAAA8AAAAcAAAAAAAAAAMAAAAOAAAACgAAAAMAAAAkAAAACwAAAAAAAAALAAAAIAAAADQAAAAQAAAACwAAAAwAAAAHAAAAAwAAABUAAAAQAAAACgAAABYAAAAEAAAAEAAAAB0AAAAUAAAADwAAABUAAAADAAAADwAAABAAAAAQAAAABQAAAA4AAAADAAAAEQAAABQAAAABAAAAAwAAAAUAAAAAAAAABwAAAAAAAAABAAAAAgAAAAYAAAAQAAAADgAAAAUAAAADAAAAEwAAAAsAAAACAAAAAgAAAAkAAAAKAAAAAwAAAAcAAAAIAAAAAQAAAAcAAAAEAAAACwAAAAQAAAAMAAAACQAAAAAAAAAAAAAABgAAAA4AAAAGAAAACwAAAAMAAAADAAAACgAAAAMAAAAOAAAAEwAAAAcAAAAOAAAABwAAAAwAAAAPAAAAFwAAABMAAAAQAAAABgAAAA8AAAAFAAAAAgAAAAcAAAABAAAABAAAAA4AAAAIAAAACAAAAAsAAAAQAAAACQAAAAIAAAAJAAAACAAAAAYAAAAPAAAABwAAAAAAAAALAAAACgAAAAgAAAAGAAAADAAAABEAAAAIAAAACAAAAA8AAAAQAAAACAAAABsAAAAJAAAADAAAABEAAAAGAAAAAgAAAAwAAAAWAAAAAAAAAAoAAAAWAAAACQAAABMAAAABAAAADwAAAAIAAAADAAAAAQAAAAgAAAACAAAADAAAABkAAAAGAAAACQAAAAsAAAAAAAAAAwAAAAcAAAAGAAAABwAAAAMAAAATAAAABwAAAA0AAAAKAAAABgAAAAAAAAACAAAADwAAABQAAAAUAAAABwAAABUAAAACAAAACQAAAAMAAAADAAAAAgAAABMAAAAWAAAACAAAAAcAAAAQAAAADAAAAAcAAAAEAAAACwAAAAcAAAAdAAAACAAAAAoAAAAOAAAACwAAABQAAAAIAAAABgAAAAIAAAACAAAAAQAAABIAAAAIAAAAAQAAAAQAAAAPAAAABgAAAAAAAAACAAAACAAAAAYAAAAAAAAAAQAAAAgAAAAJAAAABAAAAAMAAAACAAAAAQAAAAIAAAANAAAABAAAAAQAAAAHAAAADAAAAAIAAAAQAAAACgAAAAgAAAAKAAAACAAAAAMAAAABAAAAEQAAAAoAAAAOAAAADwAAAAgAAAABAAAAAwAAAAgAAAAIAAAABQAAAAAAAAAGAAAACAAAAAkAAAABAAAAAgAAAAIAAAAMAAAACAAAAAIAAAAQAAAACQAAAAcAAAAGAAAAAQAAAAoAAAAbAAAACAAAABMAAAAJAAAAFAAAABMAAAAQAAAADAAAAAEAAAAJAAAABgAAAAcAAAABAAAABgAAABIAAAADAAAABAAAAAQAAAALAAAAEwAAAAQAAAAEAAAABgAAABUAAAALAAAACAAAAAkAAAACAAAACAAAAAUAAAACAAAACAAAAAAAAAAIAAAADQAAAAYAAAAfAAAACwAAAAMAAAADAAAADgAAAAIAAAAHAAAABAAAAAgAAAANAAAAAwAAAAYAAAACAAAACAAAABsAAAAGAAAAAAAAAAYAAAAJAAAAAwAAAAsAAAAHAAAAAQAAAAgAAAABAAAAAgAAAAkAAAAHAAAABgAAAA0AAAAxAAAAEgAAAAMAAAABAAAAAwAAAAYAAAABAAAACQAAAAkAAAAIAAAAEgAAAAAAAAADAAAAAgAAAAEAAAADAAAAFAAAAAYAAAANAAAACAAAAAcAAAASAAAAAQAAAAIAAAACAAAACAAAAAcAAAACAAAAAQAAAAIAAAAIAAAAAQAAAAEAAAApAAAABAAAABAAAAASAAAAHQAAABAAAAAUAAAAJAAAAA4AAAAGAAAACAAAAAMAAAALAAAABAAAABEAAAAEAAAAEwAAABEAAAAGAAAABwAAABYAAAAFAAAABQAAAAUAAAAaAAAACAAAAAkAAAAIAAAACwAAAAAAAAAAAAAAAwAAAAAAAAACAAAABgAAAAAAAAAAAAAAAwAAAAAAAAAAAAAABgAAAAQAAAAIAAAAAAAAAAAAAAARAAAAAQAAAAgAAAAAAAAABAAAAA0AAAAMAAAAGAAAABcAAAAGAAAABAAAAAAAAAAsAAAAEAAAAAYAAAAEAAAABwAAAA8AAAAHAAAABQAAAAUAAAAJAAAADQAAAAkAAAAYAAAAFQAAAAEAAAADAAAAAwAAAAYAAAAGAAAAAgAAAAIAAAACAAAADwAAACIAAAASAAAAAAAAAAkAAAAOAAAAKgAAACYAAAAJAAAAAwAAAAIAAAAOAAAAAAAAABUAAAAAAAAAAAAAAAMAAAAHAAAACAAAABQAAAANAAAACQAAAAYAAAAEAAAACwAAAA0AAAAjAAAAHwAAAAgAAAAbAAAABwAAABkAAAAIAAAADgAAABEAAAANAAAABwAAAAkAAAALAAAAAwAAAAoAAAAIAAAAAAAAAAkAAAALAAAAAQAAAAgAAAAEAAAACQAAAA4AAAABAAAAAAAAAAcAAAAIAAAAFgAAACwAAAAEAAAAEgAAABUAAAAPAAAAFAAAABsAAAAAAAAABQAAAAUAAAAGAAAAHgAAAA0AAAAFAAAADQAAAA4AAAARAAAABQAAAAAAAAAAAAAACAAAAAYAAAAQAAAADQAAAA4AAAAIAAAABAAAAAQAAAAHAAAACgAAAAUAAAAHAAAABAAAAAIAAAAAAAAAAQAAAAMAAAANAAAACQAAAAUAAAAKAAAAAAAAAAAAAAAIAAAABAAAAAkAAAANAAAABAAAAAcAAAAEAAAABAAAAAMAAAAEAAAADQAAAAUAAAAEAAAABgAAAAwAAAAKAAAADgAAAAoAAAANAAAAIQAAAAIAAAAAAAAAAAAAAAQAAAAAAAAACQAAAAkAAAAVAAAAAQAAAAYAAAAFAAAABAAAAAgAAAAAAAAAiQAAAAAAAAC6AAAAIQAAAAYAAAAgAAAAIAAAAAEAAAAMAAAABwAAAAMAAAABAAAAAQAAAAQAAAAAAAAAAQAAAAYAAAAAAAAAAAAAAAYAAAACAAAABAAAAAkAAAAPAAAAEwAAABgAAAAQAAAAKgAAACMAAAAFAAAAFgAAAAEAAAAKAAAACAAAABEAAAAFAAAAFQAAAA0AAAAOAAAAGQAAAA0AAAAFAAAABwAAAAcAAAADAAAACAAAAAQAAAAGAAAACgAAAAQAAAAIAAAACAAAAAwAAAALAAAACwAAAAgAAAAIAAAAFAAAAAMAAAALAAAAFAAAAAYAAAAKAAAAAQAAABQAAAAMAAAABQAAAAYAAAADAAAACwAAAAIAAAAIAAAADwAAABAAAAAPAAAAAAAAAAYAAAAHAAAAAQAAAAIAAAAJAAAAGwAAAAoAAAAPAAAADgAAABcAAAAqAAAADgAAAAkAAAACAAAAAAAAAA4AAAABAAAABAAAAAMAAAALAAAAFgAAAA4AAAAYAAAAAgAAAAcAAAADAAAAAAAAAAgAAAAEAAAAAgAAAAwAAAAPAAAAEwAAAAQAAAAFAAAAAAAAAAEAAAAGAAAAAwAAAAoAAAABAAAADAAAAEUAAAAVAAAAFAAAABEAAAANAAAADgAAAAAAAAAKAAAABQAAABQAAAAGAAAAAgAAAAsAAAAQAAAACQAAAAEAAAASAAAABgAAAAsAAAAgAAAADgAAABEAAAAaAAAAEAAAABgAAAAPAAAACwAAAAkAAAAOAAAADQAAAAcAAAAJAAAAJQAAABgAAAAYAAAAGAAAAAoAAAAAAAAAAAAAAAkAAAAIAAAAAwAAAAYAAAAGAAAABgAAABEAAAAGAAAAAQAAAAAAAAACAAAADAAAAAEAAAAKAAAAGQAAABoAAAATAAAAGgAAABgAAAApAAAAIgAAABsAAAAhAAAAAAAAAAoAAAAAAAAAAwAAAAIAAAADAAAAAwAAAAgAAAABAAAAAAAAAAQAAAADAAAABwAAAA4AAAAJAAAAAAAAAAEAAAAJAAAAAgAAAA4AAAALAAAACwAAAAgAAAAGAAAABAAAAAMAAAAJAAAABQAAABUAAAANAAAAAwAAAA0AAAAGAAAACAAAAAMAAAAGAAAACQAAAAkAAAALAAAAAAAAAAUAAAAAAAAACAAAAAEAAAALAAAAEAAAAAgAAAANAAAADQAAABQAAAAIAAAAAAAAAAsAAAATAAAAFwAAABcAAAACAAAAAgAAAAMAAAANAAAACwAAAAsAAAAJAAAABAAAAAcAAAAHAAAACgAAAA0AAAAHAAAADQAAAAsAAAANAAAABgAAAAwAAAADAAAAAgAAAAsAAAAMAAAAFAAAAAMAAAACAAAACAAAAAsAAAAIAAAADAAAAAcAAAAPAAAABQAAAA4AAAAIAAAABwAAAAgAAAAMAAAADAAAAAIAAAAJAAAACQAAAAIAAAAIAAAADQAAAAUAAAADAAAABQAAAAgAAAAIAAAAAgAAAAkAAAAPAAAACgAAAAIAAAAHAAAADQAAAAoAAAADAAAABAAAAAkAAAAEAAAACQAAAAEAAAAHAAAAEQAAAAsAAAAGAAAACQAAAAYAAAAJAAAABwAAAAMAAAAJAAAAAwAAAAgAAAAMAAAAAwAAAAEAAAAHAAAAGgAAAA4AAAAEAAAACAAAAAIAAAAEAAAABQAAAAcAAAADAAAAAQAAAAQAAAALAAAABgAAAAgAAAAUAAAABQAAAAsAAAADAAAABgAAAAIAAAADAAAAAwAAAAIAAAADAAAAAAAAAAgAAAAJAAAABQAAAAYAAAAOAAAADAAAAA0AAAAHAAAADQAAABkAAAAbAAAAEAAAABEAAAADAAAAEgAAABEAAAAPAAAACAAAAAYAAAAGAAAAAgAAABUAAAARAAAAGAAAAAUAAAAXAAAAFwAAAAQAAAAWAAAAFQAAAAkAAAAPAAAADwAAABsAAAAJAAAAGwAAABUAAAAiAAAAAQAAAAoAAAAEAAAAFQAAAAcAAAAFAAAAEAAAABYAAAAjAAAAFAAAAAYAAAAlAAAABwAAAAIAAAANAAAAHAAAAAwAAAADAAAAHgAAABcAAAAWAAAABgAAAAYAAAAcAAAADQAAABMAAAAfAAAAFwAAABAAAAAHAAAAcwAAABoAAAAFAAAAAQAAABIAAAADAAAAAQAAAAkAAAACAAAACQAAABIAAAAOAAAABQAAAAIAAAAJAAAAEQAAAA4AAAARAAAACwAAAA4AAAARAAAAFgAAACQAAAA2AAAAGAAAAAAAAAAeAAAALQAAAAMAAAAJAAAACwAAAAkAAAAHAAAABgAAAAQAAAAAAAAAAQAAAAQAAAABAAAAAgAAAAIAAAACAAAABwAAAAEAAAABAAAAAQAAAAIAAAAEAAAABQAAAAUAAAAEAAAAAQAAAAIAAAAHAAAACQAAABYAAAAKAAAABQAAAAEAAAABAAAABAAAAAUAAAADAAAACwAAAAQAAAAJAAAABgAAAAkAAAAEAAAACAAAAAkAAAAKAAAADAAAAAcAAAAEAAAACAAAAAAAAAAJAAAACAAAAAEAAAACAAAAAwAAAAAAAABtAAAAAgAAAAEAAAADAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAABQAAAAAAAAAMAAAACgAAABYAAAAMAAAAEQAAAAQAAAAFAAAALgAAAAEAAAARAAAACAAAAAIAAAABAAAAAQAAAAMAAAAAAAAABwAAAAQAAAABAAAAAwAAAAkAAAABAAAAGwAAAA8AAAAAAAAAJAAAAAUAAAAZAAAAEgAAAAMAAAAEAAAABAAAABEAAAADAAAABQAAABsAAAAAAAAAAAAAAAQAAAADAAAAAQAAAAAAAAAAAAAAAQAAAAAAAAAAAAAADQAAAAkAAAAOAAAACAAAAAMAAAAHAAAAFgAAABAAAAALAAAAEwAAAAYAAAAHAAAAAQAAAA4AAAABAAAACgAAAAoAAAAEAAAADAAAAAIAAAAGAAAAAAAAAAAAAAAAAAAAAQAAAAEAAAAAAAAACwAAAAMAAAAIAAAACQAAABYAAAAPAAAADQAAAAsAAAAHAAAACgAAABcAAAALAAAAEQAAAA8AAAAPAAAAEQAAAAkAAAAFAAAACgAAAAUAAAALAAAACQAAAAEAAAAHAAAAAAAAABgAAAAOAAAACQAAAAMAAAAFAAAAFwAAAAoAAAAJAAAACAAAAA0AAAAHAAAACwAAAA0AAAAEAAAADwAAAAgAAAADAAAACQAAABEAAAANAAAABgAAAAAAAAATAAAACAAAAAkAAAAQAAAAFAAAABkAAAATAAAAAQAAABEAAAANAAAADAAAAEsAAAAEAAAACgAAAAUAAAAAAAAAAAAAAAAAAAAGAAAACwAAABMAAAAFAAAAEAAAAA8AAAAKAAAABAAAABQAAAAYAAAAIAAAABUAAAAmAAAALwAAACoAAAAMAAAACAAAAAwAAAAHAAAADwAAACIAAAAaAAAAAgAAAAQAAAAJAAAABgAAAAoAAAAGAAAADAAAABQAAAAKAAAACQAAAAMAAAAAAAAAAAAAAAAAAAAHAAAACQAAAAoAAAADAAAABgAAAA0AAAAKAAAACAAAAAoAAAAEAAAABwAAAAcAAAABAAAACQAAAAgAAAAeAAAAIQAAACoAAAAKAAAADwAAAA4AAAAQAAAAGAAAAAEAAAAGAAAABwAAAAYAAAAVAAAADwAAAAUAAAANAAAAFgAAAAgAAAALAAAAAQAAAAMAAAAJAAAADAAAAAgAAAARAAAAGAAAAAkAAAAEAAAAAgAAAAEAAAAGAAAAAAAAAAUAAAAAAAAABAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMAAAAEAAAABgAAAAsAAAAKAAAABAAAAA8AAAAFAAAABgAAAAEAAAABAAAAAgAAAAcAAAAIAAAAAgAAAAMAAAACAAAABQAAABQAAAAcAAAAEAAAADAAAAAiAAAAIwAAAAAAAAApAAAAJAAAAAUAAAAbAAAAGQAAAAwAAAARAAAAEAAAAA8AAAAkAAAAJwAAAAwAAAADAAAAGwAAAA0AAAAeAAAAIQAAAA4AAAAeAAAANgAAABAAAAAWAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAQAAAAEAAAADAAAACwAAAAwAAAADAAAABgAAAAMAAAAIAAAABgAAAAEAAAAAAAAAAAAAAAcAAAABAAAAAAAAAAAAAAAAAAAAAQAAAAkAAAAAAAAAAAAAAAwAAAAGAAAAAwAAAAcAAAAEAAAAAwAAAAAAAAAAAAAABQAAAAgAAAAHAAAAAgAAAAUAAAAIAAAABQAAAAAAAAAEAAAADAAAAAIAAAAKAAAACQAAAAUAAAAGAAAAAwAAAAMAAAAPAAAAIgAAAAQAAAACAAAACQAAAAEAAAABAAAAAQAAAAEAAAAHAAAAAgAAAAAAAAABAAAAAAAAABIAAAAHAAAABQAAAAMAAAAEAAAABwAAAAwAAAAGAAAAAwAAAAAAAAALAAAAEgAAABAAAAAPAAAAFgAAAAEAAAAJAAAAIQAAAAgAAAAZAAAACwAAAAkAAAAFAAAABwAAAAQAAAAEAAAAAAAAAAYAAAAKAAAAAAAAAAIAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAUAAAAFAAAABAAAAAIAAAAMAAAAAwAAAAQAAAAXAAAAAwAAAAIAAAABAAAACQAAAAIAAAABAAAACAAAAAgAAAAAAAAAAAAAAAEAAAAAAAAAAQAAAAsAAAAKAAAADAAAABQAAAApAAAAAQAAAHIAAAAbAAAAMwAAACgAAAAQAAAADgAAABQAAAAUAAAAHQAAAAwAAAB3AAAAAQAAAAkAAAABAAAACwAAAAUAAAAVAAAACAAAABAAAAANAAAADwAAAAIAAAAPAAAABAAAAAkAAAAIAAAAAgAAAAIAAAAKAAAADAAAABAAAAANAAAAFQAAAAkAAAAPAAAACAAAABMAAAAVAAAADgAAABMAAAAJAAAAAQAAAAEAAAAHAAAAAwAAAAEAAAACAAAACAAAAAQAAAAAAAAACQAAAAMAAAADAAAABQAAAAcAAAAFAAAAAQAAAAQAAAABAAAAAQAAAAoAAAAAAAAAAAAAAAMAAAAAAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAMAAAAKAAAAAwAAAAAAAAABAAAAAQAAAAEAAAABAAAADgAAAAUAAAACAAAABAAAAAgAAAAPAAAABwAAAAEAAAABAAAAAwAAAAQAAAAMAAAACQAAAAkAAAABAAAABgAAAAYAAAANAAAABAAAAAQAAAAJAAAACAAAAAMAAAAFAAAADgAAAA8AAAAIAAAABgAAABEAAAABAAAABwAAACQAAAADAAAACgAAAAEAAAALAAAAAQAAAAAAAAAHAAAAOwAAAFMAAAAgAAAAQAAAACcAAAAGAAAAAwAAAAIAAAAHAAAAAAAAAAwAAAACAAAABgAAAAEAAAAAAAAAAQAAAAEAAAABAAAADAAAAAAAAAAAAAAAAAAAAAQAAAABAAAACgAAAAAAAAAAAAAAAQAAAAgAAAAEAAAABwAAAAUAAAAFAAAABAAAAAQAAAABAAAAAQAAAAEAAAAAAAAABwAAACsAAAAPAAAABAAAAA0AAAAIAAAAGQAAAAoAAAADAAAACQAAAAkAAAALAAAACAAAAAwAAAAJAAAACQAAAAIAAAAfAAAAAAAAAAYAAAANAAAACAAAAAgAAAAMAAAAIwAAAAoAAAAUAAAAIgAAABIAAAAYAAAAEQAAAA8AAAACAAAAAQAAAAkAAAAWAAAAIAAAABYAAAAAAAAAigAAAB4AAAAWAAAADAAAAAgAAAAJAAAAEQAAAAoAAAAPAAAAEAAAAAQAAAAGAAAAKAAAABYAAAALAAAADwAAABIAAAAPAAAACgAAAAQAAAAIAAAAAAAAAAEAAAABAAAAEwAAAAMAAAADAAAABgAAAAIAAAAVAAAAFwAAAA8AAAAPAAAAEQAAAAMAAAAHAAAADAAAAA8AAAACAAAAEAAAABQAAAANAAAAEgAAABEAAAAYAAAAHgAAABUAAAABAAAAAgAAAA4AAAAJAAAADwAAAAMAAAABAAAAAQAAAAYAAAANAAAAFAAAAAwAAAAMAAAABQAAAAwAAAAKAAAACQAAAAAAAAANAAAABQAAAA8AAAAcAAAAEgAAAAkAAAAGAAAADAAAABYAAAAHAAAADQAAAAMAAAAAAAAAAwAAACYAAAAXAAAAEQAAAAkAAAAJAAAABwAAABQAAAAVAAAAFQAAAAQAAAAKAAAACQAAABAAAAAIAAAACQAAAAUAAAAOAAAANAAAABAAAAAJAAAADwAAABcAAAADAAAAEQAAAAEAAAACAAAAAgAAAAIAAAAdAAAACAAAAAAAAAAIAAAAFQAAAAgAAAAFAAAABQAAAAkAAAAIAAAABgAAAA8AAAAHAAAAAwAAABMAAAAQAAAADQAAAAoAAAAMAAAABQAAABsAAAAHAAAAIwAAACYAAAAcAAAACQAAAAcAAAANAAAAEAAAAB4AAAABAAAAAwAAABgAAAAFAAAAGwAAAAUAAAADAAAAGgAAAAYAAAAGAAAAAgAAAAcAAAAIAAAADwAAAAAAAAAAAAAACAAAAAkAAAAFAAAAAAAAABkAAAAEAAAABQAAAIgAAAAOAAAACQAAAAoAAAACAAAAAQAAAAEAAAAGAAAABgAAAA4AAAAIAAAACAAAABMAAAARAAAAAgAAAAAAAAAFAAAACQAAAAMAAAAIAAAAEAAAAA4AAAABAAAAAAAAAAQAAAAKAAAABQAAAAYAAAACAAAADQAAABAAAAAKAAAACgAAAA8AAAAHAAAAAQAAAAoAAAANAAAACAAAAAsAAAAJAAAADgAAAA0AAAAmAAAACgAAACAAAAAdAAAABgAAAAwAAAAaAAAAKAAAABIAAAAJAAAAIQAAABsAAAAWAAAAHwAAAAQAAAAPAAAAEgAAAAAAAAAEAAAACQAAABsAAAACAAAAAQAAAAAAAAADAAAAAwAAAAoAAAABAAAAAAAAAAcAAAANAAAABgAAAAAAAAACAAAABAAAAAcAAAAMAAAAHgAAABkAAAAQAAAADgAAAAEAAAAIAAAAIwAAAA8AAAAJAAAAIwAAAAUAAAAEAAAAHwAAABgAAAAOAAAADgAAABMAAAAjAAAADQAAAAoAAAAAAAAAFQAAAAYAAAAHAAAAAgAAAAcAAAAJAAAACwAAAAAAAAAAAAAAAQAAAAUAAAAKAAAACQAAAAIAAAATAAAAAwAAAAwAAAAFAAAAAAAAAAsAAAAOAAAAAQAAAAAAAAAJAAAAAwAAAA8AAAACAAAAHQAAAAkAAAAOAAAAGgAAABcAAAAJAAAADwAAAAMAAAAIAAAACwAAABIAAAAEAAAADgAAABMAAAAFAAAAFAAAABEAAAAPAAAACAAAAAoAAAAVAAAACAAAAAoAAAAKAAAADQAAAAcAAAAFAAAAEwAAABQAAAAFAAAACAAAAAYAAAAJAAAAFQAAAAUAAAAKAAAABwAAAAcAAAAIAAAAFgAAAA8AAAALAAAABwAAAAkAAAAWAAAADgAAABQAAAAGAAAABwAAABAAAAAOAAAABAAAAA8AAAAKAAAABgAAAAkAAAADAAAABwAAAAIAAAABAAAAEAAAAAMAAAADAAAAAQAAAA0AAAAAAAAABwAAAAIAAAACAAAAAAAAAAQAAAACAAAACQAAAAMAAAADAAAAGAAAAA4AAAAJAAAAAQAAAAEAAAAJAAAAEgAAAA0AAAABAAAAAAAAAAAAAAAIAAAABAAAAAIAAAABAAAABAAAAAQAAAAPAAAAAgAAABEAAAAJAAAAAwAAAAUAAAAQAAAACwAAAAcAAAAMAAAACwAAAAEAAAASAAAAAQAAAB0AAAALAAAABgAAAAIAAAABAAAAAgAAAA4AAAANAAAAAwAAAAAAAAACAAAABQAAAAAAAAABAAAACQAAAAsAAAAKAAAABwAAAAIAAAAIAAAAAAAAAAEAAAANAAAAAwAAAAEAAAADAAAABgAAAAEAAAAFAAAAMwAAAAkAAAAjAAAAJgAAAA8AAAANAAAAIQAAAAYAAAAMAAAACgAAABUAAAAVAAAAAAAAAAMAAAAhAAAAIQAAABEAAAASAAAADwAAAAkAAAAAAAAACAAAAAAAAAACAAAAAAAAAAoAAAARAAAABAAAAAkAAAAHAAAAEgAAABcAAAAaAAAACAAAAAwAAAAWAAAAEwAAAAIAAAANAAAADwAAAAAAAAAKAAAADgAAAC0AAAAcAAAADQAAACUAAAAkAAAAGwAAAAsAAAAHAAAABAAAAAIAAAADAAAAAQAAAAcAAAAHAAAAAgAAAAAAAAAAAAAAAQAAAAQAAAAQAAAABAAAAAMAAAAFAAAAGQAAAAgAAAALAAAAAQAAAAAAAAAFAAAABgAAAAEAAAAZAAAAAQAAAAEAAAABAAAAAAAAAAsAAAAHAAAAJAAAAAYAAAADAAAABAAAAA8AAAAEAAAABwAAAAAAAAAHAAAAAgAAAAIAAAABAAAAAwAAAAQAAAAMAAAAAAAAACAAAAADAAAAAgAAAAIAAAAAAAAAAgAAAAYAAAAAAAAABgAAAAQAAAAHAAAABAAAABAAAAABAAAADQAAAAYAAAABAAAAAAAAABMAAAAHAAAABgAAAAAAAAAAAAAABAAAAAMAAAANAAAAAQAAAAQAAAACAAAACAAAAAcAAAACAAAAAAAAAH4AAAACAAAACQAAAAAAAAAzAAAALgAAAAsAAAAbAAAAEAAAACUAAAAIAAAAGgAAAAsAAAATAAAAEAAAAAUAAAAIAAAAAwAAAAAAAAACAAAAAAAAAAwAAAADAAAAAgAAAAQAAAAEAAAAAAAAAAIAAAAAAAAAAgAAABEAAAACAAAAAwAAAAIAAAAGAAAAAAAAAAMAAAAEAAAABQAAAAMAAAACAAAAAgAAAAcAAAAAAAAAAQAAAAQAAAAJAAAAAQAAAAkAAAAIAAAAAwAAAAMAAAABAAAAAAAAAAYAAAADAAAABwAAAAgAAAAAAAAAAgAAAAMAAAACAAAAAwAAAAEAAAAHAAAACwAAABAAAAAVAAAAAQAAAAYAAAAKAAAAAgAAAAIAAAAFAAAAAQAAAAEAAAAQAAAAAwAAAAEAAAAFAAAAAgAAAAcAAAARAAAAFAAAAAAAAAAKAAAACAAAAAQAAAAQAAAADwAAAAYAAAAJAAAAAwAAAAAAAAAHAAAACwAAAAsAAAADAAAACwAAAAIAAAAWAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFAAAABQAAAAkAAAADAAAACwAAAAQAAAACAAAABgAAAAIAAAABAAAAAgAAAAAAAAACAAAABgAAAAQAAAADAAAAAAAAAAcAAAACAAAAAgAAAAMAAAABAAAACQAAABIAAAARAAAACQAAAAMAAAABAAAABgAAAAEAAAAAAAAACQAAAAoAAAADAAAAAAAAAAAAAAAHAAAABAAAAAIAAAAKAAAAFwAAAAcAAAALAAAABQAAAAAAAAAFAAAAAgAAAAEAAAAMAAAAEAAAABMAAAAPAAAAAgAAAAIAAAACAAAABwAAAAEAAAAAAAAAAwAAAAcAAAATAAAACQAAAAEAAAAFAAAAAwAAAAEAAAADAAAAAAAAAAEAAAABAAAAAwAAAAIAAAAFAAAAAwAAAAIAAAAAAAAAAgAAAAcAAAADAAAABgAAAAQAAAACAAAABAAAAAoAAAAAAAAACgAAAAAAAAACAAAABgAAAAQAAAADAAAAAAAAAAEAAAAAAAAAAwAAAAAAAAANAAAABwAAAAEAAAABAAAAAAAAAAQAAAABAAAABAAAAAEAAAANAAAABAAAAAIAAAAFAAAAAwAAAAEAAAAAAAAAAgAAAAAAAAABAAAABwAAAAMAAAAEAAAAAQAAAAYAAAABAAAABAAAAAYAAAADAAAABwAAAAQAAAAAAAAAAQAAAAoAAAAGAAAABwAAAAUAAAAHAAAACgAAACQAAAAPAAAACAAAAAsAAAAKAAAACAAAAAAAAAABAAAABgAAAAAAAAABAAAAAAAAAAMAAAADAAAABwAAAAIAAAARAAAABQAAAAsAAAAHAAAAAAAAAAEAAAABAAAACQAAAAcAAAAGAAAAAAAAAAMAAAAXAAAACgAAABEAAAAIAAAABAAAAAIAAAAEAAAABwAAAAgAAAABAAAAAQAAAAgAAAAOAAAAAQAAAAwAAAAIAAAABAAAAAoAAAAFAAAAEQAAAAEAAAAHAAAABwAAAAAAAAAFAAAABwAAAAYAAAAHAAAAFAAAABsAAAACAAAAAQAAAAMAAAACAAAAAwAAAAMAAAAJAAAACwAAAAQAAAAKAAAACQAAAAQAAAABAAAABAAAAAsAAAAEAAAAAgAAAAUAAAAAAAAABgAAAAEAAAACAAAABgAAAAYAAAAAAAAABQAAAAsAAAAaAAAAEAAAAAYAAAAEAAAAAwAAAAYAAAAQAAAACgAAAAAAAAAAAAAAAgAAAAIAAAAJAAAABQAAAAEAAAADAAAACwAAAAoAAAACAAAADQAAAAYAAAADAAAABgAAAAoAAAAHAAAACAAAAAQAAAAIAAAABAAAABAAAAAAAAAABQAAABEAAAANAAAADQAAACEAAAAAAAAACwAAACMAAAAMAAAAEQAAAAoAAAAYAAAAFQAAADMAAAAwAAAAMgAAABcAAAANAAAAuQAAABcAAAACAAAAFgAAABAAAAAKAAAACwAAABUAAAAMAAAABwAAAA4AAAALAAAAAwAAAAcAAAAIAAAACQAAAAUAAAACAAAACgAAAA8AAAAFAAAADAAAAAEAAAADAAAAAwAAAAMAAAAGAAAADAAAAAwAAAAKAAAABwAAABYAAAAFAAAACgAAAAgAAAAIAAAAAQAAAAsAAAAEAAAAFAAAAAMAAAAOAAAAEwAAABIAAAAMAAAABQAAAAcAAAAJAAAAIwAAAAcAAAAHAAAACwAAAAwAAAADAAAAAgAAAA8AAAAFAAAADgAAABkAAAAIAAAADAAAABYAAAAQAAAAAwAAAAsAAAAWAAAABgAAABIAAAAAAAAAFwAAAAcAAAAJAAAADwAAAAoAAAACAAAAAgAAAAUAAAACAAAAEwAAAAoAAAAFAAAACgAAAAIAAAALAAAADQAAAAYAAAANAAAAFgAAAA0AAAABAAAABgAAAAoAAAAWAAAAEwAAAAQAAAAJAAAABAAAAAwAAAAOAAAAEgAAAAYAAAACAAAADQAAAAsAAAAUAAAAEwAAAA0AAAAPAAAACgAAAAgAAAAkAAAAAQAAAAYAAAAAAAAACAAAAAMAAAAAAAAAAAAAAAkAAAABAAAAAAAAAAAAAAAGAAAABAAAAA4AAAAPAAAABgAAAA4AAAAIAAAACgAAAAAAAAASAAAABwAAAA0AAAAIAAAAFQAAAAQAAAABAAAABgAAABUAAAACAAAABAAAAAAAAAACAAAABAAAAA0AAAAXAAAAFgAAAA0AAAAGAAAABAAAAAcAAAAGAAAABAAAAAcAAAAEAAAACAAAAAIAAAACAAAACQAAAAMAAAABAAAAAQAAAAQAAAAHAAAACQAAABIAAAAWAAAAFwAAAAYAAAAdAAAAIAAAAAgAAAAIAAAABAAAABAAAAAKAAAADgAAAAIAAAAIAAAABAAAAAkAAAACAAAABQAAAAoAAAAJAAAACgAAABMAAAARAAAAIgAAABMAAAAHAAAAAwAAAAgAAAAcAAAACQAAAAYAAAAEAAAABgAAABEAAAAFAAAACQAAAAgAAAAFAAAABAAAAAUAAAAHAAAACwAAAAoAAAAJAAAADwAAAAIAAAAIAAAAAwAAAAQAAAAGAAAACAAAAAMAAAACAAAABwAAAAQAAAAJAAAACAAAAAcAAAAIAAAAAwAAAAkAAAAYAAAABwAAAAMAAAAIAAAABgAAAAMAAAAHAAAABgAAAAQAAAAPAAAACQAAAAkAAAAIAAAAAwAAABAAAAAEAAAACwAAAAMAAAACAAAAAwAAAAgAAAADAAAACwAAAAMAAAAMAAAADgAAAAIAAAAAAAAADQAAAAYAAAAGAAAAAgAAAAEAAAAEAAAAAgAAAAMAAAACAAAABwAAABUAAAAcAAAABQAAAAEAAAAAAAAAgAAAAAAAAAAKAAAAGAAAACIAAAASAAAAGQAAABMAAAAFAAAADwAAABMAAAAQAAAABgAAABIAAAANAAAABAAAAAMAAAABAAAAAwAAAAEAAAASAAAAAgAAAAYAAAAFAAAABwAAABIAAAAIAAAAAwAAAAIAAAADAAAAFgAAAAcAAAAHAAAAFgAAAA8AAAARAAAAAwAAAAkAAAAAAAAACQAAAAEAAAAgAAAAAAAAAAIAAAAIAAAADAAAAAYAAAAQAAAAAAAAABgAAAAHAAAAFwAAAAIAAAACAAAAAgAAAAYAAAAOAAAACAAAAAAAAAAUAAAAAgAAAA8AAAABAAAAAAAAAAEAAAAHAAAAAAAAAAAAAAAIAAAAEQAAACkAAAAJAAAAAQAAAAMAAAACAAAABwAAAAEAAAAcAAAAEgAAAAMAAAANAAAABgAAAAAAAAAOAAAAAgAAAAEAAAAeAAAAAwAAAAIAAAAcAAAAGQAAAAMAAAAEAAAABgAAAAIAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACgAAAA0AAAAKAAAAHgAAABkAAAAFAAAAAAAAAAAAAAADAAAAAgAAAAUAAAAJAAAADwAAABUAAAAMAAAAAgAAAAYAAAAAAAAACgAAAAIAAAAAAAAAAgAAAAwAAAAAAAAAAwAAAAsAAAAJAAAACwAAAAEAAAAAAAAAAgAAAAkAAAAEAAAABAAAAAwAAAAEAAAADgAAAAUAAAAJAAAACAAAAA0AAAAKAAAAAAAAAA8AAAAGAAAABAAAAAAAAAAMAAAABgAAAAAAAAAAAAAABwAAABUAAAAIAAAAAgAAAAIAAAADAAAAAgAAAAYAAAADAAAABAAAAAkAAAABAAAACAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAbAAAAAQAAAAEAAAAIAAAADAAAAAkAAAAJAAAAAgAAAAMAAAAHAAAABQAAAAEAAAACAAAAAQAAAAIAAAABAAAAAwAAABkAAAATAAAABwAAAAAAAAAAAAAAAAAAAAEAAAADAAAAAwAAAAUAAAALAAAAGQAAACUAAAArAAAAOAAAAA4AAAAbAAAAEQAAAA0AAAAhAAAADgAAADIAAAAcAAAAIAAAAB8AAAAVAAAAJgAAABsAAAATAAAAEAAAAAwAAAAiAAAABQAAABkAAAASAAAABgAAACQAAAAsAAAALgAAABkAAAAeAAAAFAAAAAsAAAAjAAAABgAAAAUAAAACAAAACgAAAA0AAAAGAAAABAAAAAIAAAAHAAAAAwAAAAQAAAAAAAAACwAAAAcAAAALAAAACgAAABUAAAAUAAAACwAAAAsAAAAVAAAABwAAAAwAAAALAAAABgAAAAcAAAAOAAAADQAAAAoAAAACAAAADwAAAAIAAAABAAAABwAAAAwAAAAIAAAAEgAAAAkAAAASAAAAFgAAABwAAAAHAAAACQAAAAIAAAACAAAABAAAAAMAAAAIAAAAAQAAAAIAAAAEAAAADAAAACgAAAAVAAAAGQAAABMAAAAFAAAAEQAAABIAAAAHAAAAEgAAAB0AAAAfAAAABAAAABgAAAAcAAAACQAAABcAAAAcAAAAIwAAAA0AAAAQAAAACwAAAA4AAAAUAAAAKwAAABUAAAASAAAAGwAAACQAAAASAAAABgAAAAMAAAApAAAAAAAAAAUAAAAOAAAADAAAAB8AAAAKAAAAGAAAABAAAAAJAAAABgAAABEAAAAAAAAAFgAAAAgAAAADAAAAEAAAAAAAAAAQAAAAAgAAAAEAAACAAAAADwAAAAAAAABwAAAAAwAAABYAAAAAAAAAAAAAAAAAAAAFAAAACgAAAAMAAAACAAAAEAAAAB4AAAAEAAAAAwAAAAIAAAAJAAAAEgAAAA4AAAAKAAAADQAAABIAAAAKAAAACgAAAAIAAAABAAAAAAAAAAAAAAAFAAAAAAAAAAAAAAAEAAAACAAAAA8AAAACAAAAAwAAABQAAAAMAAAAAQAAAAEAAAAHAAAABgAAAAMAAAAAAAAAAQAAAAEAAAANAAAACQAAABcAAAABAAAAEwAAAAUAAAAHAAAAAAAAACcAAAAKAAAADQAAAA0AAAABAAAABwAAAAQAAAAHAAAADgAAAAAAAAAGAAAADwAAAA8AAAAQAAAADAAAAAgAAAAMAAAABAAAACgAAAADAAAAFgAAAAIAAAAHAAAAEgAAAAAAAAADAAAABwAAAAkAAAAbAAAABgAAAAwAAAABAAAAAAAAAA8AAAADAAAACAAAAAEAAAAJAAAAAgAAAAYAAAAeAAAAAAAAAAYAAAAsAAAABgAAAAMAAAAGAAAABgAAAAoAAAADAAAABgAAAAcAAAALAAAAEgAAAAAAAAANAAAABgAAAAkAAAAEAAAAAgAAAAMAAAAPAAAAAAAAAAIAAAAJAAAAAQAAAAEAAAACAAAADAAAAAEAAAAFAAAAAQAAAAcAAAAGAAAACQAAAAEAAAAUAAAABwAAABAAAAAFAAAABgAAAAUAAAAEAAAADwAAABgAAAADAAAAAwAAAAEAAAAEAAAACgAAAAAAAAAGAAAABwAAAAcAAAAPAAAACAAAAAwAAAAAAAAACAAAABIAAAATAAAABAAAAAMAAAAKAAAAFgAAAAwAAAATAAAAEQAAAAcAAAAAAAAAEAAAAAYAAAAEAAAACAAAAAAAAAAQAAAADQAAAC4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADgAAABEAAAAdAAAAFQAAABsAAAAeAAAADwAAABUAAAAJAAAAAwAAABIAAAALAAAAIAAAABMAAAADAAAACQAAACAAAAAIAAAAFQAAAAQAAAABAAAABQAAAAwAAAAAAAAABgAAAAAAAAAAAAAAAAAAAAMAAAAMAAAAAgAAAAgAAAATAAAADQAAABMAAAALAAAACgAAAAMAAAADAAAAAgAAAA0AAAAMAAAADAAAABEAAAAAAAAABAAAAAoAAAAEAAAABgAAAAQAAAACAAAACAAAAA0AAAAPAAAAAwAAAAAAAAABAAAAAAAAAAQAAAAHAAAACAAAAAUAAAAKAAAAAgAAAAMAAAAQAAAAAAAAAAwAAAAVAAAAEQAAAAYAAAAbAAAAAwAAAAgAAAAgAAAAAAAAAAIAAAAKAAAABAAAAAkAAAABAAAACQAAAAgAAAAHAAAAEwAAAA0AAAADAAAACgAAAAIAAAAHAAAAAAAAAAYAAAAAAAAABgAAAAAAAAAAAAAAAAAAAAAAAAAHAAAACAAAAAEAAAAEAAAACwAAAAEAAAAAAAAACQAAAAgAAAAJAAAADAAAAAMAAAAIAAAAAgAAAAMAAAAHAAAAAwAAABIAAAAAAAAADwAAAAwAAAAAAAAAAQAAAAAAAAAIAAAABAAAAAkAAAAiAAAAHgAAAAIAAAAOAAAACAAAAAUAAAABAAAABgAAAAUAAAAMAAAAHQAAAAwAAAAIAAAAAAAAAA0AAAAGAAAAMAAAABIAAAAoAAAAGwAAACYAAAANAAAAEgAAAB8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwAAAAhAAAACgAAABwAAAAQAAAAGQAAAAsAAAATAAAABwAAAAgAAAAiAAAAAwAAADgAAAAWAAAADAAAAAYAAAAAAAAADgAAABAAAABAAAAAFQAAACUAAAAaAAAAEAAAAAEAAAALAAAAEwAAAA4AAAAYAAAADwAAABQAAAAJAAAABwAAAAsAAAAEAAAAAgAAAAQAAAADAAAABwAAAAcAAAAcAAAABAAAAAgAAAAIAAAABgAAAAMAAAACAAAACAAAAAIAAAALAAAAAgAAAAcAAAADAAAACQAAAAQAAAABAAAAAAAAAAEAAAAAAAAACAAAAAcAAAABAAAAAwAAAA0AAAACAAAACgAAAAcAAAAEAAAAAQAAAA4AAAACAAAAAgAAAAQAAAADAAAABQAAAAkAAAAKAAAAAwAAABEAAAAMAAAACAAAAA8AAAAPAAAAFQAAABMAAAAIAAAACwAAABQAAAAFAAAAFAAAAAYAAAADAAAADAAAAAoAAAAGAAAABgAAAAMAAAAFAAAABAAAAAcAAAAJAAAACAAAAAsAAAAMAAAADgAAAAQAAAAJAAAAEAAAAAgAAAAIAAAAAAAAAAEAAAAAAAAAAAAAAAYAAAAAAAAABgAAAAcAAAAEAAAAAAAAAAMAAAAGAAAABgAAAAgAAAAFAAAAAAAAAAMAAAAAAAAABgAAAAMAAAADAAAACQAAAAcAAAANAAAAEQAAAAoAAAAMAAAABwAAAAMAAAAKAAAAIAAAAAUAAAADAAAABQAAAAEAAAADAAAAAQAAAAYAAAADAAAACQAAAAYAAAACAAAAGwAAABgAAAAMAAAAEQAAABYAAAACAAAADgAAAAMAAAABAAAAFgAAAAEAAAAAAAAACgAAAA0AAAAEAAAAAwAAAAgAAAABAAAAAAAAAAEAAAASAAAABgAAAAoAAAACAAAAAwAAAAoAAAAMAAAABgAAAAoAAAAIAAAAAwAAABIAAAAIAAAACAAAABYAAAAAAAAAFgAAAAkAAAADAAAACwAAAAcAAAABAAAAFQAAAA0AAAADAAAAAgAAABYAAAAGAAAADQAAAAYAAAAIAAAAAgAAAAIAAAAQAAAAAAAAAAwAAAAOAAAAFQAAAAcAAAAJAAAADAAAAAsAAAAGAAAABQAAAAYAAAAkAAAACgAAAAAAAAAJAAAAAQAAAA8AAAAGAAAABAAAAAMAAAAVAAAAAQAAAAYAAAADAAAAAQAAAAIAAAABAAAAFAAAAAUAAAAIAAAADgAAAAkAAAAcAAAADgAAACUAAAAMAAAAAQAAAAoAAAAGAAAAAwAAAAEAAAAHAAAAAwAAAAgAAAALAAAAAwAAAAMAAAAEAAAACwAAAAkAAAAhAAAAAQAAAAcAAAAMAAAAAgAAAAAAAAACAAAAAgAAAAQAAAAAAAAAAQAAAAIAAAALAAAAFAAAAAIAAAAEAAAAAAAAAAIAAAANAAAABAAAAAEAAAALAAAABQAAAA4AAAAFAAAAFwAAABIAAAAIAAAABAAAAB0AAAABAAAABAAAAA8AAAANAAAAAwAAAAkAAAARAAAAAAAAAAkAAAAIAAAAAwAAAAMAAAADAAAAAQAAAAEAAAABAAAABwAAAAEAAAADAAAAAQAAAAUAAAAEAAAAAwAAAAsAAAAHAAAADgAAAAwAAAASAAAAFQAAAAcAAAAEAAAABAAAAAcAAAATAAAAAQAAAAcAAAAJAAAACQAAAAAAAAAgAAAAFQAAAA8AAAAbAAAAIQAAABUAAAAYAAAAIgAAAB0AAAAKAAAABwAAAA0AAAAJAAAABwAAAAQAAAABAAAAEgAAAAYAAAAbAAAABgAAAAoAAAANAAAACgAAAAMAAAAIAAAACwAAAAkAAAADAAAAAwAAAAQAAAAMAAAAAQAAABAAAAAAAAAAAQAAAAAAAAABAAAABAAAAAQAAAAJAAAACwAAABQAAAAMAAAADwAAABAAAAADAAAABwAAAAIAAAAAAAAABAAAAAwAAAAOAAAABgAAAAMAAAALAAAAAAAAAAQAAAAQAAAACAAAABAAAAAFAAAACgAAAA4AAAAPAAAADAAAABAAAAAEAAAABAAAAAQAAAAAAAAAAAAAAAAAAAAGAAAABwAAAAcAAAABAAAAAwAAAAMAAAAJAAAAAQAAAAMAAAABAAAABwAAAAMAAAANAAAAAgAAAAIAAAAEAAAAAQAAAAsAAAAMAAAAAgAAAAkAAAAEAAAABQAAAAIAAAAHAAAAAwAAAAMAAAAHAAAADgAAAAcAAAAMAAAACAAAAAQAAAACAAAACwAAAAgAAAAOAAAADAAAABoAAAAMAAAABQAAAAAAAAAfAAAAAQAAAAgAAAAAAAAABwAAABAAAAAjAAAANQAAABEAAAAXAAAAHAAAAB4AAAAVAAAABgAAAAAAAAAAAAAADAAAABIAAABZAAAAUAAAABUAAAAjAAAAPQAAACMAAAAgAAAAOwAAAAUAAAAGAAAACQAAAAcAAAAAAAAAAAAAAAEAAAABAAAAAwAAAAIAAAAHAAAACgAAAAkAAAABAAAAJwAAAAYAAAAIAAAACwAAAB8AAAASAAAAGwAAACUAAAAUAAAADQAAAAUAAAAAAAAAAAAAAA8AAAADAAAAAQAAAAkAAAAIAAAABAAAAAkAAAAbAAAAFwAAABEAAAAaAAAACgAAAAcAAAAPAAAACQAAAAAAAAACAAAAAAAAAAQAAAABAAAAEAAAAA4AAAAMAAAADwAAABMAAAAWAAAAJgAAAAoAAAATAAAABwAAABUAAAARAAAABAAAAAMAAAAEAAAACgAAAAgAAAAAAAAADAAAAAwAAAAIAAAACAAAABMAAAAJAAAAFQAAAAwAAAAXAAAAAwAAABAAAAALAAAAAQAAAAYAAAAHAAAABwAAAAIAAAAKAAAABAAAAA4AAAADAAAALQAAABEAAAAAAAAAAgAAAAMAAAABAAAAAAAAAAAAAAAAAAAAAgAAAAIAAAABAAAAAgAAAAAAAAAGAAAACAAAAAIAAAARAAAADQAAAAYAAAARAAAABwAAAAMAAAAMAAAADQAAAAoAAAAOAAAAFAAAABYAAAAIAAAACgAAAB4AAAAHAAAADAAAAA8AAAAKAAAADQAAACIAAAAJAAAADgAAABEAAAAPAAAAEwAAAAkAAAARAAAAGAAAAAsAAAAVAAAABAAAAA4AAAAPAAAAEAAAABEAAAAXAAAAJQAAAAcAAAASAAAABgAAAEQAAAAGAAAAAgAAABYAAAAYAAAAAwAAAA8AAAAMAAAAKwAAAB4AAAA2AAAAFQAAACEAAAANAAAACwAAAAYAAAALAAAAAgAAAAAAAAALAAAABgAAAAMAAAAFAAAACQAAAAAAAAAEAAAAGQAAABQAAAAIAAAAAAAAAA0AAAACAAAADAAAAA0AAAABAAAACAAAABAAAAAoAAAABAAAABAAAAAdAAAABwAAABUAAAAGAAAACgAAABsAAAAQAAAAAgAAABAAAAADAAAABwAAABEAAAATAAAABgAAABcAAAAYAAAAFAAAAAcAAAAUAAAAFAAAAA8AAAAiAAAAAAAAAAEAAAAEAAAAAgAAAAQAAAAEAAAACQAAABUAAAAWAAAADQAAAAUAAAAAAAAAAQAAAEUAAAAJAAAALAAAAB0AAAAYAAAAGwAAABAAAAATAAAABQAAAAsAAAADAAAACgAAABYAAAAjAAAADgAAACEAAAAQAAAAFwAAABsAAAAdAAAAIQAAACoAAAApAAAAHgAAABIAAAAIAAAAEQAAABcAAAAhAAAAEAAAABUAAAALAAAAGAAAABkAAAAJAAAABAAAAAcAAAAEAAAAFgAAAAQAAAATAAAAGAAAAAoAAAAVAAAADwAAAAoAAAAdAAAACQAAAA0AAAALAAAADQAAABIAAAALAAAACwAAAAQAAAAMAAAAEAAAABkAAAAPAAAAEAAAAA4AAAAAAAAAFwAAABAAAAALAAAAEAAAABMAAAAPAAAACgAAAAsAAAAOAAAACAAAAAIAAAABAAAAAgAAAAIAAAADAAAABwAAAAQAAAALAAAADwAAAAYAAAAnAAAAEAAAAA4AAAAmAAAADwAAABEAAAAIAAAABgAAAAMAAAAOAAAADAAAABIAAAAPAAAAFAAAABkAAAACAAAABwAAAAoAAAAOAAAACAAAABQAAAAaAAAAEAAAAAwAAAAcAAAADwAAAAIAAAACAAAAEgAAABUAAAANAAAAGQAAAA8AAAAkAAAACwAAAA4AAAABAAAAEwAAABIAAAAHAAAADAAAABMAAAAIAAAAEgAAABEAAAAPAAAAFAAAAAsAAAAUAAAAGAAAAAkAAAAEAAAAFAAAAA4AAAATAAAAJQAAACoAAAAZAAAALQAAABMAAAAeAAAAHwAAABcAAAAlAAAAEAAAABQAAAAzAAAAJwAAACsAAAAZAAAAEwAAABsAAAAgAAAACAAAABAAAAAKAAAAKQAAABQAAAAdAAAADQAAADkAAAAPAAAAJAAAAAgAAAATAAAAEAAAABcAAAAgAAAAHgAAAC8AAAAZAAAADgAAAAEAAAAGAAAACgAAAAoAAAARAAAAFwAAABIAAAAOAAAAAwAAAAIAAAAGAAAABgAAAAMAAAAfAAAADQAAABUAAAAHAAAACwAAAA8AAAADAAAAEgAAAAcAAAAAAAAAEQAAABYAAAAQAAAAEAAAAAkAAAATAAAACQAAAAEAAAABAAAAAQAAAAIAAAAGAAAABAAAAAIAAAACAAAAAgAAAAMAAAADAAAAAwAAAAIAAAABAAAAAQAAAAQAAAABAAAAAgAAAAQAAAABAAAAEQAAAAEAAAAEAAAABwAAAAwAAAAOAAAAAAAAAAEAAAABAAAAAQAAAAEAAAADAAAAAgAAAAEAAAABAAAAAgAAAAEAAAADAAAAAAAAAAcAAAAAAAAADAAAAAAAAAABAAAAAAAAAA0AAAAIAAAABAAAAAQAAAACAAAABAAAAAEAAAABAAAAAAAAAAsAAAACAAAAAgAAAAIAAAADAAAABAAAAAMAAAADAAAAAgAAAAMAAAADAAAAAgAAAAIAAAADAAAABAAAAAQAAAAEAAAAAQAAAAEAAAABAAAAAwAAAAEAAAACAAAABAAAAAMAAAABAAAABAAAAAIAAAABAAAABAAAAAQAAAAJAAAAEAAAAAoAAAACAAAABgAAABgAAAAfAAAAAgAAAAMAAAABAAAAAQAAAAMAAAAeAAAAFQAAAA0AAAAXAAAADwAAABMAAAAQAAAABAAAAAYAAAAMAAAADQAAABUAAAACAAAAAwAAAAAAAAAJAAAAHwAAAA0AAAAWAAAAEQAAAAEAAAABAAAAAQAAAAEAAAABAAAAKQEAAAIAAAABAAAAAQAAAAEAAAADAAAAAQAAAAYAAAALAAAAAQAAAAEAAAABAAAAAgAAAAIAAAADAAAABAAAAAMAAAABAAAABAAAAAcAAAABAAAAAQAAAAIAAAAFAAAABAAAAAMAAAADAAAAAgAAAAIAAAAEAAAABQAAAAUAAAADAAAABQAAAAEAAAAEAAAADAAAAAEAAAABAAAABQAAAAIAAAABAAAAAQAAAAEAAAABAAAAAQAAAAMAAAABAAAABAAAAAYAAAADAAAAAQAAAAIAAAADAAAAAgAAAAEAAAABAAAAAgAAAA=="
+          },
+          "xaxis": "x",
+          "yaxis": "y",
+          "type": "histogram"
+        }
+      ],
+      "layout": {
+        "template": {
+          "data": {
+            "candlestick": [
+              {
+                "decreasing": {
+                  "line": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "line": {
+                    "color": "#000032"
+                  }
+                },
+                "type": "candlestick"
+              }
+            ],
+            "contourcarpet": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contourcarpet"
+              }
+            ],
+            "contour": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contour"
+              }
+            ],
+            "heatmap": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "heatmap"
+              }
+            ],
+            "histogram2d": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "histogram2d"
+              }
+            ],
+            "icicle": [
+              {
+                "textfont": {
+                  "color": "white"
+                },
+                "type": "icicle"
+              }
+            ],
+            "sankey": [
+              {
+                "textfont": {
+                  "color": "#000036"
+                },
+                "type": "sankey"
+              }
+            ],
+            "scatter": [
+              {
+                "marker": {
+                  "line": {
+                    "width": 0
+                  }
+                },
+                "type": "scatter"
+              }
+            ],
+            "table": [
+              {
+                "cells": {
+                  "fill": {
+                    "color": "#000038"
+                  },
+                  "font": {
+                    "color": "#000037"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "header": {
+                  "fill": {
+                    "color": "#000040"
+                  },
+                  "font": {
+                    "color": "#000036"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "type": "table"
+              }
+            ],
+            "waterfall": [
+              {
+                "connector": {
+                  "line": {
+                    "color": "#000036",
+                    "width": 2
+                  }
+                },
+                "decreasing": {
+                  "marker": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "marker": {
+                    "color": "#000032"
+                  }
+                },
+                "totals": {
+                  "marker": {
+                    "color": "#000034"
+                  }
+                },
+                "type": "waterfall"
+              }
+            ]
+          },
+          "layout": {
+            "coloraxis": {
+              "colorscale": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorscale": {
+              "diverging": [
+                [
+                  0.0,
+                  "#000021"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000022"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000023"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000024"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000025"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000026"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000027"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000028"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000029"
+                ],
+                [
+                  1.0,
+                  "#000030"
+                ]
+              ],
+              "sequential": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ],
+              "sequentialminus": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorway": [
+              "#000001",
+              "#000002",
+              "#000003",
+              "#000004",
+              "#000005",
+              "#000006",
+              "#000007",
+              "#000008",
+              "#000009",
+              "#000010"
+            ]
+          }
+        },
+        "xaxis": {
+          "anchor": "y",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "inspection_score"
+          }
+        },
+        "yaxis": {
+          "anchor": "x",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "count"
+          }
+        },
+        "legend": {
+          "tracegroupgap": 0
+        },
+        "title": {
+          "text": "Distribution of Inspection Scores (all inspections)"
+        },
+        "barmode": "relative"
+      }
+    },
+    {
+      "data": [
+        {
+          "hovertemplate": "inspection_type=%{x}<br>avg_score=%{y}<extra></extra>",
+          "legendgroup": "",
+          "marker": {
+            "color": "#000001",
+            "pattern": {
+              "shape": ""
+            }
+          },
+          "name": "",
+          "orientation": "v",
+          "showlegend": false,
+          "textposition": "auto",
+          "x": [
+            "Routine",
+            "Followup",
+            "Critical Item",
+            "Complaint Investigation"
+          ],
+          "xaxis": "x",
+          "y": {
+            "dtype": "f8",
+            "bdata": "5MRBThzkJEDLowPv+cYYQG2xMnwjCiJAzczMzMzM/D8="
+          },
+          "yaxis": "y",
+          "type": "bar"
+        }
+      ],
+      "layout": {
+        "template": {
+          "data": {
+            "candlestick": [
+              {
+                "decreasing": {
+                  "line": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "line": {
+                    "color": "#000032"
+                  }
+                },
+                "type": "candlestick"
+              }
+            ],
+            "contourcarpet": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contourcarpet"
+              }
+            ],
+            "contour": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contour"
+              }
+            ],
+            "heatmap": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "heatmap"
+              }
+            ],
+            "histogram2d": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "histogram2d"
+              }
+            ],
+            "icicle": [
+              {
+                "textfont": {
+                  "color": "white"
+                },
+                "type": "icicle"
+              }
+            ],
+            "sankey": [
+              {
+                "textfont": {
+                  "color": "#000036"
+                },
+                "type": "sankey"
+              }
+            ],
+            "scatter": [
+              {
+                "marker": {
+                  "line": {
+                    "width": 0
+                  }
+                },
+                "type": "scatter"
+              }
+            ],
+            "table": [
+              {
+                "cells": {
+                  "fill": {
+                    "color": "#000038"
+                  },
+                  "font": {
+                    "color": "#000037"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "header": {
+                  "fill": {
+                    "color": "#000040"
+                  },
+                  "font": {
+                    "color": "#000036"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "type": "table"
+              }
+            ],
+            "waterfall": [
+              {
+                "connector": {
+                  "line": {
+                    "color": "#000036",
+                    "width": 2
+                  }
+                },
+                "decreasing": {
+                  "marker": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "marker": {
+                    "color": "#000032"
+                  }
+                },
+                "totals": {
+                  "marker": {
+                    "color": "#000034"
+                  }
+                },
+                "type": "waterfall"
+              }
+            ]
+          },
+          "layout": {
+            "coloraxis": {
+              "colorscale": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorscale": {
+              "diverging": [
+                [
+                  0.0,
+                  "#000021"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000022"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000023"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000024"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000025"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000026"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000027"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000028"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000029"
+                ],
+                [
+                  1.0,
+                  "#000030"
+                ]
+              ],
+              "sequential": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ],
+              "sequentialminus": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorway": [
+              "#000001",
+              "#000002",
+              "#000003",
+              "#000004",
+              "#000005",
+              "#000006",
+              "#000007",
+              "#000008",
+              "#000009",
+              "#000010"
+            ]
+          }
+        },
+        "xaxis": {
+          "anchor": "y",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "inspection_type"
+          }
+        },
+        "yaxis": {
+          "anchor": "x",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "avg_score"
+          }
+        },
+        "legend": {
+          "tracegroupgap": 0
+        },
+        "title": {
+          "text": "Average Inspection Score by Inspection Type"
+        },
+        "barmode": "relative"
+      }
+    },
+    {
+      "data": [
+        {
+          "hovertemplate": "year=%{x}<br>avg_score=%{y}<extra></extra>",
+          "legendgroup": "",
+          "line": {
+            "color": "#000001",
+            "dash": "solid"
+          },
+          "marker": {
+            "symbol": "circle"
+          },
+          "mode": "lines",
+          "name": "",
+          "orientation": "v",
+          "showlegend": false,
+          "x": {
+            "dtype": "i2",
+            "bdata": "2QfaB9sH3AfdB94H3wfgB+EH4gfjB+QH5QfmB+cH6AfpB+oH"
+          },
+          "xaxis": "x",
+          "y": {
+            "dtype": "f8",
+            "bdata": "AAAAAAAAHEAzMzMzMzMTQLdt27Zt2xpAAAAAAAAAGEDRRRdddNEhQFAHdVAHdSFAAAAAAAAAKkADUenInoEoQOhJ9ZXMzyZAz2I6i+ksJkBC1jGDrGMkQHwIUm4qmiNAEs7tJvTLJED1U6coPikoQMJrUuuoBChADQZJpkn9JkAsZhiAoMohQHlo/0HBUxlA"
+          },
+          "yaxis": "y",
+          "type": "scatter"
+        }
+      ],
+      "layout": {
+        "template": {
+          "data": {
+            "candlestick": [
+              {
+                "decreasing": {
+                  "line": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "line": {
+                    "color": "#000032"
+                  }
+                },
+                "type": "candlestick"
+              }
+            ],
+            "contourcarpet": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contourcarpet"
+              }
+            ],
+            "contour": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contour"
+              }
+            ],
+            "heatmap": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "heatmap"
+              }
+            ],
+            "histogram2d": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "histogram2d"
+              }
+            ],
+            "icicle": [
+              {
+                "textfont": {
+                  "color": "white"
+                },
+                "type": "icicle"
+              }
+            ],
+            "sankey": [
+              {
+                "textfont": {
+                  "color": "#000036"
+                },
+                "type": "sankey"
+              }
+            ],
+            "scatter": [
+              {
+                "marker": {
+                  "line": {
+                    "width": 0
+                  }
+                },
+                "type": "scatter"
+              }
+            ],
+            "table": [
+              {
+                "cells": {
+                  "fill": {
+                    "color": "#000038"
+                  },
+                  "font": {
+                    "color": "#000037"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "header": {
+                  "fill": {
+                    "color": "#000040"
+                  },
+                  "font": {
+                    "color": "#000036"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "type": "table"
+              }
+            ],
+            "waterfall": [
+              {
+                "connector": {
+                  "line": {
+                    "color": "#000036",
+                    "width": 2
+                  }
+                },
+                "decreasing": {
+                  "marker": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "marker": {
+                    "color": "#000032"
+                  }
+                },
+                "totals": {
+                  "marker": {
+                    "color": "#000034"
+                  }
+                },
+                "type": "waterfall"
+              }
+            ]
+          },
+          "layout": {
+            "coloraxis": {
+              "colorscale": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorscale": {
+              "diverging": [
+                [
+                  0.0,
+                  "#000021"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000022"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000023"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000024"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000025"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000026"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000027"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000028"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000029"
+                ],
+                [
+                  1.0,
+                  "#000030"
+                ]
+              ],
+              "sequential": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ],
+              "sequentialminus": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorway": [
+              "#000001",
+              "#000002",
+              "#000003",
+              "#000004",
+              "#000005",
+              "#000006",
+              "#000007",
+              "#000008",
+              "#000009",
+              "#000010"
+            ]
+          }
+        },
+        "xaxis": {
+          "anchor": "y",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "year"
+          }
+        },
+        "yaxis": {
+          "anchor": "x",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "avg_score"
+          }
+        },
+        "legend": {
+          "tracegroupgap": 0
+        },
+        "title": {
+          "text": "Average Inspection Score by Year"
+        }
+      }
+    }
+  ],
+  "candidate_pool_raw": [
+    {
+      "gmap_id": "0x87528edb8071719b:0xb34437f22c7b5873",
+      "name": "Arctic Circle",
+      "address": "Arctic Circle, 3365 W 7800 S, West Jordan, UT 84088",
+      "latitude": 40.6090528,
+      "longitude": -111.9700581,
+      "avg_rating": 3.9,
+      "num_of_reviews": 898,
+      "price": "$",
+      "slchd_establishment_key": "ARCTIC CIRCLE 111|3365 W 7800 S|WEST JORDAN",
+      "distance_mi": null,
+      "most_recent_inspection_score": 19,
+      "critical_violation_count": 27,
+      "total_violation_count": 95
+    },
+    {
+      "gmap_id": "0x87528a6e4de1fead:0xb1bd2c15b2d6621d",
+      "name": "Arctic Circle",
+      "address": "Arctic Circle, 3919 S 700 E, Murray, UT 84107",
+      "latitude": 40.6865396,
+      "longitude": -111.8709717,
+      "avg_rating": 4.1,
+      "num_of_reviews": 1274,
+      "price": "$",
+      "slchd_establishment_key": "ARCTIC CIRCLE 202|3919 S 700 E|MILLCREEK TS",
+      "distance_mi": null,
+      "most_recent_inspection_score": 19,
+      "critical_violation_count": 18,
+      "total_violation_count": 60
+    },
+    {
+      "gmap_id": "0x87528e358e42f1d1:0xa956db3f6ff0411e",
+      "name": "Arctic Circle",
+      "address": "Arctic Circle, 8677 S 5600 W, West Jordan, UT 84081",
+      "latitude": 40.593326999999995,
+      "longitude": -112.0236405,
+      "avg_rating": 3.9,
+      "num_of_reviews": 698,
+      "price": "$",
+      "slchd_establishment_key": "ARCTIC CIRCLE 127|8677 S 5600 W|WEST JORDAN",
+      "distance_mi": null,
+      "most_recent_inspection_score": 16,
+      "critical_violation_count": 27,
+      "total_violation_count": 63
+    },
+    {
+      "gmap_id": "0x8752871414bb3a4b:0x8d7dcfb0beb572c1",
+      "name": "Arctic Circle",
+      "address": "Arctic Circle, 208 E 12300 S, Draper, UT 84020",
+      "latitude": 40.526289,
+      "longitude": -111.885488,
+      "avg_rating": 4.0,
+      "num_of_reviews": 420,
+      "price": "$",
+      "slchd_establishment_key": "ARCTIC CIRCLE 116|208 E 12300 S|DRAPER",
+      "distance_mi": null,
+      "most_recent_inspection_score": 16,
+      "critical_violation_count": 24,
+      "total_violation_count": 85
+    },
+    {
+      "gmap_id": "0x87528d4c77ad88c5:0xfc24747515b7cb24",
+      "name": "Village Inn",
+      "address": "Village Inn, 4824 W 3500 S, West Valley City, UT 84120",
+      "latitude": 40.697023,
+      "longitude": -112.006333,
+      "avg_rating": 3.9,
+      "num_of_reviews": 1337,
+      "price": "$",
+      "slchd_establishment_key": "VILLAGE INN RESTAURANT|4834 W 3500 S|WEST VALLEY CITY",
+      "distance_mi": null,
+      "most_recent_inspection_score": 14,
+      "critical_violation_count": 18,
+      "total_violation_count": 70
+    },
+    {
+      "gmap_id": "0x87528bfb9df074cf:0x548b15973c8842cf",
+      "name": "Texas Roadhouse",
+      "address": "Texas Roadhouse, 1904 W 5400 S, Taylorsville, UT 84129",
+      "latitude": 40.654219999999995,
+      "longitude": -111.94307,
+      "avg_rating": 4.4,
+      "num_of_reviews": 5210,
+      "price": "$$",
+      "slchd_establishment_key": "TEXAS ROADHOUSE|1904 W 5400 S|TAYLORSVILLE",
+      "distance_mi": null,
+      "most_recent_inspection_score": 14,
+      "critical_violation_count": 38,
+      "total_violation_count": 113
+    },
+    {
+      "gmap_id": "0x8752f53b13b95555:0x94cec18382378f12",
+      "name": "SLC Eatery",
+      "address": "SLC Eatery, 1017 S Main St, Salt Lake City, UT 84111",
+      "latitude": 40.7468933,
+      "longitude": -111.8906507,
+      "avg_rating": 4.6,
+      "num_of_reviews": 228,
+      "price": null,
+      "slchd_establishment_key": "SLC EATERY|1017 S MAIN ST|SALT LAKE CITY",
+      "distance_mi": null,
+      "most_recent_inspection_score": 14,
+      "critical_violation_count": 14,
+      "total_violation_count": 55
+    },
+    {
+      "gmap_id": "0x875289d4b4f73f89:0x7c191ee393f7ae4b",
+      "name": "Chick-fil-A",
+      "address": "Chick-fil-A, 1088 Fort Union Blvd, Midvale, UT 84047",
+      "latitude": 40.6233121,
+      "longitude": -111.8614456,
+      "avg_rating": 4.3,
+      "num_of_reviews": 1536,
+      "price": "$",
+      "slchd_establishment_key": "CHICK FIL A|1088 E FORT UNION BLVD|MIDVALE",
+      "distance_mi": null,
+      "most_recent_inspection_score": 14,
+      "critical_violation_count": 5,
+      "total_violation_count": 10
+    },
+    {
+      "gmap_id": "0x8752f569300ab7a9:0x1e21f25f4fb30532",
+      "name": "IHOP",
+      "address": "IHOP, 635 E 400 S, Salt Lake City, UT 84102",
+      "latitude": 40.7609618,
+      "longitude": -111.8727416,
+      "avg_rating": 3.8,
+      "num_of_reviews": 794,
+      "price": "$",
+      "slchd_establishment_key": "IHOP RESTAURANT|635 E 400 S|SALT LAKE CITY",
+      "distance_mi": null,
+      "most_recent_inspection_score": 13,
+      "critical_violation_count": 5,
+      "total_violation_count": 37
+    },
+    {
+      "gmap_id": "0x87528b6161c18005:0xb3dbdde5d924dac5",
+      "name": "K-Recipe",
+      "address": "K-Recipe, 3390 State St #34, South Salt Lake, UT 84115",
+      "latitude": 40.6977993,
+      "longitude": -111.889649,
+      "avg_rating": 5.0,
+      "num_of_reviews": 34,
+      "price": null,
+      "slchd_establishment_key": "K RECIPE|3390 S STATE ST|SOUTH SALT LAKE",
+      "distance_mi": null,
+      "most_recent_inspection_score": 13,
+      "critical_violation_count": 21,
+      "total_violation_count": 36
+    },
+    {
+      "gmap_id": "0x8752876077272fd3:0x40e212483e248131",
+      "name": "Garage Grill",
+      "address": "Garage Grill, 1122 East Draper Pkwy, Draper, UT 84020",
+      "latitude": 40.527366,
+      "longitude": -111.858826,
+      "avg_rating": 4.3,
+      "num_of_reviews": 1168,
+      "price": "$$",
+      "slchd_establishment_key": "GARAGE GRILL - DOG PATIO|1122 E DRAPER PKWY|DRAPER",
+      "distance_mi": null,
+      "most_recent_inspection_score": 0,
+      "critical_violation_count": 2,
+      "total_violation_count": 3
+    },
+    {
+      "gmap_id": "0x875289fb4a405e4b:0xa169c429dad6c3b3",
+      "name": "The Point After",
+      "address": "The Point After, 5445 S 900 E, Salt Lake City, UT 84117",
+      "latitude": 40.6525742,
+      "longitude": -111.8646615,
+      "avg_rating": 4.2,
+      "num_of_reviews": 368,
+      "price": "$",
+      "slchd_establishment_key": "POINT AFTER - DOG PATIO|5445 S 900 E|MURRAY",
+      "distance_mi": null,
+      "most_recent_inspection_score": 0,
+      "critical_violation_count": 0,
+      "total_violation_count": 2
+    },
+    {
+      "gmap_id": "0x875261eac67710ad:0x62d86f7118b5decf",
+      "name": "The Brickyard Bar",
+      "address": "The Brickyard Bar, 3000 S Highland Dr, Salt Lake City, UT 84106",
+      "latitude": 40.7061891,
+      "longitude": -111.8534567,
+      "avg_rating": 4.4,
+      "num_of_reviews": 113,
+      "price": null,
+      "slchd_establishment_key": "BRICKYARD BAR DOG PATIO|3000 S HIGHLAND DR|MILLCREEK",
+      "distance_mi": null,
+      "most_recent_inspection_score": 0,
+      "critical_violation_count": 0,
+      "total_violation_count": 1
+    },
+    {
+      "gmap_id": "0x8752f53ce4896ed5:0xfdec02c9038d7ade",
+      "name": "Proper Burger Company",
+      "address": "Proper Burger Company, 865 S Main St, Salt Lake City, UT 84111",
+      "latitude": 40.7507258,
+      "longitude": -111.8904492,
+      "avg_rating": 4.4,
+      "num_of_reviews": 2068,
+      "price": "$$",
+      "slchd_establishment_key": "PROPER BURGER COMPANY - DOG PATIO|865 S MAIN ST|SALT LAKE CITY",
+      "distance_mi": null,
+      "most_recent_inspection_score": 0,
+      "critical_violation_count": 1,
+      "total_violation_count": 7
+    },
+    {
+      "gmap_id": "0x8752f517bce84b1f:0x7528e0916ed69ea7",
+      "name": "Millcreek Coffee Roasters",
+      "address": "Millcreek Coffee Roasters, 657 S Main St, Salt Lake City, UT 84111",
+      "latitude": 40.7548447,
+      "longitude": -111.8906937,
+      "avg_rating": 4.7,
+      "num_of_reviews": 428,
+      "price": "$",
+      "slchd_establishment_key": "MILLCREEK COFFEE ROASTERS - COMMISSARY|651 S MAIN ST|SALT LAKE CITY",
+      "distance_mi": null,
+      "most_recent_inspection_score": 0,
+      "critical_violation_count": 3,
+      "total_violation_count": 9
+    },
+    {
+      "gmap_id": "0x8752882d52822735:0x80f319c8ae59dd26",
+      "name": "Sonic Drive-In",
+      "address": "Sonic Drive-In, 849 Fort Union Blvd, Midvale, UT 84047",
+      "latitude": 40.622470199999995,
+      "longitude": -111.8675482,
+      "avg_rating": 3.4,
+      "num_of_reviews": 1232,
+      "price": "$",
+      "slchd_establishment_key": "SONIC DRIVE IN|849 E FORT UNION BLVD|MIDVALE",
+      "distance_mi": null,
+      "most_recent_inspection_score": 0,
+      "critical_violation_count": 14,
+      "total_violation_count": 44
+    },
+    {
+      "gmap_id": "0x875287498485f2cf:0x34d77d999b5ff05c",
+      "name": "Shake Shack",
+      "address": "Shake Shack, 11020 S State St Suite B, Sandy, UT 84070, United States",
+      "latitude": 40.5512315,
+      "longitude": -111.8914131,
+      "avg_rating": 3.5,
+      "num_of_reviews": 1761,
+      "price": "\u20a9\u20a9",
+      "slchd_establishment_key": "SHAKE SHACK|11020 S STATE ST|SANDY",
+      "distance_mi": null,
+      "most_recent_inspection_score": 0,
+      "critical_violation_count": 5,
+      "total_violation_count": 29
+    },
+    {
+      "gmap_id": "0x8752f5dcf3e361e9:0x3457bd45a2234b0d",
+      "name": "Vessel Kitchen",
+      "address": "Vessel Kitchen, 905 E 900 S, Salt Lake City, UT 84105, United States",
+      "latitude": 40.7500638,
+      "longitude": -111.8648002,
+      "avg_rating": 4.4,
+      "num_of_reviews": 177,
+      "price": null,
+      "slchd_establishment_key": "VESSEL KITCHEN DOG PATIO|905 E 900 S|SALT LAKE CITY",
+      "distance_mi": null,
+      "most_recent_inspection_score": 0,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    },
+    {
+      "gmap_id": "0x8752f591fc27068b:0xf46853168a7ad146",
+      "name": "HandleBar",
+      "address": "HandleBar, 751 N 300 W, Salt Lake City, UT 84111, United States",
+      "latitude": 40.7858243,
+      "longitude": -111.9001839,
+      "avg_rating": 4.6,
+      "num_of_reviews": 358,
+      "price": null,
+      "slchd_establishment_key": "HANDLEBAR - DOG PATIO|751 N 300 W|SALT LAKE CITY",
+      "distance_mi": null,
+      "most_recent_inspection_score": 0,
+      "critical_violation_count": 2,
+      "total_violation_count": 3
+    },
+    {
+      "gmap_id": "0x8752f554dfb14507:0x51c1bc9ad18c7776",
+      "name": "Tea Zaanti",
+      "address": "Tea Zaanti, 1944 1100 E, Salt Lake City, UT 84106",
+      "latitude": 40.727937999999995,
+      "longitude": -111.8598893,
+      "avg_rating": 4.9,
+      "num_of_reviews": 208,
+      "price": "$$",
+      "slchd_establishment_key": "TEA ZAANTI DOG PATIO|1944 S 1100 E|SALT LAKE CITY",
+      "distance_mi": null,
+      "most_recent_inspection_score": 0,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    }
+  ],
+  "duration_seconds": 29.27,
+  "usage": {
+    "available": true,
+    "per_call": [
+      {
+        "input_tokens": 3440,
+        "output_tokens": 278,
+        "total_tokens": 3718
+      },
+      {
+        "input_tokens": 5130,
+        "output_tokens": 1401,
+        "total_tokens": 6531
+      },
+      {
+        "input_tokens": 11596,
+        "output_tokens": 1394,
+        "total_tokens": 12990
+      }
+    ],
+    "input_tokens": 20166,
+    "output_tokens": 3073,
+    "total_tokens": 23239
+  },
+  "tokens_per_minute": 47632.4,
+  "estimated_cost_usd": 0.071062,
+  "success": true,
+  "error": null,
+  "chart_image_files": [
+    "2026-08-15T09-17-29.401623+00-00_v1_memory_ed29ba02_chart0.png",
+    "2026-08-15T09-17-29.401623+00-00_v1_memory_ed29ba02_chart1.png",
+    "2026-08-15T09-17-29.401623+00-00_v1_memory_ed29ba02_chart2.png"
+  ]
+}

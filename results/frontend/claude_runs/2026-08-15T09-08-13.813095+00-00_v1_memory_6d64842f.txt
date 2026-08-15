@@ -1,0 +1,183 @@
+Question: What's the difference between a critical and a non-critical violation, and how does each affect an inspection score?
+
+Variant: v1_memory | Provider: anthropic | Model: claude-sonnet-5
+Timestamp: 2026-08-15T09:08:13.813095+00:00 | Duration: 44.17s
+
+--- Answer ---
+## Critical vs. Non-Critical Violations
+
+**Definition (from `violation_codes.critical`):** Every violation code in the SLCHD dataset is permanently flagged as either **critical** or **non-critical** — this is a fixed property of the code itself (no code has ever been cited both ways). Critical violations are the more serious food-safety issues (e.g. temperature control, cross-contamination, sanitation practices) that pose direct health risk, while non-critical violations tend to be lower-risk/procedural items (e.g. facility maintenance, documentation). Across the dataset there are 98 distinct critical codes (9,690 citations total) and 139 distinct non-critical codes (22,339 citations total).
+
+There's also a secondary, unverified signal: `asterisk_count` (0/1/2 trailing `*` on the raw code) correlates with criticality but its official meaning per the Utah Food Code wasn't independently confirmed — treat it as an observed pattern, not a rule.
+
+**Effect on inspection score** (`inspection_score`: 0 = clean, higher = worse):
+
+- **Clean inspections** (no violations at all): avg score **1.7** (1,108 inspections).
+- **Non-critical violations only**: avg score **3.07** (2,073 inspections).
+- **Critical violations only**: avg score **9.18** (530 inspections) — much higher than non-critical-only despite often fewer violations (avg 1.64 critical vs 2.78 non-critical per inspection in their respective groups).
+- **Mixed** (both types present): avg score **15.67** (4,309 inspections, the most common case).
+
+Looking at the marginal effect of each additional violation:
+- Each additional **critical** violation adds roughly **+6 points** on average (0→2.66, 1→8.5, 2→14.72, 3→21.38, 4→28.48, 5→34.77, 6→43.33).
+- Each additional **non-critical** violation adds only roughly **+2 points** on average (0→4.5, 1→5.6, 2→7.83, 3→9.88, 4→12.03, ... 8→26.3).
+
+So critical violations weigh roughly **3x as heavily** on the score per occurrence as non-critical ones, which is exactly what you'd expect if the score is meant to reflect actual food-safety risk. The three charts above show: (1) average score by violation profile (clean vs. non-critical-only vs. critical-only vs. mixed), (2) the steep score increase per additional critical violation, and (3) the more gradual increase per additional non-critical violation.
+
+--- Reasoning trace ---
+Action: get_schema({})
+
+Observation: Project food_health_viz {
+  database_type: 'DuckDB'
+}
+
+Table establishment_keys {
+  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']
+  name varchar [not null]
+  address varchar [not null]
+  city varchar [not null]
+  city_state_zip varchar
+  establishment_type varchar
+  source varchar [note: 'friend_slc | own_scrape']
+  slchd_lat double
+  slchd_lon double
+  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']
+
+  Note: 'SLCHD establishment list, one row per portal listing.'
+}
+
+Table category {
+  category_id integer [pk]
+  category varchar
+}
+
+Table establishments {
+  gmap_id varchar [pk]
+  name varchar
+  address varchar
+  description varchar
+  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']
+  avg_rating double
+  num_of_reviews integer
+  price varchar
+  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']
+
+  Note: 'One row per Google Local place — all restaurants, not just SLCHD-matched.'
+}
+
+Table establishment_attributes {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  attribute varchar [not null]
+
+  indexes { (gmap_id, attribute) [pk] }
+
+  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. "Service options") dropped.'
+}
+
+Table establishment_categories {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  category_id integer [ref: > category.category_id, not null]
+
+  indexes { (gmap_id, category_id) [pk] }
+}
+
+Table gmap_hours {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  day integer [not null, note: '0=Sun … 6=Sat']
+  open_min bigint
+  open_max bigint
+
+  indexes { (gmap_id, day) [pk] }
+
+  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'
+}
+
+Table review {
+  user_id varchar
+  name varchar
+  time bigint
+  rating double
+  text varchar
+  resp varchar
+  gmap_id varchar [ref: > establishments.gmap_id]
+}
+
+Table inspection_types {
+  inspection_type_id integer [pk, note: 'parsed leading number, e.g. "01 - Routine" -> 1']
+  description varchar [note: 'e.g. "Routine"']
+}
+
+Table inspections {
+  inspection_id bigint [pk, increment]
+  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]
+  inspection_date date [not null]
+  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable — 27 rows have no type']
+  inspection_score integer
+
+  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'
+}
+
+Table violation_codes {
+  violation_code_id integer [pk, increment]
+  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. "4.5.18"']
+  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']
+  critical boolean [not null]
+}
+
+Table violations {
+  violation_id bigint [pk, increment]
+  inspection_id bigint [ref: > inspections.inspection_id, not null]
+  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]
+  violation_description varchar [note: 'per-occurrence free text']
+  violation_occurrences integer
+  violation_cos boolean [note: 'corrected on site']
+  violation_phr varchar [note: 'public health rationale']
+
+  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'
+}
+
+
+Action: get_column_glossary({'table_dot_column': 'violation_codes.critical'})
+
+Action: get_column_glossary({'table_dot_column': 'inspections.inspection_score'})
+
+Action: get_column_glossary({'table_dot_column': 'violation_codes.asterisk_count'})
+
+Action: get_column_glossary({'table_dot_column': 'violations.violation_occurrences'})
+
+Observation: {"description": "Whether citations of this code are critical. One fixed value per code \u2014 verified across all citations, no code has mixed critical/non-critical citations. (3 codes were found inconsistently labeled in the raw source and were normalized to critical=true; see data/processed/clean_processed.ipynb, 'Fix inconsistent violation criticality'.)", "reference": "slchd_portal"}
+
+Observation: {"description": "Total violation points for this inspection. 0 = clean. Higher = worse (confirmed: inspections with any cited violation average score 17.6 vs 1.7 for clean ones).", "reference": "slchd_portal"}
+
+Observation: {"description": "Count of trailing '*' on the original raw code (e.g. '4.5.18*' -> 1). Correlates with the critical flag but its official meaning per the Utah Food Code was not independently verified \u2014 treat as an observed pattern, not a confirmed rule.", "values": [0, 1, 2], "reference": "slchd_portal"}
+
+Observation: {"description": "Repeat count of this violation within the inspection. Usually 1.", "reference": "slchd_portal"}
+
+Action: run_sql({'query': "\nWITH inspection_flags AS (\n  SELECT i.inspection_id, i.inspection_score,\n         COALESCE(SUM(CASE WHEN vc.critical THEN 1 ELSE 0 END),0) AS n_critical,\n         COALESCE(SUM(CASE WHEN NOT vc.critical THEN 1 ELSE 0 END),0) AS n_noncritical\n  FROM inspections i\n  LEFT JOIN violations v ON v.inspection_id = i.inspection_id\n  LEFT JOIN violation_codes vc ON vc.violation_code_id = v.violation_code_id\n  GROUP BY i.inspection_id, i.inspection_score\n)\nSELECT\n  CASE WHEN n_critical=0 AND n_noncritical=0 THEN 'clean'\n       WHEN n_critical>0 AND n_noncritical=0 THEN 'critical_only'\n       WHEN n_critical=0 AND n_noncritical>0 THEN 'noncritical_only'\n       ELSE 'mixed' END AS group_type,\n  COUNT(*) AS n_inspections,\n  ROUND(AVG(inspection_score),2) AS avg_score,\n  ROUND(AVG(n_critical),2) AS avg_n_critical,\n  ROUND(AVG(n_noncritical),2) AS avg_n_noncritical\nFROM inspection_flags\nGROUP BY group_type\nORDER BY avg_score;\n"})
+
+Action: run_sql({'query': '\nSELECT vc.critical, COUNT(*) AS n_violation_citations, COUNT(DISTINCT vc.violation_code_id) AS n_distinct_codes\nFROM violations v JOIN violation_codes vc ON vc.violation_code_id = v.violation_code_id\nGROUP BY vc.critical;\n'})
+
+Observation: {"row_count": 4, "truncated": false, "rows": [{"group_type": "clean", "n_inspections": 1108, "avg_score": 1.7, "avg_n_critical": 0.0, "avg_n_noncritical": 0.0}, {"group_type": "noncritical_only", "n_inspections": 2073, "avg_score": 3.07, "avg_n_critical": 0.0, "avg_n_noncritical": 2.78}, {"group_type": "critical_only", "n_inspections": 530, "avg_score": 9.18, "avg_n_critical": 1.64, "avg_n_noncritical": 0.0}, {"group_type": "mixed", "n_inspections": 4309, "avg_score": 15.67, "avg_n_critical": 2.05, "avg_n_noncritical": 3.85}]}
+
+Observation: {"row_count": 2, "truncated": false, "rows": [{"critical": false, "n_violation_citations": 22339, "n_distinct_codes": 139}, {"critical": true, "n_violation_citations": 9690, "n_distinct_codes": 98}]}
+
+Action: run_sql({'query': '\nWITH inspection_flags AS (\n  SELECT i.inspection_id, i.inspection_score,\n         COALESCE(SUM(CASE WHEN vc.critical THEN 1 ELSE 0 END),0) AS n_critical,\n         COALESCE(SUM(CASE WHEN NOT vc.critical THEN 1 ELSE 0 END),0) AS n_noncritical\n  FROM inspections i\n  LEFT JOIN violations v ON v.inspection_id = i.inspection_id\n  LEFT JOIN violation_codes vc ON vc.violation_code_id = v.violation_code_id\n  GROUP BY i.inspection_id, i.inspection_score\n)\nSELECT n_critical, COUNT(*) n, ROUND(AVG(inspection_score),2) avg_score\nFROM inspection_flags\nWHERE n_critical <= 6\nGROUP BY n_critical ORDER BY n_critical;\n'})
+
+Action: run_sql({'query': '\nWITH inspection_flags AS (\n  SELECT i.inspection_id, i.inspection_score,\n         COALESCE(SUM(CASE WHEN vc.critical THEN 1 ELSE 0 END),0) AS n_critical,\n         COALESCE(SUM(CASE WHEN NOT vc.critical THEN 1 ELSE 0 END),0) AS n_noncritical\n  FROM inspections i\n  LEFT JOIN violations v ON v.inspection_id = i.inspection_id\n  LEFT JOIN violation_codes vc ON vc.violation_code_id = v.violation_code_id\n  GROUP BY i.inspection_id, i.inspection_score\n)\nSELECT n_noncritical, COUNT(*) n, ROUND(AVG(inspection_score),2) avg_score\nFROM inspection_flags\nWHERE n_noncritical <= 8\nGROUP BY n_noncritical ORDER BY n_noncritical;\n'})
+
+Observation: {"row_count": 7, "truncated": false, "rows": [{"n_critical": 0.0, "n": 3181, "avg_score": 2.66}, {"n_critical": 1.0, "n": 2390, "avg_score": 8.5}, {"n_critical": 2.0, "n": 1242, "avg_score": 14.72}, {"n_critical": 3.0, "n": 621, "avg_score": 21.38}, {"n_critical": 4.0, "n": 309, "avg_score": 28.48}, {"n_critical": 5.0, "n": 139, "avg_score": 34.77}, {"n_critical": 6.0, "n": 76, "avg_score": 43.33}]}
+
+Observation: {"row_count": 9, "truncated": false, "rows": [{"n_noncritical": 0.0, "n": 1638, "avg_score": 4.5}, {"n_noncritical": 1.0, "n": 1283, "avg_score": 5.6}, {"n_noncritical": 2.0, "n": 1370, "avg_score": 7.83}, {"n_noncritical": 3.0, "n": 1129, "avg_score": 9.88}, {"n_noncritical": 4.0, "n": 903, "avg_score": 12.03}, {"n_noncritical": 5.0, "n": 625, "avg_score": 14.66}, {"n_noncritical": 6.0, "n": 418, "avg_score": 18.45}, {"n_noncritical": 7.0, "n": 250, "avg_score": 20.81}, {"n_noncritical": 8.0, "n": 153, "avg_score": 26.3}]}
+
+Action: plot_chart({'query': "\nWITH inspection_flags AS (\n  SELECT i.inspection_id, i.inspection_score,\n         COALESCE(SUM(CASE WHEN vc.critical THEN 1 ELSE 0 END),0) AS n_critical,\n         COALESCE(SUM(CASE WHEN NOT vc.critical THEN 1 ELSE 0 END),0) AS n_noncritical\n  FROM inspections i\n  LEFT JOIN violations v ON v.inspection_id = i.inspection_id\n  LEFT JOIN violation_codes vc ON vc.violation_code_id = v.violation_code_id\n  GROUP BY i.inspection_id, i.inspection_score\n)\nSELECT\n  CASE WHEN n_critical=0 AND n_noncritical=0 THEN 'Clean (no violations)'\n       WHEN n_critical>0 AND n_noncritical=0 THEN 'Critical violations only'\n       WHEN n_critical=0 AND n_noncritical>0 THEN 'Non-critical violations only'\n       ELSE 'Mixed (both types)' END AS violation_profile,\n  ROUND(AVG(inspection_score),2) AS avg_inspection_score,\n  COUNT(*) AS n_inspections\nFROM inspection_flags\nGROUP BY violation_profile\nORDER BY avg_inspection_score\n", 'chart_type': 'bar', 'x': 'violation_profile', 'y': 'avg_inspection_score', 'title': 'Average Inspection Score by Violation Profile'})
+
+Action: plot_chart({'query': '\nWITH inspection_flags AS (\n  SELECT i.inspection_id, i.inspection_score,\n         COALESCE(SUM(CASE WHEN vc.critical THEN 1 ELSE 0 END),0) AS n_critical\n  FROM inspections i\n  LEFT JOIN violations v ON v.inspection_id = i.inspection_id\n  LEFT JOIN violation_codes vc ON vc.violation_code_id = v.violation_code_id\n  GROUP BY i.inspection_id, i.inspection_score\n)\nSELECT n_critical AS num_critical_violations, ROUND(AVG(inspection_score),2) AS avg_inspection_score\nFROM inspection_flags\nWHERE n_critical <= 6\nGROUP BY n_critical ORDER BY n_critical\n', 'chart_type': 'line', 'x': 'num_critical_violations', 'y': 'avg_inspection_score', 'title': 'Avg Inspection Score Rises Steeply with Number of Critical Violations'})
+
+Action: plot_chart({'query': '\nWITH inspection_flags AS (\n  SELECT i.inspection_id, i.inspection_score,\n         COALESCE(SUM(CASE WHEN NOT vc.critical THEN 1 ELSE 0 END),0) AS n_noncritical\n  FROM inspections i\n  LEFT JOIN violations v ON v.inspection_id = i.inspection_id\n  LEFT JOIN violation_codes vc ON vc.violation_code_id = v.violation_code_id\n  GROUP BY i.inspection_id, i.inspection_score\n)\nSELECT n_noncritical AS num_noncritical_violations, ROUND(AVG(inspection_score),2) AS avg_inspection_score\nFROM inspection_flags\nWHERE n_noncritical <= 8\nGROUP BY n_noncritical ORDER BY n_noncritical\n', 'chart_type': 'line', 'x': 'num_noncritical_violations', 'y': 'avg_inspection_score', 'title': 'Avg Inspection Score Rises More Gradually with Non-Critical Violations'})
+
+Observation: Chart created: 'Average Inspection Score by Violation Profile' (bar, 4 rows). It will be shown to the user below your answer.
+
+Observation: Chart created: 'Avg Inspection Score Rises Steeply with Number of Critical Violations' (line, 7 rows). It will be shown to the user below your answer.
+
+Observation: Chart created: 'Avg Inspection Score Rises More Gradually with Non-Critical Violations' (line, 9 rows). It will be shown to the user below your answer.
+
+--- Usage: 45050 tokens, ~$0.1294 ---

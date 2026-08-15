@@ -1,0 +1,2083 @@
+{
+  "source": "frontend",
+  "run_id": "6e389f97",
+  "timestamp": "2026-08-15T09:29:06.870951+00:00",
+  "variant": "v1_memory",
+  "provider": "anthropic",
+  "model": "claude-sonnet-5",
+  "question": "Between Thai and Korean restaurants, which cuisine has the higher average rating? Which one has more violations?",
+  "output_text": "## Ratings\n\n**Korean restaurants have the slightly higher average rating**: 4.52 (across 47 Korean establishments) vs. 4.45 for Thai (across 116 Thai establishments) on Google's 5-point scale. Both cuisines skew very high-rated \u2014 top performers in each category (e.g., Korealicious at 5.0, several Cupbop locations at 4.7\u20134.9; Taste of Thai Park City at 5.0, Tawan Thai at 5.0) show very little separation, so the ~0.07-point gap favoring Korean is modest, not dramatic.\n\n## Violations\n\nThis is where I have to be transparent about a data limitation: **neither cuisine has any restaurants with matched SLCHD inspection history in this dataset** \u2014 0 of the 116 Thai establishments and 0 of the 47 Korean establishments have a `slchd_establishment_key` match, meaning there are no inspection records or violations on file for either cuisine group. This isn't unusual \u2014 per the dataset's own coverage, about 98.4% of establishments overall lack matched inspection data \u2014 but it does mean I **cannot say which cuisine has more violations**, because there is literally zero violation evidence for either group in this database. Any claim comparing violation counts between Thai and Korean restaurants would not be grounded in actual data.\n\n**Bottom line:** Korean edges out Thai on average rating (4.52 vs 4.45), but the violations question is unanswerable from this data \u2014 no Thai or Korean establishment here has inspection/violation records on file.",
+  "structured_response": null,
+  "trace_text": "Action: get_schema({})\n\nObservation: Project food_health_viz {\n  database_type: 'DuckDB'\n}\n\nTable establishment_keys {\n  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']\n  name varchar [not null]\n  address varchar [not null]\n  city varchar [not null]\n  city_state_zip varchar\n  establishment_type varchar\n  source varchar [note: 'friend_slc | own_scrape']\n  slchd_lat double\n  slchd_lon double\n  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']\n\n  Note: 'SLCHD establishment list, one row per portal listing.'\n}\n\nTable category {\n  category_id integer [pk]\n  category varchar\n}\n\nTable establishments {\n  gmap_id varchar [pk]\n  name varchar\n  address varchar\n  description varchar\n  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']\n  avg_rating double\n  num_of_reviews integer\n  price varchar\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']\n\n  Note: 'One row per Google Local place \u2014 all restaurants, not just SLCHD-matched.'\n}\n\nTable establishment_attributes {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  attribute varchar [not null]\n\n  indexes { (gmap_id, attribute) [pk] }\n\n  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. \"Service options\") dropped.'\n}\n\nTable establishment_categories {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  category_id integer [ref: > category.category_id, not null]\n\n  indexes { (gmap_id, category_id) [pk] }\n}\n\nTable gmap_hours {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  day integer [not null, note: '0=Sun \u2026 6=Sat']\n  open_min bigint\n  open_max bigint\n\n  indexes { (gmap_id, day) [pk] }\n\n  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'\n}\n\nTable review {\n  user_id varchar\n  name varchar\n  time bigint\n  rating double\n  text varchar\n  resp varchar\n  gmap_id varchar [ref: > establishments.gmap_id]\n}\n\nTable inspection_types {\n  inspection_type_id integer [pk, note: 'parsed leading number, e.g. \"01 - Routine\" -> 1']\n  description varchar [note: 'e.g. \"Routine\"']\n}\n\nTable inspections {\n  inspection_id bigint [pk, increment]\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]\n  inspection_date date [not null]\n  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable \u2014 27 rows have no type']\n  inspection_score integer\n\n  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'\n}\n\nTable violation_codes {\n  violation_code_id integer [pk, increment]\n  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. \"4.5.18\"']\n  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']\n  critical boolean [not null]\n}\n\nTable violations {\n  violation_id bigint [pk, increment]\n  inspection_id bigint [ref: > inspections.inspection_id, not null]\n  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]\n  violation_description varchar [note: 'per-occurrence free text']\n  violation_occurrences integer\n  violation_cos boolean [note: 'corrected on site']\n  violation_phr varchar [note: 'public health rationale']\n\n  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'\n}\n\n\nAction: run_sql({'query': \"\\nSELECT c.category_group,\\n       COUNT(DISTINCT e.gmap_id) AS num_establishments,\\n       ROUND(AVG(e.avg_rating),3) AS avg_rating,\\n       ROUND(AVG(e.num_of_reviews),1) AS avg_reviews\\nFROM establishments e\\nJOIN establishment_categories ec ON ec.gmap_id = e.gmap_id\\nJOIN category c2 ON c2.category_id = ec.category_id,\\nLATERAL (SELECT CASE WHEN LOWER(c2.category) LIKE '%thai%' THEN 'Thai'\\n                     WHEN LOWER(c2.category) LIKE '%korean%' THEN 'Korean' END AS category_group) c\\nWHERE c.category_group IS NOT NULL\\nGROUP BY c.category_group\\n\"})\n\nAction: run_sql({'query': \"\\nWITH matched AS (\\n  SELECT DISTINCT e.gmap_id, e.slchd_establishment_key,\\n    CASE WHEN LOWER(c.category) LIKE '%thai%' THEN 'Thai'\\n         WHEN LOWER(c.category) LIKE '%korean%' THEN 'Korean' END AS category_group\\n  FROM establishments e\\n  JOIN establishment_categories ec ON ec.gmap_id = e.gmap_id\\n  JOIN category c ON c.category_id = ec.category_id\\n  WHERE e.slchd_establishment_key IS NOT NULL\\n    AND (LOWER(c.category) LIKE '%thai%' OR LOWER(c.category) LIKE '%korean%')\\n)\\nSELECT m.category_group,\\n       COUNT(DISTINCT m.gmap_id) AS num_matched_establishments,\\n       COUNT(v.violation_id) AS total_violations,\\n       SUM(CASE WHEN vc.critical THEN 1 ELSE 0 END) AS critical_violations\\nFROM matched m\\nJOIN inspections i ON i.slchd_establishment_key = m.slchd_establishment_key\\nJOIN violations v ON v.inspection_id = i.inspection_id\\nJOIN violation_codes vc ON vc.violation_code_id = v.violation_code_id\\nGROUP BY m.category_group\\n\"})\n\nObservation: {\"row_count\": 2, \"truncated\": false, \"rows\": [{\"category_group\": \"Thai\", \"num_establishments\": 116, \"avg_rating\": 4.454, \"avg_reviews\": 373.0}, {\"category_group\": \"Korean\", \"num_establishments\": 47, \"avg_rating\": 4.521, \"avg_reviews\": 489.6}]}\n\nObservation: {\"row_count\": 0, \"truncated\": false, \"rows\": []}\n\nAction: run_sql({'query': \"\\nSELECT DISTINCT e.gmap_id, e.name, e.slchd_establishment_key,\\n    CASE WHEN LOWER(c.category) LIKE '%thai%' THEN 'Thai'\\n         WHEN LOWER(c.category) LIKE '%korean%' THEN 'Korean' END AS category_group\\nFROM establishments e\\nJOIN establishment_categories ec ON ec.gmap_id = e.gmap_id\\nJOIN category c ON c.category_id = ec.category_id\\nWHERE e.slchd_establishment_key IS NOT NULL\\n    AND (LOWER(c.category) LIKE '%thai%' OR LOWER(c.category) LIKE '%korean%')\\n\"})\n\nObservation: {\"row_count\": 0, \"truncated\": false, \"rows\": []}\n\nAction: search_establishments({'category_contains': 'thai', 'require_inspection_data': True, 'limit': 50})\n\nAction: search_establishments({'category_contains': 'korean', 'require_inspection_data': True, 'limit': 50})\n\nAction: search_establishments({'category_contains': 'thai', 'sort_by': 'avg_rating', 'limit': 15})\n\nAction: search_establishments({'category_contains': 'korean', 'sort_by': 'avg_rating', 'limit': 15})\n\nObservation: {\"row_count\": 0, \"rows\": []}\n\nObservation: {\"row_count\": 0, \"rows\": []}\n\nObservation: {\"row_count\": 15, \"rows\": [{\"gmap_id\": \"0x87526db7784e3143:0xae8dd7cb09315b64\", \"name\": \"Taste of Thai (Park City)\", \"address\": \"Taste of Thai (Park City), 1241 Center Dr Unit L160, Park City, UT 84098\", \"latitude\": 40.7212421, \"longitude\": -111.5389746, \"avg_rating\": 5.0, \"num_of_reviews\": 26, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x874d85d538b183bb:0xf3c0830f64f5466a\", \"name\": \"Tawan Thai\", \"address\": \"Tawan Thai, 824 E 800 N, Orem, UT 84097\", \"latitude\": 40.3107398, \"longitude\": -111.6761608, \"avg_rating\": 5.0, \"num_of_reviews\": 5, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x874d9be94563d229:0xdf5fc98f461cbbb6\", \"name\": \"Suzy Thai Food\", \"address\": null, \"latitude\": 40.232943, \"longitude\": -111.6432336, \"avg_rating\": 5.0, \"num_of_reviews\": 44, \"price\": \"$$\", \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x875289cf5fce5e01:0xad451052bd93db14\", \"name\": \"Dee Garden Thai Kitchen\", \"address\": \"Dee Garden Thai Kitchen, 7098 S Redwood Rd, West Jordan, UT 84084\", \"latitude\": 40.62256, \"longitude\": -111.9403065, \"avg_rating\": 4.9, \"num_of_reviews\": 144, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x8752610e6310aad9:0xb543edc015c46530\", \"name\": \"ChaiYo Thai Togo\", \"address\": \"ChaiYo Thai Togo, 3804 Highland Dr Ste B2, Millcreek, UT 84106\", \"latitude\": 40.688364199999995, \"longitude\": -111.8462775, \"avg_rating\": 4.9, \"num_of_reviews\": 58, \"price\": \"$$\", \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x87528c76c227791f:0xd2fc86793fca8656\", \"name\": \"Thai Issan Restaurant and Mini-Mart\", \"address\": \"Thai Issan Restaurant and Mini-Mart, 2644 W 4700 S, Salt Lake City, UT 84129\", \"latitude\": 40.668973, \"longitude\": -111.9568478, \"avg_rating\": 4.8, \"num_of_reviews\": 318, \"price\": \"$\", \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x874d9707a9d442c3:0x3862609a35323bcc\", \"name\": \"Thai Neighbor Cuisine 1\", \"address\": \"Thai Neighbor Cuisine 1, 170 W 300 S, Provo, UT 84601\", \"latitude\": 40.2298489, \"longitude\": -111.6616192, \"avg_rating\": 4.8, \"num_of_reviews\": 228, \"price\": \"$\", \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x875305d03f9fce41:0x193a4ededc172507\", \"name\": \"Ros Ni Yuhm Thai Restaurant\", \"address\": \"Ros Ni Yuhm Thai Restaurant, 1813 Main St, Sunset, UT 84015\", \"latitude\": 41.1401562, \"longitude\": -112.0264677, \"avg_rating\": 4.8, \"num_of_reviews\": 158, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x80ca45727c7e5b09:0xc67d7f169a6d0735\", \"name\": \"Kitchen Thai Express\", \"address\": \"Kitchen Thai Express, 1626 W Sunset Blvd B101, St. George, UT 84770\", \"latitude\": 37.1236345, \"longitude\": -113.6182485, \"avg_rating\": 4.8, \"num_of_reviews\": 88, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x87528b67e26ee0fb:0xdc0b9b01a17dbe7e\", \"name\": \"Tuk Tuk\\u2019s\", \"address\": \"Tuk Tuk\\u2019s, 2222 W 3500 S b7, West Valley City, UT 84119\", \"latitude\": 40.6974909, \"longitude\": -111.9477123, \"avg_rating\": 4.8, \"num_of_reviews\": 298, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x87527363fe1fb11b:0x12a092deeac9eab6\", \"name\": \"Baan Thai Cuisine & Bar\", \"address\": \"Baan Thai Cuisine & Bar, 710 Main St suite 3-103, Park City, UT 84060\", \"latitude\": 40.6473242, \"longitude\": -111.4972752, \"avg_rating\": 4.8, \"num_of_reviews\": 108, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x874df5a5f2a33969:0x2f7f7dcd2853342f\", \"name\": \"Tawan Thai Restaurant\", \"address\": \"Tawan Thai Restaurant, 32 S Main St, Heber City, UT 84032\", \"latitude\": 40.5070987, \"longitude\": -111.4137493, \"avg_rating\": 4.8, \"num_of_reviews\": 57, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x80b56107561cf149:0x88f968c1a7b5d2a0\", \"name\": \"Bunnisa's Thai Cuisine\", \"address\": \"Bunnisa's Thai Cuisine, 5 N Main St, Cedar City, UT 84720\", \"latitude\": 37.677502, \"longitude\": -113.0623545, \"avg_rating\": 4.8, \"num_of_reviews\": 258, \"price\": \"$$\", \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x8752f50306891ca7:0x2febd8662871bd47\", \"name\": \"Laan Na Thai\", \"address\": \"Laan Na Thai, 336 W 300 S, Salt Lake City, UT 84101\", \"latitude\": 40.7630241, \"longitude\": -111.9008636, \"avg_rating\": 4.8, \"num_of_reviews\": 408, \"price\": \"$\", \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x87525f8d59172199:0x79548a0e5d3eee3d\", \"name\": \"Tandooria SLC\", \"address\": \"Tandooria SLC, 67 W 1700 S, Salt Lake City, UT 84115\", \"latitude\": 40.7333445, \"longitude\": -111.8931901, \"avg_rating\": 4.7, \"num_of_reviews\": 33, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}]}\n\nObservation: {\"row_count\": 15, \"rows\": [{\"gmap_id\": \"0x87547e0a554a8ec9:0xe0abdfe210790af6\", \"name\": \"Korealicious\", \"address\": \"Korealicious, 54 W 400 N, Logan, UT 84321\", \"latitude\": 41.7388112, \"longitude\": -111.8360808, \"avg_rating\": 5.0, \"num_of_reviews\": 108, \"price\": \"$\", \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x874d9b14ec07bdc5:0xc43290716588abbb\", \"name\": \"Katsu City\", \"address\": \"Katsu City, 1700 N State St #23, Provo, UT 84604\", \"latitude\": 40.2560091, \"longitude\": -111.6703358, \"avg_rating\": 4.9, \"num_of_reviews\": 58, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x8752bdb07d9cc6b9:0xcbfda0fa32c60a14\", \"name\": \"Cupbop - Korean BBQ\", \"address\": \"Cupbop - Korean BBQ, 1024 N Main St Ste B, Tooele, UT 84074\", \"latitude\": 40.551413, \"longitude\": -112.2975927, \"avg_rating\": 4.9, \"num_of_reviews\": 448, \"price\": \"$\", \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x874d9bab199d8c21:0x573cf4d6c1163514\", \"name\": \"Cupbop - Korean BBQ\", \"address\": \"Cupbop - Korean BBQ, 719 E University Pkwy, Orem, UT 84097\", \"latitude\": 40.2735785, \"longitude\": -111.6785658, \"avg_rating\": 4.8, \"num_of_reviews\": 1195, \"price\": \"$\", \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x874d90a463f7482d:0x24ef3f25dd416519\", \"name\": \"Koko Lunchbox\", \"address\": \"Koko Lunchbox, 1175 N Canyon Rd #3420, Provo, UT 84604\", \"latitude\": 40.2496979, \"longitude\": -111.6573679, \"avg_rating\": 4.8, \"num_of_reviews\": 908, \"price\": \"$\", \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x87530c1e6178d57f:0x14134bad410f742f\", \"name\": \"Bibop Korean BBQ LLC\", \"address\": \"Bibop Korean BBQ LLC, 333 2nd St #10, Ogden, UT 84404\", \"latitude\": 41.2584811, \"longitude\": -111.9716507, \"avg_rating\": 4.8, \"num_of_reviews\": 158, \"price\": \"$$\", \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x87528bed7a776daf:0x5c00fdfa5893cc37\", \"name\": \"Sanfran Burrito N Fryz\", \"address\": \"Sanfran Burrito N Fryz, 3390 S State St STE35, Salt Lake City, UT 84115\", \"latitude\": 40.6979847, \"longitude\": -111.8890771, \"avg_rating\": 4.8, \"num_of_reviews\": 47, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x8752f5cdbf09e4e9:0x9e0c6c8d1ebe68c8\", \"name\": \"Cupbop - Korean BBQ\", \"address\": \"Cupbop - Korean BBQ, 45 E Broadway, Salt Lake City, UT 84111\", \"latitude\": 40.763146, \"longitude\": -111.8897385, \"avg_rating\": 4.8, \"num_of_reviews\": 818, \"price\": \"$\", \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x87531b5bf85fd901:0x82f2bf5d16327b1f\", \"name\": \"Jin's Restaurant\", \"address\": \"Jin's Restaurant, 2052 W 1700 S b6, Syracuse, UT 84075\", \"latitude\": 41.0894444, \"longitude\": -112.0655556, \"avg_rating\": 4.8, \"num_of_reviews\": 338, \"price\": \"$$\", \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x80ca5ba224111c31:0x8b009a1d5eba0a0d\", \"name\": \"Flavor of Seoul (Casual Korean Restaurant)\", \"address\": \"Flavor of Seoul (Casual Korean Restaurant), 568 W Telegraph St #8, Washington, UT 84780\", \"latitude\": 37.1300159, \"longitude\": -113.5188039, \"avg_rating\": 4.8, \"num_of_reviews\": 328, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x87530f6a704af3c3:0x28467b0626901dc4\", \"name\": \"Kogane Korean Kitchen\", \"address\": \"Kogane Korean Kitchen, 458 40th St, Ogden, UT 84403\", \"latitude\": 41.190705, \"longitude\": -111.969536, \"avg_rating\": 4.8, \"num_of_reviews\": 278, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x87528d9cd06cfb41:0x3bf71f0c96a7d42\", \"name\": \"Paik's Noodle / HongKong Banjum 0410\", \"address\": \"Paik's Noodle / HongKong Banjum 0410, 3513s Constitution Blvd #100, West Valley City, UT 84119\", \"latitude\": 40.6962494, \"longitude\": -111.9561513, \"avg_rating\": 4.8, \"num_of_reviews\": 188, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x87526344b266fc7b:0x927a92d9d730c66\", \"name\": \"Cupbop - Korean BBQ\", \"address\": \"Cupbop - Korean BBQ, 7178 Union Park Ave, Midvale, UT 84047\", \"latitude\": 40.6210935, \"longitude\": -111.8565558, \"avg_rating\": 4.8, \"num_of_reviews\": 158, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x8752857788e92fe7:0x6bf70774f597ce8c\", \"name\": \"Cupbop - Korean BBQ\", \"address\": \"Cupbop - Korean BBQ, 11259 Kestrel Rise Rd Suite 100, South Jordan, UT 84095\", \"latitude\": 40.546715299999995, \"longitude\": -112.0019626, \"avg_rating\": 4.7, \"num_of_reviews\": 1204, \"price\": \"$\", \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x8753038d0e4b7213:0x6132ac6a905b503a\", \"name\": \"Seoul Korean Restaurant UT\", \"address\": \"Seoul Korean Restaurant UT, 2625 N Hill Field Rd, Layton, UT 84041\", \"latitude\": 41.098334, \"longitude\": -111.974094, \"avg_rating\": 4.7, \"num_of_reviews\": 73, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}]}\n\nAction: plot_chart({'query': \"\\nSELECT c.category_group AS cuisine, ROUND(AVG(e.avg_rating),3) AS avg_rating\\nFROM establishments e\\nJOIN establishment_categories ec ON ec.gmap_id = e.gmap_id\\nJOIN category c2 ON c2.category_id = ec.category_id,\\nLATERAL (SELECT CASE WHEN LOWER(c2.category) LIKE '%thai%' THEN 'Thai'\\n                     WHEN LOWER(c2.category) LIKE '%korean%' THEN 'Korean' END AS category_group) c\\nWHERE c.category_group IS NOT NULL\\nGROUP BY c.category_group\\n\", 'chart_type': 'bar', 'x': 'cuisine', 'y': 'avg_rating', 'title': 'Average Google rating: Thai vs Korean restaurants'})\n\nAction: plot_chart({'query': \"\\nSELECT c.category_group AS cuisine, COUNT(DISTINCT e.gmap_id) AS num_establishments_with_inspection_data\\nFROM establishments e\\nJOIN establishment_categories ec ON ec.gmap_id = e.gmap_id\\nJOIN category c2 ON c2.category_id = ec.category_id,\\nLATERAL (SELECT CASE WHEN LOWER(c2.category) LIKE '%thai%' THEN 'Thai'\\n                     WHEN LOWER(c2.category) LIKE '%korean%' THEN 'Korean' END AS category_group) c\\nWHERE c.category_group IS NOT NULL AND e.slchd_establishment_key IS NOT NULL\\nGROUP BY c.category_group\\n\", 'chart_type': 'bar', 'x': 'cuisine', 'y': 'num_establishments_with_inspection_data', 'title': 'Thai vs Korean restaurants with matched SLCHD inspection data (violations available)'})\n\nObservation: Chart created: 'Average Google rating: Thai vs Korean restaurants' (bar, 2 rows). It will be shown to the user below your answer.\n\nObservation: Query returned no rows, nothing to plot.\n\nAction: plot_chart({'query': \"\\nWITH cats AS (SELECT 'Thai' AS cuisine UNION ALL SELECT 'Korean'),\\nmatched AS (\\n  SELECT DISTINCT e.gmap_id,\\n    CASE WHEN LOWER(c2.category) LIKE '%thai%' THEN 'Thai'\\n         WHEN LOWER(c2.category) LIKE '%korean%' THEN 'Korean' END AS cuisine\\n  FROM establishments e\\n  JOIN establishment_categories ec ON ec.gmap_id = e.gmap_id\\n  JOIN category c2 ON c2.category_id = ec.category_id\\n  WHERE e.slchd_establishment_key IS NOT NULL\\n)\\nSELECT cats.cuisine, COUNT(matched.gmap_id) AS num_matched_with_inspection_data\\nFROM cats LEFT JOIN matched ON matched.cuisine = cats.cuisine\\nGROUP BY cats.cuisine\\n\", 'chart_type': 'bar', 'x': 'cuisine', 'y': 'num_matched_with_inspection_data', 'title': 'Thai vs Korean: establishments with matched SLCHD inspection/violation data'})\n\nObservation: Chart created: 'Thai vs Korean: establishments with matched SLCHD inspection/violation data' (bar, 2 rows). It will be shown to the user below your answer.",
+  "timeline": [],
+  "messages": [
+    {
+      "type": "HumanMessage",
+      "content": "Between Thai and Korean restaurants, which cuisine has the higher average rating? Which one has more violations?"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [
+        {
+          "signature": "EskHCokBCBAYAipA4iwWp5CA4t41sPxNmZ/ohsxu+uZzbFmAytv06T8NDCQRGNVeccK62bZ01yWMo65Tuh+/581Q+5x1LlW+5lVutzIPY2xhdWRlLXNvbm5ldC01OABCCHRoaW5raW5nWiQ3M2FiYWQ1Yy1lZWVhLTQ3N2QtYjUyMC1jODJlMDYxMDc1NWMSDDk8BUIOj3WsViBrMhoMiXhCiebVtI8DQ4fiIjA4noZNUOHo9OJrv7iiKnvhuXtuwBgEf2hqatg5aTwZlmlL4rBBusvtSH4MS9hsHCUq7AXtjPzv5YcqU//G6mICGFsN9MUs1ftUKBvdoulg3TmXy722evOUqK9wt8zwZK4Sz7K0h83FqFunYuHYRGCsFmY7LBu80Ud2GTLjqiYZ0T6UhqHf8lWoavsml/ITKtdOkHMi7gkVkzAo1Nx38Wlh9TtJrXO4w2R5E2jAj9QX3oZtfS75TQ98o72CLjJzpPxeqEINyQoPTnf+qgDzJRqFnF+tarDG+blm/3rMH6kBYbq965eGyWUN7i7tTCV/n2K7FJSAIWYMjjVrIX4jK16+1P28OVSFiWjYlvZ4Z75JyJUx+v9eKO0GPVwVTLA/hnauseIFfzjMBz666xXOoi0huxXwwAHGaA8mAwIEEGkcSD/lJC1NKgdiQQSu3oO6zqCAcgKdOCsn46zK+kKG0cv1aGtaFMYKpaysf9VGkk7g+MAMp7h8kczteaEqLD4eYYZkve4xdjdZgBNtjvWP9mjLe8+g/2EZlucY3ZZi8qlEa9iDXge6AFsIHAIoA/pYHjbD12QqJBdu7midMYHMtelqgjk5hzjx3RrZ4fT+2dRlbZv8P2IN4dIr2O2Qv2I9nkyaKKa+W+9v9nzBIBJOrbFRjDlyWSNy7GHAk5dnf/uNDIY14fTdoDOTozzIAw64ngPv3uGZOcXt/qYzNxVQ/2j3EivAYCSZVkGOhBSUPUz8jkbuJ492U7X4QgVzXO4/+fFWyfNgIqA7H397F0GAdGOMLf8t+NDOTCa73mWFr7Jzt5D4eZ9YseCGhZKiHgeNTvYPVpwIU1W0LyuILKdduvWHtoDg/X3DjQDz0/uuHKLRYJf1FJiBNtw/+5PcmHWkfqUX8PwvF11/pDeGQx7GWBoQHPYF0Yvl0b3f2gMVVhO7x7dVKy+gCxbSOkavMiMmvavT0Dra7GL349ulxP4k6N0PaYA9v1eaA4VTVHMIQD9ZwXSTAbuBJUUcWmvz4F53K7i0viFD50TF1LQdA+lTwHmviEQ60G7E9SguiAVj1FEeGAE=",
+          "thinking": "",
+          "type": "thinking"
+        },
+        {
+          "id": "toolu_01TuzHEzd33sTZ2igHX4mS4S",
+          "caller": {
+            "type": "direct"
+          },
+          "input": {},
+          "name": "get_schema",
+          "type": "tool_use"
+        }
+      ],
+      "tool_calls": [
+        {
+          "name": "get_schema",
+          "args": {},
+          "id": "toolu_01TuzHEzd33sTZ2igHX4mS4S",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 3448,
+        "output_tokens": 251,
+        "total_tokens": 3699,
+        "input_token_details": {
+          "cache_read": 0,
+          "cache_creation": 0,
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "output_token_details": {
+          "reasoning": 223
+        }
+      },
+      "model_name": "claude-sonnet-5"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "Project food_health_viz {\n  database_type: 'DuckDB'\n}\n\nTable establishment_keys {\n  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']\n  name varchar [not null]\n  address varchar [not null]\n  city varchar [not null]\n  city_state_zip varchar\n  establishment_type varchar\n  source varchar [note: 'friend_slc | own_scrape']\n  slchd_lat double\n  slchd_lon double\n  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']\n\n  Note: 'SLCHD establishment list, one row per portal listing.'\n}\n\nTable category {\n  category_id integer [pk]\n  category varchar\n}\n\nTable establishments {\n  gmap_id varchar [pk]\n  name varchar\n  address varchar\n  description varchar\n  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']\n  avg_rating double\n  num_of_reviews integer\n  price varchar\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']\n\n  Note: 'One row per Google Local place \u2014 all restaurants, not just SLCHD-matched.'\n}\n\nTable establishment_attributes {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  attribute varchar [not null]\n\n  indexes { (gmap_id, attribute) [pk] }\n\n  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. \"Service options\") dropped.'\n}\n\nTable establishment_categories {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  category_id integer [ref: > category.category_id, not null]\n\n  indexes { (gmap_id, category_id) [pk] }\n}\n\nTable gmap_hours {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  day integer [not null, note: '0=Sun \u2026 6=Sat']\n  open_min bigint\n  open_max bigint\n\n  indexes { (gmap_id, day) [pk] }\n\n  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'\n}\n\nTable review {\n  user_id varchar\n  name varchar\n  time bigint\n  rating double\n  text varchar\n  resp varchar\n  gmap_id varchar [ref: > establishments.gmap_id]\n}\n\nTable inspection_types {\n  inspection_type_id integer [pk, note: 'parsed leading number, e.g. \"01 - Routine\" -> 1']\n  description varchar [note: 'e.g. \"Routine\"']\n}\n\nTable inspections {\n  inspection_id bigint [pk, increment]\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]\n  inspection_date date [not null]\n  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable \u2014 27 rows have no type']\n  inspection_score integer\n\n  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'\n}\n\nTable violation_codes {\n  violation_code_id integer [pk, increment]\n  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. \"4.5.18\"']\n  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']\n  critical boolean [not null]\n}\n\nTable violations {\n  violation_id bigint [pk, increment]\n  inspection_id bigint [ref: > inspections.inspection_id, not null]\n  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]\n  violation_description varchar [note: 'per-occurrence free text']\n  violation_occurrences integer\n  violation_cos boolean [note: 'corrected on site']\n  violation_phr varchar [note: 'public health rationale']\n\n  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'\n}\n",
+      "tool_call_id": "toolu_01TuzHEzd33sTZ2igHX4mS4S",
+      "name": "get_schema"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [
+        {
+          "signature": "EtwFCokBCBAYAipAT1LsiY8iB7QjeIvJ1x5B9/uet30MhuKkhLuFoOb1eslrfvwdXJBz91+nFSobuMv9vNSg0bkWJy+igWvVk26+GjIPY2xhdWRlLXNvbm5ldC01OABCCHRoaW5raW5nWiQ3M2FiYWQ1Yy1lZWVhLTQ3N2QtYjUyMC1jODJlMDYxMDc1NWMSDHJrk8PtWFlVV2fBwxoMr35CD6F1je0epi8VIjAfwzpgLasy1o1TzJZAkrfZZDpcxEY4Va1EFTXMF8oFMX/8pPG6n0RImkSEB9hxjJgq/wPhWuirEfkyLFigmRdKFNBVK/pxjznU3Xa4fdu21tXdR+eSruVAgGcKn2lXUKAvm3cDU17lSuGrCDg/mFlRfwJuwwBaB/7SLSlgeOnVwXn93xKjka9QKiQuLc5Q04+0umTfaeY2yd4wxcryum7iKcXTEjjPdL0fUy0zWB/pcnGOPFPlgMh7+u4Y+NtW0Ks5poPRthD/W+8+/63MZEJ22f1eBabKmCh5Vy0kjioMKRaxLMw4dP/ZwXSxIwIX8MJY2bpd61vSdIrwXBlaOavihU538aoWUmu6bJcHw5okfg7vynW7VfnwBv3BTbHb6Y3i4WhrZWo64q7lRC/6Kf2jV6/DZi5n7zy00xnxamM3JK/MVp5xYEw4INPh0BtgPw0ait/V5KsEmUTKK+oSHKdF8/YUx9KEPZgohENHnngZ3zXMBef+0LGOALDa5TRuitihhKhyMrkXU17uH7aguZ0P3EYmJSW7JMIj3pYPIRqRt+WHUmWPt79S61sGjqfoslkM8UN/TN7w/CkRtcBVyX1Ss6p6PKfhfvLyHhnJUK4BCkAiPL3CV/kFhB83ERc0oSqVZV2pR4bqvqpO9eLQlm/qXCMdxce4H85UUJcbW5xN8mjaLK4WQlLnE9ONcDw4INe3G2g15U5LGHS71/oXAW23JESlS9TI72ogue2k3FH1LnN9GAE=",
+          "thinking": "",
+          "type": "thinking"
+        },
+        {
+          "id": "toolu_01GHBgE22k8HNCZkFMtzbYQt",
+          "caller": {
+            "type": "direct"
+          },
+          "input": {
+            "query": "\nSELECT c.category_group,\n       COUNT(DISTINCT e.gmap_id) AS num_establishments,\n       ROUND(AVG(e.avg_rating),3) AS avg_rating,\n       ROUND(AVG(e.num_of_reviews),1) AS avg_reviews\nFROM establishments e\nJOIN establishment_categories ec ON ec.gmap_id = e.gmap_id\nJOIN category c2 ON c2.category_id = ec.category_id,\nLATERAL (SELECT CASE WHEN LOWER(c2.category) LIKE '%thai%' THEN 'Thai'\n                     WHEN LOWER(c2.category) LIKE '%korean%' THEN 'Korean' END AS category_group) c\nWHERE c.category_group IS NOT NULL\nGROUP BY c.category_group\n"
+          },
+          "name": "run_sql",
+          "type": "tool_use"
+        },
+        {
+          "id": "toolu_01AAfnEm1G28YodFdLVFNsGs",
+          "caller": {
+            "type": "direct"
+          },
+          "input": {
+            "query": "\nWITH matched AS (\n  SELECT DISTINCT e.gmap_id, e.slchd_establishment_key,\n    CASE WHEN LOWER(c.category) LIKE '%thai%' THEN 'Thai'\n         WHEN LOWER(c.category) LIKE '%korean%' THEN 'Korean' END AS category_group\n  FROM establishments e\n  JOIN establishment_categories ec ON ec.gmap_id = e.gmap_id\n  JOIN category c ON c.category_id = ec.category_id\n  WHERE e.slchd_establishment_key IS NOT NULL\n    AND (LOWER(c.category) LIKE '%thai%' OR LOWER(c.category) LIKE '%korean%')\n)\nSELECT m.category_group,\n       COUNT(DISTINCT m.gmap_id) AS num_matched_establishments,\n       COUNT(v.violation_id) AS total_violations,\n       SUM(CASE WHEN vc.critical THEN 1 ELSE 0 END) AS critical_violations\nFROM matched m\nJOIN inspections i ON i.slchd_establishment_key = m.slchd_establishment_key\nJOIN violations v ON v.inspection_id = i.inspection_id\nJOIN violation_codes vc ON vc.violation_code_id = v.violation_code_id\nGROUP BY m.category_group\n"
+          },
+          "name": "run_sql",
+          "type": "tool_use"
+        }
+      ],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "\nSELECT c.category_group,\n       COUNT(DISTINCT e.gmap_id) AS num_establishments,\n       ROUND(AVG(e.avg_rating),3) AS avg_rating,\n       ROUND(AVG(e.num_of_reviews),1) AS avg_reviews\nFROM establishments e\nJOIN establishment_categories ec ON ec.gmap_id = e.gmap_id\nJOIN category c2 ON c2.category_id = ec.category_id,\nLATERAL (SELECT CASE WHEN LOWER(c2.category) LIKE '%thai%' THEN 'Thai'\n                     WHEN LOWER(c2.category) LIKE '%korean%' THEN 'Korean' END AS category_group) c\nWHERE c.category_group IS NOT NULL\nGROUP BY c.category_group\n"
+          },
+          "id": "toolu_01GHBgE22k8HNCZkFMtzbYQt",
+          "type": "tool_call"
+        },
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "\nWITH matched AS (\n  SELECT DISTINCT e.gmap_id, e.slchd_establishment_key,\n    CASE WHEN LOWER(c.category) LIKE '%thai%' THEN 'Thai'\n         WHEN LOWER(c.category) LIKE '%korean%' THEN 'Korean' END AS category_group\n  FROM establishments e\n  JOIN establishment_categories ec ON ec.gmap_id = e.gmap_id\n  JOIN category c ON c.category_id = ec.category_id\n  WHERE e.slchd_establishment_key IS NOT NULL\n    AND (LOWER(c.category) LIKE '%thai%' OR LOWER(c.category) LIKE '%korean%')\n)\nSELECT m.category_group,\n       COUNT(DISTINCT m.gmap_id) AS num_matched_establishments,\n       COUNT(v.violation_id) AS total_violations,\n       SUM(CASE WHEN vc.critical THEN 1 ELSE 0 END) AS critical_violations\nFROM matched m\nJOIN inspections i ON i.slchd_establishment_key = m.slchd_establishment_key\nJOIN violations v ON v.inspection_id = i.inspection_id\nJOIN violation_codes vc ON vc.violation_code_id = v.violation_code_id\nGROUP BY m.category_group\n"
+          },
+          "id": "toolu_01AAfnEm1G28YodFdLVFNsGs",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 5112,
+        "output_tokens": 1003,
+        "total_tokens": 6115,
+        "input_token_details": {
+          "cache_read": 0,
+          "cache_creation": 0,
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "output_token_details": {
+          "reasoning": 157
+        }
+      },
+      "model_name": "claude-sonnet-5"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 2, \"truncated\": false, \"rows\": [{\"category_group\": \"Thai\", \"num_establishments\": 116, \"avg_rating\": 4.454, \"avg_reviews\": 373.0}, {\"category_group\": \"Korean\", \"num_establishments\": 47, \"avg_rating\": 4.521, \"avg_reviews\": 489.6}]}",
+      "tool_call_id": "toolu_01GHBgE22k8HNCZkFMtzbYQt",
+      "name": "run_sql"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 0, \"truncated\": false, \"rows\": []}",
+      "tool_call_id": "toolu_01AAfnEm1G28YodFdLVFNsGs",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [
+        {
+          "signature": "ErsDCokBCBAYAipAN9NkCpisW2VJxUeZCEULJb3LoJKLePz5NJLeUApuNTsJJXYr/9j+H+7PDDF0Aq+lPcGYYI1wEMonzNKrkgiUljIPY2xhdWRlLXNvbm5ldC01OABCCHRoaW5raW5nWiQ3M2FiYWQ1Yy1lZWVhLTQ3N2QtYjUyMC1jODJlMDYxMDc1NWMSDJ7pkmqQYh8Q7/OPABoM/rlRs8h+++REZJL1IjDyQ+iKQGRTdMLt7FzX+2E7yvksRT88JvkJhssmRnjrXniq5KTHfFOgOEDtC7EpAJkq3gErCr2vphJIrarPezFeART5iyf09JoKoxF1c4n7UEMCOiEfay7ad3GpCcM8QV/UE4LBeMUPM1rxaBU/cRQ8QZMppfRr9/y/Ly3BevEfN8uqFck5rKSZXh81jiIV/W8dlYeBBRjMiHFbAY+zxc5zB8c/756aV49YVyaxatPcckfHIZeLyXWY4rxgQ68T5B6aG6KdVGn7HPp8NOrRuPYXvGi0uHTWVOw69RsY6pIqOGYG4vFaDuAHQJMHY9dpUNofhajFpCTs7pOu+nPoEASpveIa21s3TXvWgs9CSn2o7/MYAQ==",
+          "thinking": "",
+          "type": "thinking"
+        },
+        {
+          "id": "toolu_01FGPhDJ9J91B1U9oE3w4bnR",
+          "caller": {
+            "type": "direct"
+          },
+          "input": {
+            "query": "\nSELECT DISTINCT e.gmap_id, e.name, e.slchd_establishment_key,\n    CASE WHEN LOWER(c.category) LIKE '%thai%' THEN 'Thai'\n         WHEN LOWER(c.category) LIKE '%korean%' THEN 'Korean' END AS category_group\nFROM establishments e\nJOIN establishment_categories ec ON ec.gmap_id = e.gmap_id\nJOIN category c ON c.category_id = ec.category_id\nWHERE e.slchd_establishment_key IS NOT NULL\n    AND (LOWER(c.category) LIKE '%thai%' OR LOWER(c.category) LIKE '%korean%')\n"
+          },
+          "name": "run_sql",
+          "type": "tool_use"
+        }
+      ],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "\nSELECT DISTINCT e.gmap_id, e.name, e.slchd_establishment_key,\n    CASE WHEN LOWER(c.category) LIKE '%thai%' THEN 'Thai'\n         WHEN LOWER(c.category) LIKE '%korean%' THEN 'Korean' END AS category_group\nFROM establishments e\nJOIN establishment_categories ec ON ec.gmap_id = e.gmap_id\nJOIN category c ON c.category_id = ec.category_id\nWHERE e.slchd_establishment_key IS NOT NULL\n    AND (LOWER(c.category) LIKE '%thai%' OR LOWER(c.category) LIKE '%korean%')\n"
+          },
+          "id": "toolu_01FGPhDJ9J91B1U9oE3w4bnR",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 6311,
+        "output_tokens": 353,
+        "total_tokens": 6664,
+        "input_token_details": {
+          "cache_read": 0,
+          "cache_creation": 0,
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "output_token_details": {
+          "reasoning": 63
+        }
+      },
+      "model_name": "claude-sonnet-5"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 0, \"truncated\": false, \"rows\": []}",
+      "tool_call_id": "toolu_01FGPhDJ9J91B1U9oE3w4bnR",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [
+        {
+          "signature": "EucDCokBCBAYAipAsbDIzOPhplzHqbwgiuWIyusGtD7M67YheM+l5/i59Hb3qnLWJo2F7kvSPgPvyS4uvDMmWPzpIJ6TueeQKlugPjIPY2xhdWRlLXNvbm5ldC01OABCCHRoaW5raW5nWiQ3M2FiYWQ1Yy1lZWVhLTQ3N2QtYjUyMC1jODJlMDYxMDc1NWMSDA3R8avgkWOFVkXCrxoMJfDXfLmPyPaGdtI3IjDs4VrMwQiPfeHl9CI+2vWbVviukTd2DALRA64tN3Lehiclmg4b9J/4nRjYSjlL7zcqigJDmwu7i/6CcdrhkAjww9helUZf3aPU9olA9oEj13jYNskBuEWOhLjZGXmnb3s5fWyGN/h+qpDpGReKtLk6LB+LR29uoqRMNltQn7m9YKgL1qqDHbRDu2Nm34asRJQwiA/ZLF9jvl0XtvhJhUO+G6R0dszpYVAKFNWWR6uSqSxBhPQTL1so5GJgjh27b95ddH2q6hR7+EWa/Fmqm8awgdewdA7TTcyOQTo1fxpKDrmIJW9jNu1KhliNLNEVZRQ1CtBvvsCLl9jougS7KZ8VRaGla0E8y5MT4eEsRSCb1Xyviu8a9VFaWo9fyUyXp/o36jiG1v+mvNYR7owXlh/y6Jame9QzeJ/Ab0Uq0xgB",
+          "thinking": "",
+          "type": "thinking"
+        },
+        {
+          "id": "toolu_01UWeuFH9MpLuL57LLnL84eK",
+          "caller": {
+            "type": "direct"
+          },
+          "input": {
+            "category_contains": "thai",
+            "require_inspection_data": true,
+            "limit": 50
+          },
+          "name": "search_establishments",
+          "type": "tool_use"
+        },
+        {
+          "id": "toolu_01VKroRJkvbEuxDBcdq9NoVP",
+          "caller": {
+            "type": "direct"
+          },
+          "input": {
+            "category_contains": "korean",
+            "require_inspection_data": true,
+            "limit": 50
+          },
+          "name": "search_establishments",
+          "type": "tool_use"
+        },
+        {
+          "id": "toolu_01RL4mWqKSnL71Fcx62rsQnH",
+          "caller": {
+            "type": "direct"
+          },
+          "input": {
+            "category_contains": "thai",
+            "sort_by": "avg_rating",
+            "limit": 15
+          },
+          "name": "search_establishments",
+          "type": "tool_use"
+        },
+        {
+          "id": "toolu_01Nh4cT4iAmQQzzopThPJMhT",
+          "caller": {
+            "type": "direct"
+          },
+          "input": {
+            "category_contains": "korean",
+            "sort_by": "avg_rating",
+            "limit": 15
+          },
+          "name": "search_establishments",
+          "type": "tool_use"
+        }
+      ],
+      "tool_calls": [
+        {
+          "name": "search_establishments",
+          "args": {
+            "category_contains": "thai",
+            "require_inspection_data": true,
+            "limit": 50
+          },
+          "id": "toolu_01UWeuFH9MpLuL57LLnL84eK",
+          "type": "tool_call"
+        },
+        {
+          "name": "search_establishments",
+          "args": {
+            "category_contains": "korean",
+            "require_inspection_data": true,
+            "limit": 50
+          },
+          "id": "toolu_01VKroRJkvbEuxDBcdq9NoVP",
+          "type": "tool_call"
+        },
+        {
+          "name": "search_establishments",
+          "args": {
+            "category_contains": "thai",
+            "sort_by": "avg_rating",
+            "limit": 15
+          },
+          "id": "toolu_01RL4mWqKSnL71Fcx62rsQnH",
+          "type": "tool_call"
+        },
+        {
+          "name": "search_establishments",
+          "args": {
+            "category_contains": "korean",
+            "sort_by": "avg_rating",
+            "limit": 15
+          },
+          "id": "toolu_01Nh4cT4iAmQQzzopThPJMhT",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 6691,
+        "output_tokens": 482,
+        "total_tokens": 7173,
+        "input_token_details": {
+          "cache_read": 0,
+          "cache_creation": 0,
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "output_token_details": {
+          "reasoning": 80
+        }
+      },
+      "model_name": "claude-sonnet-5"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 0, \"rows\": []}",
+      "tool_call_id": "toolu_01UWeuFH9MpLuL57LLnL84eK",
+      "name": "search_establishments"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 0, \"rows\": []}",
+      "tool_call_id": "toolu_01VKroRJkvbEuxDBcdq9NoVP",
+      "name": "search_establishments"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 15, \"rows\": [{\"gmap_id\": \"0x87526db7784e3143:0xae8dd7cb09315b64\", \"name\": \"Taste of Thai (Park City)\", \"address\": \"Taste of Thai (Park City), 1241 Center Dr Unit L160, Park City, UT 84098\", \"latitude\": 40.7212421, \"longitude\": -111.5389746, \"avg_rating\": 5.0, \"num_of_reviews\": 26, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x874d85d538b183bb:0xf3c0830f64f5466a\", \"name\": \"Tawan Thai\", \"address\": \"Tawan Thai, 824 E 800 N, Orem, UT 84097\", \"latitude\": 40.3107398, \"longitude\": -111.6761608, \"avg_rating\": 5.0, \"num_of_reviews\": 5, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x874d9be94563d229:0xdf5fc98f461cbbb6\", \"name\": \"Suzy Thai Food\", \"address\": null, \"latitude\": 40.232943, \"longitude\": -111.6432336, \"avg_rating\": 5.0, \"num_of_reviews\": 44, \"price\": \"$$\", \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x875289cf5fce5e01:0xad451052bd93db14\", \"name\": \"Dee Garden Thai Kitchen\", \"address\": \"Dee Garden Thai Kitchen, 7098 S Redwood Rd, West Jordan, UT 84084\", \"latitude\": 40.62256, \"longitude\": -111.9403065, \"avg_rating\": 4.9, \"num_of_reviews\": 144, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x8752610e6310aad9:0xb543edc015c46530\", \"name\": \"ChaiYo Thai Togo\", \"address\": \"ChaiYo Thai Togo, 3804 Highland Dr Ste B2, Millcreek, UT 84106\", \"latitude\": 40.688364199999995, \"longitude\": -111.8462775, \"avg_rating\": 4.9, \"num_of_reviews\": 58, \"price\": \"$$\", \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x87528c76c227791f:0xd2fc86793fca8656\", \"name\": \"Thai Issan Restaurant and Mini-Mart\", \"address\": \"Thai Issan Restaurant and Mini-Mart, 2644 W 4700 S, Salt Lake City, UT 84129\", \"latitude\": 40.668973, \"longitude\": -111.9568478, \"avg_rating\": 4.8, \"num_of_reviews\": 318, \"price\": \"$\", \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x874d9707a9d442c3:0x3862609a35323bcc\", \"name\": \"Thai Neighbor Cuisine 1\", \"address\": \"Thai Neighbor Cuisine 1, 170 W 300 S, Provo, UT 84601\", \"latitude\": 40.2298489, \"longitude\": -111.6616192, \"avg_rating\": 4.8, \"num_of_reviews\": 228, \"price\": \"$\", \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x875305d03f9fce41:0x193a4ededc172507\", \"name\": \"Ros Ni Yuhm Thai Restaurant\", \"address\": \"Ros Ni Yuhm Thai Restaurant, 1813 Main St, Sunset, UT 84015\", \"latitude\": 41.1401562, \"longitude\": -112.0264677, \"avg_rating\": 4.8, \"num_of_reviews\": 158, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x80ca45727c7e5b09:0xc67d7f169a6d0735\", \"name\": \"Kitchen Thai Express\", \"address\": \"Kitchen Thai Express, 1626 W Sunset Blvd B101, St. George, UT 84770\", \"latitude\": 37.1236345, \"longitude\": -113.6182485, \"avg_rating\": 4.8, \"num_of_reviews\": 88, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x87528b67e26ee0fb:0xdc0b9b01a17dbe7e\", \"name\": \"Tuk Tuk\\u2019s\", \"address\": \"Tuk Tuk\\u2019s, 2222 W 3500 S b7, West Valley City, UT 84119\", \"latitude\": 40.6974909, \"longitude\": -111.9477123, \"avg_rating\": 4.8, \"num_of_reviews\": 298, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x87527363fe1fb11b:0x12a092deeac9eab6\", \"name\": \"Baan Thai Cuisine & Bar\", \"address\": \"Baan Thai Cuisine & Bar, 710 Main St suite 3-103, Park City, UT 84060\", \"latitude\": 40.6473242, \"longitude\": -111.4972752, \"avg_rating\": 4.8, \"num_of_reviews\": 108, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x874df5a5f2a33969:0x2f7f7dcd2853342f\", \"name\": \"Tawan Thai Restaurant\", \"address\": \"Tawan Thai Restaurant, 32 S Main St, Heber City, UT 84032\", \"latitude\": 40.5070987, \"longitude\": -111.4137493, \"avg_rating\": 4.8, \"num_of_reviews\": 57, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x80b56107561cf149:0x88f968c1a7b5d2a0\", \"name\": \"Bunnisa's Thai Cuisine\", \"address\": \"Bunnisa's Thai Cuisine, 5 N Main St, Cedar City, UT 84720\", \"latitude\": 37.677502, \"longitude\": -113.0623545, \"avg_rating\": 4.8, \"num_of_reviews\": 258, \"price\": \"$$\", \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x8752f50306891ca7:0x2febd8662871bd47\", \"name\": \"Laan Na Thai\", \"address\": \"Laan Na Thai, 336 W 300 S, Salt Lake City, UT 84101\", \"latitude\": 40.7630241, \"longitude\": -111.9008636, \"avg_rating\": 4.8, \"num_of_reviews\": 408, \"price\": \"$\", \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x87525f8d59172199:0x79548a0e5d3eee3d\", \"name\": \"Tandooria SLC\", \"address\": \"Tandooria SLC, 67 W 1700 S, Salt Lake City, UT 84115\", \"latitude\": 40.7333445, \"longitude\": -111.8931901, \"avg_rating\": 4.7, \"num_of_reviews\": 33, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}]}",
+      "tool_call_id": "toolu_01RL4mWqKSnL71Fcx62rsQnH",
+      "name": "search_establishments"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 15, \"rows\": [{\"gmap_id\": \"0x87547e0a554a8ec9:0xe0abdfe210790af6\", \"name\": \"Korealicious\", \"address\": \"Korealicious, 54 W 400 N, Logan, UT 84321\", \"latitude\": 41.7388112, \"longitude\": -111.8360808, \"avg_rating\": 5.0, \"num_of_reviews\": 108, \"price\": \"$\", \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x874d9b14ec07bdc5:0xc43290716588abbb\", \"name\": \"Katsu City\", \"address\": \"Katsu City, 1700 N State St #23, Provo, UT 84604\", \"latitude\": 40.2560091, \"longitude\": -111.6703358, \"avg_rating\": 4.9, \"num_of_reviews\": 58, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x8752bdb07d9cc6b9:0xcbfda0fa32c60a14\", \"name\": \"Cupbop - Korean BBQ\", \"address\": \"Cupbop - Korean BBQ, 1024 N Main St Ste B, Tooele, UT 84074\", \"latitude\": 40.551413, \"longitude\": -112.2975927, \"avg_rating\": 4.9, \"num_of_reviews\": 448, \"price\": \"$\", \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x874d9bab199d8c21:0x573cf4d6c1163514\", \"name\": \"Cupbop - Korean BBQ\", \"address\": \"Cupbop - Korean BBQ, 719 E University Pkwy, Orem, UT 84097\", \"latitude\": 40.2735785, \"longitude\": -111.6785658, \"avg_rating\": 4.8, \"num_of_reviews\": 1195, \"price\": \"$\", \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x874d90a463f7482d:0x24ef3f25dd416519\", \"name\": \"Koko Lunchbox\", \"address\": \"Koko Lunchbox, 1175 N Canyon Rd #3420, Provo, UT 84604\", \"latitude\": 40.2496979, \"longitude\": -111.6573679, \"avg_rating\": 4.8, \"num_of_reviews\": 908, \"price\": \"$\", \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x87530c1e6178d57f:0x14134bad410f742f\", \"name\": \"Bibop Korean BBQ LLC\", \"address\": \"Bibop Korean BBQ LLC, 333 2nd St #10, Ogden, UT 84404\", \"latitude\": 41.2584811, \"longitude\": -111.9716507, \"avg_rating\": 4.8, \"num_of_reviews\": 158, \"price\": \"$$\", \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x87528bed7a776daf:0x5c00fdfa5893cc37\", \"name\": \"Sanfran Burrito N Fryz\", \"address\": \"Sanfran Burrito N Fryz, 3390 S State St STE35, Salt Lake City, UT 84115\", \"latitude\": 40.6979847, \"longitude\": -111.8890771, \"avg_rating\": 4.8, \"num_of_reviews\": 47, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x8752f5cdbf09e4e9:0x9e0c6c8d1ebe68c8\", \"name\": \"Cupbop - Korean BBQ\", \"address\": \"Cupbop - Korean BBQ, 45 E Broadway, Salt Lake City, UT 84111\", \"latitude\": 40.763146, \"longitude\": -111.8897385, \"avg_rating\": 4.8, \"num_of_reviews\": 818, \"price\": \"$\", \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x87531b5bf85fd901:0x82f2bf5d16327b1f\", \"name\": \"Jin's Restaurant\", \"address\": \"Jin's Restaurant, 2052 W 1700 S b6, Syracuse, UT 84075\", \"latitude\": 41.0894444, \"longitude\": -112.0655556, \"avg_rating\": 4.8, \"num_of_reviews\": 338, \"price\": \"$$\", \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x80ca5ba224111c31:0x8b009a1d5eba0a0d\", \"name\": \"Flavor of Seoul (Casual Korean Restaurant)\", \"address\": \"Flavor of Seoul (Casual Korean Restaurant), 568 W Telegraph St #8, Washington, UT 84780\", \"latitude\": 37.1300159, \"longitude\": -113.5188039, \"avg_rating\": 4.8, \"num_of_reviews\": 328, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x87530f6a704af3c3:0x28467b0626901dc4\", \"name\": \"Kogane Korean Kitchen\", \"address\": \"Kogane Korean Kitchen, 458 40th St, Ogden, UT 84403\", \"latitude\": 41.190705, \"longitude\": -111.969536, \"avg_rating\": 4.8, \"num_of_reviews\": 278, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x87528d9cd06cfb41:0x3bf71f0c96a7d42\", \"name\": \"Paik's Noodle / HongKong Banjum 0410\", \"address\": \"Paik's Noodle / HongKong Banjum 0410, 3513s Constitution Blvd #100, West Valley City, UT 84119\", \"latitude\": 40.6962494, \"longitude\": -111.9561513, \"avg_rating\": 4.8, \"num_of_reviews\": 188, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x87526344b266fc7b:0x927a92d9d730c66\", \"name\": \"Cupbop - Korean BBQ\", \"address\": \"Cupbop - Korean BBQ, 7178 Union Park Ave, Midvale, UT 84047\", \"latitude\": 40.6210935, \"longitude\": -111.8565558, \"avg_rating\": 4.8, \"num_of_reviews\": 158, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x8752857788e92fe7:0x6bf70774f597ce8c\", \"name\": \"Cupbop - Korean BBQ\", \"address\": \"Cupbop - Korean BBQ, 11259 Kestrel Rise Rd Suite 100, South Jordan, UT 84095\", \"latitude\": 40.546715299999995, \"longitude\": -112.0019626, \"avg_rating\": 4.7, \"num_of_reviews\": 1204, \"price\": \"$\", \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x8753038d0e4b7213:0x6132ac6a905b503a\", \"name\": \"Seoul Korean Restaurant UT\", \"address\": \"Seoul Korean Restaurant UT, 2625 N Hill Field Rd, Layton, UT 84041\", \"latitude\": 41.098334, \"longitude\": -111.974094, \"avg_rating\": 4.7, \"num_of_reviews\": 73, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}]}",
+      "tool_call_id": "toolu_01Nh4cT4iAmQQzzopThPJMhT",
+      "name": "search_establishments"
+    },
+    {
+      "type": "AIMessage",
+      "content": "Now I have the full picture. Let me visualize both facets.",
+      "raw_content": [
+        {
+          "text": "Now I have the full picture. Let me visualize both facets.",
+          "type": "text"
+        },
+        {
+          "id": "toolu_01RMKR42C5JCB9N3syUBP8ss",
+          "caller": {
+            "type": "direct"
+          },
+          "input": {
+            "query": "\nSELECT c.category_group AS cuisine, ROUND(AVG(e.avg_rating),3) AS avg_rating\nFROM establishments e\nJOIN establishment_categories ec ON ec.gmap_id = e.gmap_id\nJOIN category c2 ON c2.category_id = ec.category_id,\nLATERAL (SELECT CASE WHEN LOWER(c2.category) LIKE '%thai%' THEN 'Thai'\n                     WHEN LOWER(c2.category) LIKE '%korean%' THEN 'Korean' END AS category_group) c\nWHERE c.category_group IS NOT NULL\nGROUP BY c.category_group\n",
+            "chart_type": "bar",
+            "x": "cuisine",
+            "y": "avg_rating",
+            "title": "Average Google rating: Thai vs Korean restaurants"
+          },
+          "name": "plot_chart",
+          "type": "tool_use"
+        },
+        {
+          "id": "toolu_01JS11iiKbhYTnEanouyuHVy",
+          "caller": {
+            "type": "direct"
+          },
+          "input": {
+            "query": "\nSELECT c.category_group AS cuisine, COUNT(DISTINCT e.gmap_id) AS num_establishments_with_inspection_data\nFROM establishments e\nJOIN establishment_categories ec ON ec.gmap_id = e.gmap_id\nJOIN category c2 ON c2.category_id = ec.category_id,\nLATERAL (SELECT CASE WHEN LOWER(c2.category) LIKE '%thai%' THEN 'Thai'\n                     WHEN LOWER(c2.category) LIKE '%korean%' THEN 'Korean' END AS category_group) c\nWHERE c.category_group IS NOT NULL AND e.slchd_establishment_key IS NOT NULL\nGROUP BY c.category_group\n",
+            "chart_type": "bar",
+            "x": "cuisine",
+            "y": "num_establishments_with_inspection_data",
+            "title": "Thai vs Korean restaurants with matched SLCHD inspection data (violations available)"
+          },
+          "name": "plot_chart",
+          "type": "tool_use"
+        }
+      ],
+      "tool_calls": [
+        {
+          "name": "plot_chart",
+          "args": {
+            "query": "\nSELECT c.category_group AS cuisine, ROUND(AVG(e.avg_rating),3) AS avg_rating\nFROM establishments e\nJOIN establishment_categories ec ON ec.gmap_id = e.gmap_id\nJOIN category c2 ON c2.category_id = ec.category_id,\nLATERAL (SELECT CASE WHEN LOWER(c2.category) LIKE '%thai%' THEN 'Thai'\n                     WHEN LOWER(c2.category) LIKE '%korean%' THEN 'Korean' END AS category_group) c\nWHERE c.category_group IS NOT NULL\nGROUP BY c.category_group\n",
+            "chart_type": "bar",
+            "x": "cuisine",
+            "y": "avg_rating",
+            "title": "Average Google rating: Thai vs Korean restaurants"
+          },
+          "id": "toolu_01RMKR42C5JCB9N3syUBP8ss",
+          "type": "tool_call"
+        },
+        {
+          "name": "plot_chart",
+          "args": {
+            "query": "\nSELECT c.category_group AS cuisine, COUNT(DISTINCT e.gmap_id) AS num_establishments_with_inspection_data\nFROM establishments e\nJOIN establishment_categories ec ON ec.gmap_id = e.gmap_id\nJOIN category c2 ON c2.category_id = ec.category_id,\nLATERAL (SELECT CASE WHEN LOWER(c2.category) LIKE '%thai%' THEN 'Thai'\n                     WHEN LOWER(c2.category) LIKE '%korean%' THEN 'Korean' END AS category_group) c\nWHERE c.category_group IS NOT NULL AND e.slchd_establishment_key IS NOT NULL\nGROUP BY c.category_group\n",
+            "chart_type": "bar",
+            "x": "cuisine",
+            "y": "num_establishments_with_inspection_data",
+            "title": "Thai vs Korean restaurants with matched SLCHD inspection data (violations available)"
+          },
+          "id": "toolu_01JS11iiKbhYTnEanouyuHVy",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 13531,
+        "output_tokens": 844,
+        "total_tokens": 14375,
+        "input_token_details": {
+          "cache_read": 0,
+          "cache_creation": 0,
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "output_token_details": {
+          "reasoning": 0
+        }
+      },
+      "model_name": "claude-sonnet-5"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "Chart created: 'Average Google rating: Thai vs Korean restaurants' (bar, 2 rows). It will be shown to the user below your answer.",
+      "tool_call_id": "toolu_01RMKR42C5JCB9N3syUBP8ss",
+      "name": "plot_chart"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "Query returned no rows, nothing to plot.",
+      "tool_call_id": "toolu_01JS11iiKbhYTnEanouyuHVy",
+      "name": "plot_chart"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [
+        {
+          "signature": "Ev8DCokBCBAYAipA1llWzgnmVLLCNPPzsWtbiEnPpSmd2oe2uvUfczfJ7ei/k54uiEqT7HiVx3WtBbR82Az/P/hNh0zGPfliD3TRIjIPY2xhdWRlLXNvbm5ldC01OABCCHRoaW5raW5nWiQ3M2FiYWQ1Yy1lZWVhLTQ3N2QtYjUyMC1jODJlMDYxMDc1NWMSDNaedaSAKJTHiV43yRoMUTZ3+3t4x9z2V1/tIjDbLYXGdckPgQ3uSlsrNzyc6SnZ2sALzq6P5FnHETe7SGzTe2CkBr5B4O05l3Bbz4QqogLBszEqO4v/1N/9pF6IKva+XSs35e6c1hEn03nYKOIrGYGkYQ7JXYy0MDayVAxfP7ldR7R9AIpZ/TUVupmMyIElLzRKs911LScyM0iiRYNvp4F5Kd1ONH0MATRPLODiRZzrhCLFWRjflhSXOant9CHfHrm0fbYmcIdJi/1KKOF8FpKbCHTAyQwFnGYYQTWl03JLWudax0LKmp5BNbwyyMZ10esl/9/Xj1EFnllDN2LvigmNNQtvxKb6kyppicP4+VYv8iRzrl+Uk0gIz/Ixaeovug0jv0HJXs07gyS3FZbTxpevXLTmBSRG/c/I58axmtZWosetvFOpYhrcUTjRHIAr+iV9V+IJ63/5q/ck0jOnZC4S5D3F2MIFmOGxBvXb1DwEpxgB",
+          "thinking": "",
+          "type": "thinking"
+        },
+        {
+          "id": "toolu_01M5jE7SJQngxSUahR1wHVhE",
+          "caller": {
+            "type": "direct"
+          },
+          "input": {
+            "query": "\nWITH cats AS (SELECT 'Thai' AS cuisine UNION ALL SELECT 'Korean'),\nmatched AS (\n  SELECT DISTINCT e.gmap_id,\n    CASE WHEN LOWER(c2.category) LIKE '%thai%' THEN 'Thai'\n         WHEN LOWER(c2.category) LIKE '%korean%' THEN 'Korean' END AS cuisine\n  FROM establishments e\n  JOIN establishment_categories ec ON ec.gmap_id = e.gmap_id\n  JOIN category c2 ON c2.category_id = ec.category_id\n  WHERE e.slchd_establishment_key IS NOT NULL\n)\nSELECT cats.cuisine, COUNT(matched.gmap_id) AS num_matched_with_inspection_data\nFROM cats LEFT JOIN matched ON matched.cuisine = cats.cuisine\nGROUP BY cats.cuisine\n",
+            "chart_type": "bar",
+            "x": "cuisine",
+            "y": "num_matched_with_inspection_data",
+            "title": "Thai vs Korean: establishments with matched SLCHD inspection/violation data"
+          },
+          "name": "plot_chart",
+          "type": "tool_use"
+        }
+      ],
+      "tool_calls": [
+        {
+          "name": "plot_chart",
+          "args": {
+            "query": "\nWITH cats AS (SELECT 'Thai' AS cuisine UNION ALL SELECT 'Korean'),\nmatched AS (\n  SELECT DISTINCT e.gmap_id,\n    CASE WHEN LOWER(c2.category) LIKE '%thai%' THEN 'Thai'\n         WHEN LOWER(c2.category) LIKE '%korean%' THEN 'Korean' END AS cuisine\n  FROM establishments e\n  JOIN establishment_categories ec ON ec.gmap_id = e.gmap_id\n  JOIN category c2 ON c2.category_id = ec.category_id\n  WHERE e.slchd_establishment_key IS NOT NULL\n)\nSELECT cats.cuisine, COUNT(matched.gmap_id) AS num_matched_with_inspection_data\nFROM cats LEFT JOIN matched ON matched.cuisine = cats.cuisine\nGROUP BY cats.cuisine\n",
+            "chart_type": "bar",
+            "x": "cuisine",
+            "y": "num_matched_with_inspection_data",
+            "title": "Thai vs Korean: establishments with matched SLCHD inspection/violation data"
+          },
+          "id": "toolu_01M5jE7SJQngxSUahR1wHVhE",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 14500,
+        "output_tokens": 587,
+        "total_tokens": 15087,
+        "input_token_details": {
+          "cache_read": 0,
+          "cache_creation": 0,
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "output_token_details": {
+          "reasoning": 80
+        }
+      },
+      "model_name": "claude-sonnet-5"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "Chart created: 'Thai vs Korean: establishments with matched SLCHD inspection/violation data' (bar, 2 rows). It will be shown to the user below your answer.",
+      "tool_call_id": "toolu_01M5jE7SJQngxSUahR1wHVhE",
+      "name": "plot_chart"
+    },
+    {
+      "type": "AIMessage",
+      "content": "## Ratings\n\n**Korean restaurants have the slightly higher average rating**: 4.52 (across 47 Korean establishments) vs. 4.45 for Thai (across 116 Thai establishments) on Google's 5-point scale. Both cuisines skew very high-rated \u2014 top performers in each category (e.g., Korealicious at 5.0, several Cupbop locations at 4.7\u20134.9; Taste of Thai Park City at 5.0, Tawan Thai at 5.0) show very little separation, so the ~0.07-point gap favoring Korean is modest, not dramatic.\n\n## Violations\n\nThis is where I have to be transparent about a data limitation: **neither cuisine has any restaurants with matched SLCHD inspection history in this dataset** \u2014 0 of the 116 Thai establishments and 0 of the 47 Korean establishments have a `slchd_establishment_key` match, meaning there are no inspection records or violations on file for either cuisine group. This isn't unusual \u2014 per the dataset's own coverage, about 98.4% of establishments overall lack matched inspection data \u2014 but it does mean I **cannot say which cuisine has more violations**, because there is literally zero violation evidence for either group in this database. Any claim comparing violation counts between Thai and Korean restaurants would not be grounded in actual data.\n\n**Bottom line:** Korean edges out Thai on average rating (4.52 vs 4.45), but the violations question is unanswerable from this data \u2014 no Thai or Korean establishment here has inspection/violation records on file.",
+      "tool_calls": [],
+      "usage_metadata": {
+        "input_tokens": 15150,
+        "output_tokens": 505,
+        "total_tokens": 15655,
+        "input_token_details": {
+          "cache_read": 0,
+          "cache_creation": 0,
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "output_token_details": {
+          "reasoning": 0
+        }
+      },
+      "model_name": "claude-sonnet-5"
+    }
+  ],
+  "charts": [
+    {
+      "data": [
+        {
+          "hovertemplate": "cuisine=%{x}<br>avg_rating=%{y}<extra></extra>",
+          "legendgroup": "",
+          "marker": {
+            "color": "#000001",
+            "pattern": {
+              "shape": ""
+            }
+          },
+          "name": "",
+          "orientation": "v",
+          "showlegend": false,
+          "textposition": "auto",
+          "x": [
+            "Thai",
+            "Korean"
+          ],
+          "xaxis": "x",
+          "y": {
+            "dtype": "f8",
+            "bdata": "N4lBYOXQEUAv3SQGgRUSQA=="
+          },
+          "yaxis": "y",
+          "type": "bar"
+        }
+      ],
+      "layout": {
+        "template": {
+          "data": {
+            "candlestick": [
+              {
+                "decreasing": {
+                  "line": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "line": {
+                    "color": "#000032"
+                  }
+                },
+                "type": "candlestick"
+              }
+            ],
+            "contourcarpet": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contourcarpet"
+              }
+            ],
+            "contour": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contour"
+              }
+            ],
+            "heatmap": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "heatmap"
+              }
+            ],
+            "histogram2d": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "histogram2d"
+              }
+            ],
+            "icicle": [
+              {
+                "textfont": {
+                  "color": "white"
+                },
+                "type": "icicle"
+              }
+            ],
+            "sankey": [
+              {
+                "textfont": {
+                  "color": "#000036"
+                },
+                "type": "sankey"
+              }
+            ],
+            "scatter": [
+              {
+                "marker": {
+                  "line": {
+                    "width": 0
+                  }
+                },
+                "type": "scatter"
+              }
+            ],
+            "table": [
+              {
+                "cells": {
+                  "fill": {
+                    "color": "#000038"
+                  },
+                  "font": {
+                    "color": "#000037"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "header": {
+                  "fill": {
+                    "color": "#000040"
+                  },
+                  "font": {
+                    "color": "#000036"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "type": "table"
+              }
+            ],
+            "waterfall": [
+              {
+                "connector": {
+                  "line": {
+                    "color": "#000036",
+                    "width": 2
+                  }
+                },
+                "decreasing": {
+                  "marker": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "marker": {
+                    "color": "#000032"
+                  }
+                },
+                "totals": {
+                  "marker": {
+                    "color": "#000034"
+                  }
+                },
+                "type": "waterfall"
+              }
+            ]
+          },
+          "layout": {
+            "coloraxis": {
+              "colorscale": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorscale": {
+              "diverging": [
+                [
+                  0.0,
+                  "#000021"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000022"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000023"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000024"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000025"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000026"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000027"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000028"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000029"
+                ],
+                [
+                  1.0,
+                  "#000030"
+                ]
+              ],
+              "sequential": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ],
+              "sequentialminus": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorway": [
+              "#000001",
+              "#000002",
+              "#000003",
+              "#000004",
+              "#000005",
+              "#000006",
+              "#000007",
+              "#000008",
+              "#000009",
+              "#000010"
+            ]
+          }
+        },
+        "xaxis": {
+          "anchor": "y",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "cuisine"
+          }
+        },
+        "yaxis": {
+          "anchor": "x",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "avg_rating"
+          }
+        },
+        "legend": {
+          "tracegroupgap": 0
+        },
+        "title": {
+          "text": "Average Google rating: Thai vs Korean restaurants"
+        },
+        "barmode": "relative"
+      }
+    },
+    {
+      "data": [
+        {
+          "hovertemplate": "cuisine=%{x}<br>num_matched_with_inspection_data=%{y}<extra></extra>",
+          "legendgroup": "",
+          "marker": {
+            "color": "#000001",
+            "pattern": {
+              "shape": ""
+            }
+          },
+          "name": "",
+          "orientation": "v",
+          "showlegend": false,
+          "textposition": "auto",
+          "x": [
+            "Korean",
+            "Thai"
+          ],
+          "xaxis": "x",
+          "y": {
+            "dtype": "i1",
+            "bdata": "AAA="
+          },
+          "yaxis": "y",
+          "type": "bar"
+        }
+      ],
+      "layout": {
+        "template": {
+          "data": {
+            "candlestick": [
+              {
+                "decreasing": {
+                  "line": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "line": {
+                    "color": "#000032"
+                  }
+                },
+                "type": "candlestick"
+              }
+            ],
+            "contourcarpet": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contourcarpet"
+              }
+            ],
+            "contour": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contour"
+              }
+            ],
+            "heatmap": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "heatmap"
+              }
+            ],
+            "histogram2d": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "histogram2d"
+              }
+            ],
+            "icicle": [
+              {
+                "textfont": {
+                  "color": "white"
+                },
+                "type": "icicle"
+              }
+            ],
+            "sankey": [
+              {
+                "textfont": {
+                  "color": "#000036"
+                },
+                "type": "sankey"
+              }
+            ],
+            "scatter": [
+              {
+                "marker": {
+                  "line": {
+                    "width": 0
+                  }
+                },
+                "type": "scatter"
+              }
+            ],
+            "table": [
+              {
+                "cells": {
+                  "fill": {
+                    "color": "#000038"
+                  },
+                  "font": {
+                    "color": "#000037"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "header": {
+                  "fill": {
+                    "color": "#000040"
+                  },
+                  "font": {
+                    "color": "#000036"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "type": "table"
+              }
+            ],
+            "waterfall": [
+              {
+                "connector": {
+                  "line": {
+                    "color": "#000036",
+                    "width": 2
+                  }
+                },
+                "decreasing": {
+                  "marker": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "marker": {
+                    "color": "#000032"
+                  }
+                },
+                "totals": {
+                  "marker": {
+                    "color": "#000034"
+                  }
+                },
+                "type": "waterfall"
+              }
+            ]
+          },
+          "layout": {
+            "coloraxis": {
+              "colorscale": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorscale": {
+              "diverging": [
+                [
+                  0.0,
+                  "#000021"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000022"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000023"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000024"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000025"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000026"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000027"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000028"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000029"
+                ],
+                [
+                  1.0,
+                  "#000030"
+                ]
+              ],
+              "sequential": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ],
+              "sequentialminus": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorway": [
+              "#000001",
+              "#000002",
+              "#000003",
+              "#000004",
+              "#000005",
+              "#000006",
+              "#000007",
+              "#000008",
+              "#000009",
+              "#000010"
+            ]
+          }
+        },
+        "xaxis": {
+          "anchor": "y",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "cuisine"
+          }
+        },
+        "yaxis": {
+          "anchor": "x",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "num_matched_with_inspection_data"
+          }
+        },
+        "legend": {
+          "tracegroupgap": 0
+        },
+        "title": {
+          "text": "Thai vs Korean: establishments with matched SLCHD inspection/violation data"
+        },
+        "barmode": "relative"
+      }
+    }
+  ],
+  "candidate_pool_raw": [
+    {
+      "gmap_id": "0x87526db7784e3143:0xae8dd7cb09315b64",
+      "name": "Taste of Thai (Park City)",
+      "address": "Taste of Thai (Park City), 1241 Center Dr Unit L160, Park City, UT 84098",
+      "latitude": 40.7212421,
+      "longitude": -111.5389746,
+      "avg_rating": 5.0,
+      "num_of_reviews": 26,
+      "price": null,
+      "slchd_establishment_key": null,
+      "distance_mi": null,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    },
+    {
+      "gmap_id": "0x874d85d538b183bb:0xf3c0830f64f5466a",
+      "name": "Tawan Thai",
+      "address": "Tawan Thai, 824 E 800 N, Orem, UT 84097",
+      "latitude": 40.3107398,
+      "longitude": -111.6761608,
+      "avg_rating": 5.0,
+      "num_of_reviews": 5,
+      "price": null,
+      "slchd_establishment_key": null,
+      "distance_mi": null,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    },
+    {
+      "gmap_id": "0x874d9be94563d229:0xdf5fc98f461cbbb6",
+      "name": "Suzy Thai Food",
+      "address": null,
+      "latitude": 40.232943,
+      "longitude": -111.6432336,
+      "avg_rating": 5.0,
+      "num_of_reviews": 44,
+      "price": "$$",
+      "slchd_establishment_key": null,
+      "distance_mi": null,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    },
+    {
+      "gmap_id": "0x875289cf5fce5e01:0xad451052bd93db14",
+      "name": "Dee Garden Thai Kitchen",
+      "address": "Dee Garden Thai Kitchen, 7098 S Redwood Rd, West Jordan, UT 84084",
+      "latitude": 40.62256,
+      "longitude": -111.9403065,
+      "avg_rating": 4.9,
+      "num_of_reviews": 144,
+      "price": null,
+      "slchd_establishment_key": null,
+      "distance_mi": null,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    },
+    {
+      "gmap_id": "0x8752610e6310aad9:0xb543edc015c46530",
+      "name": "ChaiYo Thai Togo",
+      "address": "ChaiYo Thai Togo, 3804 Highland Dr Ste B2, Millcreek, UT 84106",
+      "latitude": 40.688364199999995,
+      "longitude": -111.8462775,
+      "avg_rating": 4.9,
+      "num_of_reviews": 58,
+      "price": "$$",
+      "slchd_establishment_key": null,
+      "distance_mi": null,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    },
+    {
+      "gmap_id": "0x87528c76c227791f:0xd2fc86793fca8656",
+      "name": "Thai Issan Restaurant and Mini-Mart",
+      "address": "Thai Issan Restaurant and Mini-Mart, 2644 W 4700 S, Salt Lake City, UT 84129",
+      "latitude": 40.668973,
+      "longitude": -111.9568478,
+      "avg_rating": 4.8,
+      "num_of_reviews": 318,
+      "price": "$",
+      "slchd_establishment_key": null,
+      "distance_mi": null,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    },
+    {
+      "gmap_id": "0x874d9707a9d442c3:0x3862609a35323bcc",
+      "name": "Thai Neighbor Cuisine 1",
+      "address": "Thai Neighbor Cuisine 1, 170 W 300 S, Provo, UT 84601",
+      "latitude": 40.2298489,
+      "longitude": -111.6616192,
+      "avg_rating": 4.8,
+      "num_of_reviews": 228,
+      "price": "$",
+      "slchd_establishment_key": null,
+      "distance_mi": null,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    },
+    {
+      "gmap_id": "0x875305d03f9fce41:0x193a4ededc172507",
+      "name": "Ros Ni Yuhm Thai Restaurant",
+      "address": "Ros Ni Yuhm Thai Restaurant, 1813 Main St, Sunset, UT 84015",
+      "latitude": 41.1401562,
+      "longitude": -112.0264677,
+      "avg_rating": 4.8,
+      "num_of_reviews": 158,
+      "price": null,
+      "slchd_establishment_key": null,
+      "distance_mi": null,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    },
+    {
+      "gmap_id": "0x80ca45727c7e5b09:0xc67d7f169a6d0735",
+      "name": "Kitchen Thai Express",
+      "address": "Kitchen Thai Express, 1626 W Sunset Blvd B101, St. George, UT 84770",
+      "latitude": 37.1236345,
+      "longitude": -113.6182485,
+      "avg_rating": 4.8,
+      "num_of_reviews": 88,
+      "price": null,
+      "slchd_establishment_key": null,
+      "distance_mi": null,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    },
+    {
+      "gmap_id": "0x87528b67e26ee0fb:0xdc0b9b01a17dbe7e",
+      "name": "Tuk Tuk\u2019s",
+      "address": "Tuk Tuk\u2019s, 2222 W 3500 S b7, West Valley City, UT 84119",
+      "latitude": 40.6974909,
+      "longitude": -111.9477123,
+      "avg_rating": 4.8,
+      "num_of_reviews": 298,
+      "price": null,
+      "slchd_establishment_key": null,
+      "distance_mi": null,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    },
+    {
+      "gmap_id": "0x87527363fe1fb11b:0x12a092deeac9eab6",
+      "name": "Baan Thai Cuisine & Bar",
+      "address": "Baan Thai Cuisine & Bar, 710 Main St suite 3-103, Park City, UT 84060",
+      "latitude": 40.6473242,
+      "longitude": -111.4972752,
+      "avg_rating": 4.8,
+      "num_of_reviews": 108,
+      "price": null,
+      "slchd_establishment_key": null,
+      "distance_mi": null,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    },
+    {
+      "gmap_id": "0x874df5a5f2a33969:0x2f7f7dcd2853342f",
+      "name": "Tawan Thai Restaurant",
+      "address": "Tawan Thai Restaurant, 32 S Main St, Heber City, UT 84032",
+      "latitude": 40.5070987,
+      "longitude": -111.4137493,
+      "avg_rating": 4.8,
+      "num_of_reviews": 57,
+      "price": null,
+      "slchd_establishment_key": null,
+      "distance_mi": null,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    },
+    {
+      "gmap_id": "0x80b56107561cf149:0x88f968c1a7b5d2a0",
+      "name": "Bunnisa's Thai Cuisine",
+      "address": "Bunnisa's Thai Cuisine, 5 N Main St, Cedar City, UT 84720",
+      "latitude": 37.677502,
+      "longitude": -113.0623545,
+      "avg_rating": 4.8,
+      "num_of_reviews": 258,
+      "price": "$$",
+      "slchd_establishment_key": null,
+      "distance_mi": null,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    },
+    {
+      "gmap_id": "0x8752f50306891ca7:0x2febd8662871bd47",
+      "name": "Laan Na Thai",
+      "address": "Laan Na Thai, 336 W 300 S, Salt Lake City, UT 84101",
+      "latitude": 40.7630241,
+      "longitude": -111.9008636,
+      "avg_rating": 4.8,
+      "num_of_reviews": 408,
+      "price": "$",
+      "slchd_establishment_key": null,
+      "distance_mi": null,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    },
+    {
+      "gmap_id": "0x87525f8d59172199:0x79548a0e5d3eee3d",
+      "name": "Tandooria SLC",
+      "address": "Tandooria SLC, 67 W 1700 S, Salt Lake City, UT 84115",
+      "latitude": 40.7333445,
+      "longitude": -111.8931901,
+      "avg_rating": 4.7,
+      "num_of_reviews": 33,
+      "price": null,
+      "slchd_establishment_key": null,
+      "distance_mi": null,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    },
+    {
+      "gmap_id": "0x87547e0a554a8ec9:0xe0abdfe210790af6",
+      "name": "Korealicious",
+      "address": "Korealicious, 54 W 400 N, Logan, UT 84321",
+      "latitude": 41.7388112,
+      "longitude": -111.8360808,
+      "avg_rating": 5.0,
+      "num_of_reviews": 108,
+      "price": "$",
+      "slchd_establishment_key": null,
+      "distance_mi": null,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    },
+    {
+      "gmap_id": "0x874d9b14ec07bdc5:0xc43290716588abbb",
+      "name": "Katsu City",
+      "address": "Katsu City, 1700 N State St #23, Provo, UT 84604",
+      "latitude": 40.2560091,
+      "longitude": -111.6703358,
+      "avg_rating": 4.9,
+      "num_of_reviews": 58,
+      "price": null,
+      "slchd_establishment_key": null,
+      "distance_mi": null,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    },
+    {
+      "gmap_id": "0x8752bdb07d9cc6b9:0xcbfda0fa32c60a14",
+      "name": "Cupbop - Korean BBQ",
+      "address": "Cupbop - Korean BBQ, 1024 N Main St Ste B, Tooele, UT 84074",
+      "latitude": 40.551413,
+      "longitude": -112.2975927,
+      "avg_rating": 4.9,
+      "num_of_reviews": 448,
+      "price": "$",
+      "slchd_establishment_key": null,
+      "distance_mi": null,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    },
+    {
+      "gmap_id": "0x874d9bab199d8c21:0x573cf4d6c1163514",
+      "name": "Cupbop - Korean BBQ",
+      "address": "Cupbop - Korean BBQ, 719 E University Pkwy, Orem, UT 84097",
+      "latitude": 40.2735785,
+      "longitude": -111.6785658,
+      "avg_rating": 4.8,
+      "num_of_reviews": 1195,
+      "price": "$",
+      "slchd_establishment_key": null,
+      "distance_mi": null,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    },
+    {
+      "gmap_id": "0x874d90a463f7482d:0x24ef3f25dd416519",
+      "name": "Koko Lunchbox",
+      "address": "Koko Lunchbox, 1175 N Canyon Rd #3420, Provo, UT 84604",
+      "latitude": 40.2496979,
+      "longitude": -111.6573679,
+      "avg_rating": 4.8,
+      "num_of_reviews": 908,
+      "price": "$",
+      "slchd_establishment_key": null,
+      "distance_mi": null,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    },
+    {
+      "gmap_id": "0x87530c1e6178d57f:0x14134bad410f742f",
+      "name": "Bibop Korean BBQ LLC",
+      "address": "Bibop Korean BBQ LLC, 333 2nd St #10, Ogden, UT 84404",
+      "latitude": 41.2584811,
+      "longitude": -111.9716507,
+      "avg_rating": 4.8,
+      "num_of_reviews": 158,
+      "price": "$$",
+      "slchd_establishment_key": null,
+      "distance_mi": null,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    },
+    {
+      "gmap_id": "0x87528bed7a776daf:0x5c00fdfa5893cc37",
+      "name": "Sanfran Burrito N Fryz",
+      "address": "Sanfran Burrito N Fryz, 3390 S State St STE35, Salt Lake City, UT 84115",
+      "latitude": 40.6979847,
+      "longitude": -111.8890771,
+      "avg_rating": 4.8,
+      "num_of_reviews": 47,
+      "price": null,
+      "slchd_establishment_key": null,
+      "distance_mi": null,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    },
+    {
+      "gmap_id": "0x8752f5cdbf09e4e9:0x9e0c6c8d1ebe68c8",
+      "name": "Cupbop - Korean BBQ",
+      "address": "Cupbop - Korean BBQ, 45 E Broadway, Salt Lake City, UT 84111",
+      "latitude": 40.763146,
+      "longitude": -111.8897385,
+      "avg_rating": 4.8,
+      "num_of_reviews": 818,
+      "price": "$",
+      "slchd_establishment_key": null,
+      "distance_mi": null,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    },
+    {
+      "gmap_id": "0x87531b5bf85fd901:0x82f2bf5d16327b1f",
+      "name": "Jin's Restaurant",
+      "address": "Jin's Restaurant, 2052 W 1700 S b6, Syracuse, UT 84075",
+      "latitude": 41.0894444,
+      "longitude": -112.0655556,
+      "avg_rating": 4.8,
+      "num_of_reviews": 338,
+      "price": "$$",
+      "slchd_establishment_key": null,
+      "distance_mi": null,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    },
+    {
+      "gmap_id": "0x80ca5ba224111c31:0x8b009a1d5eba0a0d",
+      "name": "Flavor of Seoul (Casual Korean Restaurant)",
+      "address": "Flavor of Seoul (Casual Korean Restaurant), 568 W Telegraph St #8, Washington, UT 84780",
+      "latitude": 37.1300159,
+      "longitude": -113.5188039,
+      "avg_rating": 4.8,
+      "num_of_reviews": 328,
+      "price": null,
+      "slchd_establishment_key": null,
+      "distance_mi": null,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    },
+    {
+      "gmap_id": "0x87530f6a704af3c3:0x28467b0626901dc4",
+      "name": "Kogane Korean Kitchen",
+      "address": "Kogane Korean Kitchen, 458 40th St, Ogden, UT 84403",
+      "latitude": 41.190705,
+      "longitude": -111.969536,
+      "avg_rating": 4.8,
+      "num_of_reviews": 278,
+      "price": null,
+      "slchd_establishment_key": null,
+      "distance_mi": null,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    },
+    {
+      "gmap_id": "0x87528d9cd06cfb41:0x3bf71f0c96a7d42",
+      "name": "Paik's Noodle / HongKong Banjum 0410",
+      "address": "Paik's Noodle / HongKong Banjum 0410, 3513s Constitution Blvd #100, West Valley City, UT 84119",
+      "latitude": 40.6962494,
+      "longitude": -111.9561513,
+      "avg_rating": 4.8,
+      "num_of_reviews": 188,
+      "price": null,
+      "slchd_establishment_key": null,
+      "distance_mi": null,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    },
+    {
+      "gmap_id": "0x87526344b266fc7b:0x927a92d9d730c66",
+      "name": "Cupbop - Korean BBQ",
+      "address": "Cupbop - Korean BBQ, 7178 Union Park Ave, Midvale, UT 84047",
+      "latitude": 40.6210935,
+      "longitude": -111.8565558,
+      "avg_rating": 4.8,
+      "num_of_reviews": 158,
+      "price": null,
+      "slchd_establishment_key": null,
+      "distance_mi": null,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    },
+    {
+      "gmap_id": "0x8752857788e92fe7:0x6bf70774f597ce8c",
+      "name": "Cupbop - Korean BBQ",
+      "address": "Cupbop - Korean BBQ, 11259 Kestrel Rise Rd Suite 100, South Jordan, UT 84095",
+      "latitude": 40.546715299999995,
+      "longitude": -112.0019626,
+      "avg_rating": 4.7,
+      "num_of_reviews": 1204,
+      "price": "$",
+      "slchd_establishment_key": null,
+      "distance_mi": null,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    },
+    {
+      "gmap_id": "0x8753038d0e4b7213:0x6132ac6a905b503a",
+      "name": "Seoul Korean Restaurant UT",
+      "address": "Seoul Korean Restaurant UT, 2625 N Hill Field Rd, Layton, UT 84041",
+      "latitude": 41.098334,
+      "longitude": -111.974094,
+      "avg_rating": 4.7,
+      "num_of_reviews": 73,
+      "price": null,
+      "slchd_establishment_key": null,
+      "distance_mi": null,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    }
+  ],
+  "duration_seconds": 39.24,
+  "usage": {
+    "available": true,
+    "per_call": [
+      {
+        "input_tokens": 3448,
+        "output_tokens": 251,
+        "total_tokens": 3699
+      },
+      {
+        "input_tokens": 5112,
+        "output_tokens": 1003,
+        "total_tokens": 6115
+      },
+      {
+        "input_tokens": 6311,
+        "output_tokens": 353,
+        "total_tokens": 6664
+      },
+      {
+        "input_tokens": 6691,
+        "output_tokens": 482,
+        "total_tokens": 7173
+      },
+      {
+        "input_tokens": 13531,
+        "output_tokens": 844,
+        "total_tokens": 14375
+      },
+      {
+        "input_tokens": 14500,
+        "output_tokens": 587,
+        "total_tokens": 15087
+      },
+      {
+        "input_tokens": 15150,
+        "output_tokens": 505,
+        "total_tokens": 15655
+      }
+    ],
+    "input_tokens": 64743,
+    "output_tokens": 4025,
+    "total_tokens": 68768
+  },
+  "tokens_per_minute": 105151.7,
+  "estimated_cost_usd": 0.169736,
+  "success": true,
+  "error": null,
+  "chart_image_files": [
+    "2026-08-15T09-29-06.870951+00-00_v1_memory_6e389f97_chart0.png",
+    "2026-08-15T09-29-06.870951+00-00_v1_memory_6e389f97_chart1.png"
+  ]
+}

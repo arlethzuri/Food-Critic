@@ -1,0 +1,389 @@
+Question: Show me detailed visual analytics and statistics of inspection scores across all establishments.
+
+Variant: v2_memory | Provider: anthropic | Model: claude-sonnet-5
+Timestamp: 2026-08-15T09:17:52.516027+00:00 | Duration: 54.74s
+
+--- Answer ---
+## Inspection Score Analytics — Salt Lake County
+
+**Coverage caveat first:** Of the 8,592 restaurants in the database, only 139 (1.6%) are matched to an SLCHD inspection history — consistent with the 98.4% figure noted for the dataset overall. The stats below are computed from the 7,798 inspection records tied to 1,291 distinct SLCHD-listed establishments (note: this establishment-key universe is broader than the 139 Google-matched places, since inspection records exist even where no Google listing was matched).
+
+### Summary statistics (inspection_score: 0=clean, higher=worse, confirmed via glossary — inspections with any cited violation average 17.6 vs 1.7 for clean ones)
+- **Mean:** 10.29 | **Median:** 7 | **Std dev:** 12.07
+- **Range:** 0 (clean) to 297 (a major outlier)
+- Score distribution is heavily right-skewed: 710 inspections (9%) scored a perfect 0, while 2,363 (30%) fell in the 1–5 range and 1,802 (23%) in 11–20. Only 144 inspections (1.8%) scored 41+.
+
+### Charts produced (six facets)
+1. **Histogram of all 7,798 inspection scores** — shows the long right tail driven by rare severe inspections.
+2. **Score-severity buckets** — most inspections cluster in low-risk 0–10 range (~5,000 of 7,798), but a meaningful chunk (841) land in the 21–40 "needs attention" band.
+3. **Average score by year (2009–2026)** — scores rose from ~7 (2010) to a peak of ~13 (2015), stayed elevated (11–12) through 2022–2024, then dropped to ~9 (2025) and ~6 (2026, partial/limited data — treat cautiously).
+4. **Average score by inspection type** — Routine inspections (7,380 of them) average 10.4; Followups (211) average only 6.2 (as expected — verifying fixes); Critical Item inspections (202) average 9.0; Complaint Investigations (5, small sample) average just 1.8.
+5. **Top 15 establishments by most recent inspection score** — led by two Arctic Circle locations (score 19 each, in Murray and West Jordan), followed by another Arctic Circle (16), Texas Roadhouse and Village Inn (14 each). Notably several high-rated places appear here (SLC Eatery 4.6★ at score 14, Chick-fil-A 4.3★ at score 14), showing inspection score is largely independent of customer rating.
+6. **Top 15 by all-time critical violations** — Sagato Bakery & Cafe tops the list with 47 critical violations across its history (despite a 4.5 rating and current score of just 1), followed by Stella Grill and Texas Roadhouse (38 each). This highlights that a good *current* score doesn't erase a poor track record.
+
+### Regulatory context
+Per Utah's R392-100 Food Code, inspectors must document violations of **Priority Items** (must generally be corrected within 72 hours) and **Priority Foundation Items** (up to 10 days), while **Core Item** violations get more latitude — this tiered structure is why "critical violation count" and "inspection score" are tracked separately: score reflects point totals from a single visit, while critical violations reflect the highest-risk category of citation accumulated over an establishment's full history.
+
+--- Reasoning trace ---
+Action: get_schema({})
+
+Action: get_column_glossary({'table_dot_column': 'establishments.inspection_score'})
+
+Observation: Project food_health_viz {
+  database_type: 'DuckDB'
+}
+
+Table establishment_keys {
+  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']
+  name varchar [not null]
+  address varchar [not null]
+  city varchar [not null]
+  city_state_zip varchar
+  establishment_type varchar
+  source varchar [note: 'friend_slc | own_scrape']
+  slchd_lat double
+  slchd_lon double
+  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']
+
+  Note: 'SLCHD establishment list, one row per portal listing.'
+}
+
+Table category {
+  category_id integer [pk]
+  category varchar
+}
+
+Table establishments {
+  gmap_id varchar [pk]
+  name varchar
+  address varchar
+  description varchar
+  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']
+  avg_rating double
+  num_of_reviews integer
+  price varchar
+  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']
+
+  Note: 'One row per Google Local place — all restaurants, not just SLCHD-matched.'
+}
+
+Table establishment_attributes {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  attribute varchar [not null]
+
+  indexes { (gmap_id, attribute) [pk] }
+
+  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. "Service options") dropped.'
+}
+
+Table establishment_categories {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  category_id integer [ref: > category.category_id, not null]
+
+  indexes { (gmap_id, category_id) [pk] }
+}
+
+Table gmap_hours {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  day integer [not null, note: '0=Sun … 6=Sat']
+  open_min bigint
+  open_max bigint
+
+  indexes { (gmap_id, day) [pk] }
+
+  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'
+}
+
+Table review {
+  user_id varchar
+  name varchar
+  time bigint
+  rating double
+  text varchar
+  resp varchar
+  gmap_id varchar [ref: > establishments.gmap_id]
+}
+
+Table inspection_types {
+  inspection_type_id integer [pk, note: 'parsed leading number, e.g. "01 - Routine" -> 1']
+  description varchar [note: 'e.g. "Routine"']
+}
+
+Table inspections {
+  inspection_id bigint [pk, increment]
+  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]
+  inspection_date date [not null]
+  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable — 27 rows have no type']
+  inspection_score integer
+
+  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'
+}
+
+Table violation_codes {
+  violation_code_id integer [pk, increment]
+  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. "4.5.18"']
+  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']
+  critical boolean [not null]
+}
+
+Table violations {
+  violation_id bigint [pk, increment]
+  inspection_id bigint [ref: > inspections.inspection_id, not null]
+  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]
+  violation_description varchar [note: 'per-occurrence free text']
+  violation_occurrences integer
+  violation_cos boolean [note: 'corrected on site']
+  violation_phr varchar [note: 'public health rationale']
+
+  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'
+}
+
+
+Observation: No glossary entry for 'establishments.inspection_score' — it's probably self-explanatory from get_schema.
+
+Action: get_column_glossary({'table_dot_column': 'inspections.inspection_score'})
+
+Action: run_sql({'query': 'SELECT count(*) AS total_inspections, count(DISTINCT slchd_establishment_key) AS establishments_with_inspections, min(inspection_score) AS min_score, max(inspection_score) AS max_score, avg(inspection_score) AS avg_score, median(inspection_score) AS median_score, stddev(inspection_score) AS stddev_score FROM inspections WHERE inspection_score IS NOT NULL'})
+
+Action: run_sql({'query': 'SELECT (SELECT count(*) FROM establishments) AS total_establishments, (SELECT count(*) FROM establishments WHERE slchd_establishment_key IS NOT NULL) AS matched_establishments'})
+
+Observation: {"description": "Total violation points for this inspection. 0 = clean. Higher = worse (confirmed: inspections with any cited violation average score 17.6 vs 1.7 for clean ones).", "reference": "slchd_portal"}
+
+Observation: {"row_count": 1, "truncated": false, "rows": [{"total_inspections": 7798, "establishments_with_inspections": 1291, "min_score": 0, "max_score": 297, "avg_score": 10.288022569889716, "median_score": 7.0, "stddev_score": 12.069595869540299}]}
+
+Observation: {"row_count": 1, "truncated": false, "rows": [{"total_establishments": 8592, "matched_establishments": 139}]}
+
+Action: run_sql({'query': '\nWITH ranked AS (\n  SELECT slchd_establishment_key, inspection_score,\n         row_number() OVER (PARTITION BY slchd_establishment_key ORDER BY inspection_date DESC) rn\n  FROM inspections WHERE inspection_score IS NOT NULL\n)\nSELECT inspection_score FROM ranked WHERE rn=1\n'})
+
+Action: run_sql({'query': "\nSELECT date_part('year', inspection_date) AS yr, avg(inspection_score) AS avg_score, count(*) AS n\nFROM inspections WHERE inspection_score IS NOT NULL\nGROUP BY yr ORDER BY yr\n"})
+
+Action: run_sql({'query': '\nSELECT it.description, avg(i.inspection_score) AS avg_score, count(*) AS n\nFROM inspections i JOIN inspection_types it ON i.inspection_type_id = it.inspection_type_id\nWHERE i.inspection_score IS NOT NULL\nGROUP BY it.description ORDER BY n DESC\n'})
+
+Action: run_sql({'query': "\nSELECT CASE WHEN inspection_score = 0 THEN '0 (clean)'\n            WHEN inspection_score BETWEEN 1 AND 5 THEN '1-5'\n            WHEN inspection_score BETWEEN 6 AND 10 THEN '6-10'\n            WHEN inspection_score BETWEEN 11 AND 20 THEN '11-20'\n            WHEN inspection_score BETWEEN 21 AND 40 THEN '21-40'\n            ELSE '41+' END AS score_bucket,\n       count(*) AS n\nFROM inspections WHERE inspection_score IS NOT NULL\nGROUP BY score_bucket\n"})
+
+Observation: {"row_count": 1291, "truncated": true, "rows": [{"inspection_score": 0}, {"inspection_score": 5}, {"inspection_score": 3}, {"inspection_score": 3}, {"inspection_score": 9}, {"inspection_score": 9}, {"inspection_score": 3}, {"inspection_score": 5}, {"inspection_score": 8}, {"inspection_score": 12}, {"inspection_score": 11}, {"inspection_score": 0}, {"inspection_score": 4}, {"inspection_score": 1}, {"inspection_score": 1}, {"inspection_score": 0}, {"inspection_score": 9}, {"inspection_score": 0}, {"inspection_score": 11}, {"inspection_score": 3}, {"inspection_score": 7}, {"inspection_score": 3}, {"inspection_score": 0}, {"inspection_score": 1}, {"inspection_score": 3}, {"inspection_score": 10}, {"inspection_score": 4}, {"inspection_score": 13}, {"inspection_score": 4}, {"inspection_score": 7}, {"inspection_score": 4}, {"inspection_score": 5}, {"inspection_score": 11}, {"inspection_score": 0}, {"inspection_score": 0}, {"inspection_score": 3}, {"inspection_score": 14}, {"inspection_score": 4}, {"inspection_score": 4}, {"inspection_score": 9}, {"inspection_score": 0}, {"inspection_score": 8}, {"inspection_score": 0}, {"inspection_score": 10}, {"inspection_score": 3}, {"inspection_score": 9}, {"inspection_score": 1}, {"inspection_score": 4}, {"inspection_score": 0}, {"inspection_score": 0}]}
+
+Observation: {"row_count": 18, "truncated": false, "rows": [{"yr": 2009, "avg_score": 7.0, "n": 3}, {"yr": 2010, "avg_score": 4.8, "n": 5}, {"yr": 2011, "avg_score": 6.714285714285714, "n": 7}, {"yr": 2012, "avg_score": 6.0, "n": 10}, {"yr": 2013, "avg_score": 8.909090909090908, "n": 22}, {"yr": 2014, "avg_score": 8.728571428571428, "n": 70}, {"yr": 2015, "avg_score": 13.0, "n": 77}, {"yr": 2016, "avg_score": 12.253164556962025, "n": 158}, {"yr": 2017, "avg_score": 11.405857740585773, "n": 239}, {"yr": 2018, "avg_score": 11.087719298245615, "n": 456}, {"yr": 2019, "avg_score": 10.194675540765392, "n": 601}, {"yr": 2020, "avg_score": 9.80110497237569, "n": 362}, {"yr": 2021, "avg_score": 10.398347107438017, "n": 605}, {"yr": 2022, "avg_score": 12.080552359033371, "n": 869}, {"yr": 2023, "avg_score": 12.00910125142207, "n": 879}, {"yr": 2024, "avg_score": 11.494702526487368, "n": 1227}, {"yr": 2025, "avg_score": 8.895755770662696, "n": 1343}, {"yr": 2026, "avg_score": 6.331791907514451, "n": 865}]}
+
+Observation: {"row_count": 4, "truncated": false, "rows": [{"description": "Routine", "avg_score": 10.445528455284553, "n": 7380}, {"description": "Followup", "avg_score": 6.194312796208531, "n": 211}, {"description": "Critical Item", "avg_score": 9.01980198019802, "n": 202}, {"description": "Complaint Investigation", "avg_score": 1.8, "n": 5}]}
+
+Observation: {"row_count": 6, "truncated": false, "rows": [{"score_bucket": "21-40", "n": 841}, {"score_bucket": "1-5", "n": 2363}, {"score_bucket": "0 (clean)", "n": 710}, {"score_bucket": "11-20", "n": 1802}, {"score_bucket": "41+", "n": 144}, {"score_bucket": "6-10", "n": 1938}]}
+
+Action: search_establishments({'require_inspection_data': True, 'sort_by': 'inspection_score', 'sort_desc': True, 'limit': 15})
+
+Action: search_establishments({'require_inspection_data': True, 'sort_by': 'inspection_score', 'sort_desc': False, 'limit': 15})
+
+Action: search_establishments({'require_inspection_data': True, 'sort_by': 'critical_violation_count', 'sort_desc': True, 'limit': 15})
+
+Observation: {"row_count": 15, "rows": [{"gmap_id": "0x87528a6e4de1fead:0xb1bd2c15b2d6621d", "name": "Arctic Circle", "address": "Arctic Circle, 3919 S 700 E, Murray, UT 84107", "latitude": 40.6865396, "longitude": -111.8709717, "avg_rating": 4.1, "num_of_reviews": 1274, "price": "$", "slchd_establishment_key": "ARCTIC CIRCLE 202|3919 S 700 E|MILLCREEK TS", "distance_mi": null, "most_recent_inspection_score": 19, "critical_violation_count": 18, "total_violation_count": 60}, {"gmap_id": "0x87528edb8071719b:0xb34437f22c7b5873", "name": "Arctic Circle", "address": "Arctic Circle, 3365 W 7800 S, West Jordan, UT 84088", "latitude": 40.6090528, "longitude": -111.9700581, "avg_rating": 3.9, "num_of_reviews": 898, "price": "$", "slchd_establishment_key": "ARCTIC CIRCLE 111|3365 W 7800 S|WEST JORDAN", "distance_mi": null, "most_recent_inspection_score": 19, "critical_violation_count": 27, "total_violation_count": 95}, {"gmap_id": "0x8752871414bb3a4b:0x8d7dcfb0beb572c1", "name": "Arctic Circle", "address": "Arctic Circle, 208 E 12300 S, Draper, UT 84020", "latitude": 40.526289, "longitude": -111.885488, "avg_rating": 4.0, "num_of_reviews": 420, "price": "$", "slchd_establishment_key": "ARCTIC CIRCLE 116|208 E 12300 S|DRAPER", "distance_mi": null, "most_recent_inspection_score": 16, "critical_violation_count": 24, "total_violation_count": 85}, {"gmap_id": "0x87528e358e42f1d1:0xa956db3f6ff0411e", "name": "Arctic Circle", "address": "Arctic Circle, 8677 S 5600 W, West Jordan, UT 84081", "latitude": 40.593326999999995, "longitude": -112.0236405, "avg_rating": 3.9, "num_of_reviews": 698, "price": "$", "slchd_establishment_key": "ARCTIC CIRCLE 127|8677 S 5600 W|WEST JORDAN", "distance_mi": null, "most_recent_inspection_score": 16, "critical_violation_count": 27, "total_violation_count": 63}, {"gmap_id": "0x87528bfb9df074cf:0x548b15973c8842cf", "name": "Texas Roadhouse", "address": "Texas Roadhouse, 1904 W 5400 S, Taylorsville, UT 84129", "latitude": 40.654219999999995, "longitude": -111.94307, "avg_rating": 4.4, "num_of_reviews": 5210, "price": "$$", "slchd_establishment_key": "TEXAS ROADHOUSE|1904 W 5400 S|TAYLORSVILLE", "distance_mi": null, "most_recent_inspection_score": 14, "critical_violation_count": 38, "total_violation_count": 113}, {"gmap_id": "0x87528d4c77ad88c5:0xfc24747515b7cb24", "name": "Village Inn", "address": "Village Inn, 4824 W 3500 S, West Valley City, UT 84120", "latitude": 40.697023, "longitude": -112.006333, "avg_rating": 3.9, "num_of_reviews": 1337, "price": "$", "slchd_establishment_key": "VILLAGE INN RESTAURANT|4834 W 3500 S|WEST VALLEY CITY", "distance_mi": null, "most_recent_inspection_score": 14, "critical_violation_count": 18, "total_violation_count": 70}, {"gmap_id": "0x8752f53b13b95555:0x94cec18382378f12", "name": "SLC Eatery", "address": "SLC Eatery, 1017 S Main St, Salt Lake City, UT 84111", "latitude": 40.7468933, "longitude": -111.8906507, "avg_rating": 4.6, "num_of_reviews": 228, "price": null, "slchd_establishment_key": "SLC EATERY|1017 S MAIN ST|SALT LAKE CITY", "distance_mi": null, "most_recent_inspection_score": 14, "critical_violation_count": 14, "total_violation_count": 55}, {"gmap_id": "0x875289d4b4f73f89:0x7c191ee393f7ae4b", "name": "Chick-fil-A", "address": "Chick-fil-A, 1088 Fort Union Blvd, Midvale, UT 84047", "latitude": 40.6233121, "longitude": -111.8614456, "avg_rating": 4.3, "num_of_reviews": 1536, "price": "$", "slchd_establishment_key": "CHICK FIL A|1088 E FORT UNION BLVD|MIDVALE", "distance_mi": null, "most_recent_inspection_score": 14, "critical_violation_count": 5, "total_violation_count": 10}, {"gmap_id": "0x87528b6161c18005:0xb3dbdde5d924dac5", "name": "K-Recipe", "address": "K-Recipe, 3390 State St #34, South Salt Lake, UT 84115", "latitude": 40.6977993, "longitude": -111.889649, "avg_rating": 5.0, "num_of_reviews": 34, "price": null, "slchd_establishment_key": "K RECIPE|3390 S STATE ST|SOUTH SALT LAKE", "distance_mi": null, "most_recent_inspection_score": 13, "critical_violation_count": 21, "total_violation_count": 36}, {"gmap_id": "0x87528d752dfbe75d:0xf6cda477b56241c9", "name": "Ab's Drive-In", "address": "Ab's Drive-In, 4591 S 5600 W, West Valley City, UT 84120", "latitude": 40.670424, "longitude": -112.024233, "avg_rating": 4.1, "num_of_reviews": 895, "price": "$", "slchd_establishment_key": "AB'S DRIVE IN|4591 S 5600 W|WEST VALLEY CITY", "distance_mi": null, "most_recent_inspection_score": 13, "critical_violation_count": 23, "total_violation_count": 59}, {"gmap_id": "0x8752f569300ab7a9:0x1e21f25f4fb30532", "name": "IHOP", "address": "IHOP, 635 E 400 S, Salt Lake City, UT 84102", "latitude": 40.7609618, "longitude": -111.8727416, "avg_rating": 3.8, "num_of_reviews": 794, "price": "$", "slchd_establishment_key": "IHOP RESTAURANT|635 E 400 S|SALT LAKE CITY", "distance_mi": null, "most_recent_inspection_score": 13, "critical_violation_count": 5, "total_violation_count": 37}, {"gmap_id": "0x875289607798bc43:0xd6795328c6f3d4fb", "name": "Vessel Kitchen", "address": "Vessel Kitchen, 1146 E Fort Union Blvd, Midvale, UT 84047", "latitude": 40.6240281, "longitude": -111.8601902, "avg_rating": 4.5, "num_of_reviews": 368, "price": "$$", "slchd_establishment_key": "VESSEL KITCHEN|1146 E FORT UNION BLVD|MIDVALE", "distance_mi": null, "most_recent_inspection_score": 13, "critical_violation_count": 28, "total_violation_count": 85}, {"gmap_id": "0x87528b61af7fbffb:0xa62abe818a78bd8a", "name": "Cracker Barrel Old Country Store", "address": "Cracker Barrel Old Country Store, 2283 City Center Ct, West Valley City, UT 84119", "latitude": 40.6990631, "longitude": -111.9502929, "avg_rating": 4.3, "num_of_reviews": 3651, "price": "$$", "slchd_establishment_key": "CRACKER BARREL OLD COUNTRY|2283 W CITY CENTER CT|WEST VALLEY CITY", "distance_mi": null, "most_recent_inspection_score": 13, "critical_violation_count": 15, "total_violation_count": 79}, {"gmap_id": "0x875287112eb7ef65:0xf9c4d401ecd8a2d", "name": "Cafe Rio Mexican Grill", "address": "Cafe Rio Mexican Grill, 12362 Minuteman Dr, Draper, UT 84020", "latitude": 40.5257882, "longitude": -111.8889913, "avg_rating": 3.3, "num_of_reviews": 1163, "price": "$$", "slchd_establishment_key": "CAFE RIO MEXICAN GRILL|12362 S MINUTEMAN DR|DRAPER", "distance_mi": null, "most_recent_inspection_score": 13, "critical_violation_count": 19, "total_violation_count": 61}, {"gmap_id": "0x875289383918d7bd:0x5ee7b5612721fc72", "name": "Panda Express", "address": "Panda Express, 6910 S Redwood Rd space a, West Jordan, UT 84084", "latitude": 40.6256105, "longitude": -111.9392172, "avg_rating": 3.5, "num_of_reviews": 342, "price": "$", "slchd_establishment_key": "PANDA EXPRESS|6910 S REDWOOD RD|WEST JORDAN", "distance_mi": null, "most_recent_inspection_score": 12, "critical_violation_count": 5, "total_violation_count": 41}]}
+
+Observation: {"row_count": 15, "rows": [{"gmap_id": "0x875289fb4a405e4b:0xa169c429dad6c3b3", "name": "The Point After", "address": "The Point After, 5445 S 900 E, Salt Lake City, UT 84117", "latitude": 40.6525742, "longitude": -111.8646615, "avg_rating": 4.2, "num_of_reviews": 368, "price": "$", "slchd_establishment_key": "POINT AFTER - DOG PATIO|5445 S 900 E|MURRAY", "distance_mi": null, "most_recent_inspection_score": 0, "critical_violation_count": 0, "total_violation_count": 2}, {"gmap_id": "0x8752882d52822735:0x80f319c8ae59dd26", "name": "Sonic Drive-In", "address": "Sonic Drive-In, 849 Fort Union Blvd, Midvale, UT 84047", "latitude": 40.622470199999995, "longitude": -111.8675482, "avg_rating": 3.4, "num_of_reviews": 1232, "price": "$", "slchd_establishment_key": "SONIC DRIVE IN|849 E FORT UNION BLVD|MIDVALE", "distance_mi": null, "most_recent_inspection_score": 0, "critical_violation_count": 14, "total_violation_count": 44}, {"gmap_id": "0x8752f591fc27068b:0xf46853168a7ad146", "name": "HandleBar", "address": "HandleBar, 751 N 300 W, Salt Lake City, UT 84111, United States", "latitude": 40.7858243, "longitude": -111.9001839, "avg_rating": 4.6, "num_of_reviews": 358, "price": null, "slchd_establishment_key": "HANDLEBAR - DOG PATIO|751 N 300 W|SALT LAKE CITY", "distance_mi": null, "most_recent_inspection_score": 0, "critical_violation_count": 2, "total_violation_count": 3}, {"gmap_id": "0x8752f5551c58e951:0xf4aff47160bddce4", "name": "Hub and Spoke Diner", "address": "Hub and Spoke Diner, 1291 S 1100 E, Salt Lake City, UT 84105", "latitude": 40.7417492, "longitude": -111.8592042, "avg_rating": 4.3, "num_of_reviews": 1663, "price": "$$", "slchd_establishment_key": "HUB & SPOKE DINER/DOG PATIO|1291 S 1100 E|SALT LAKE CITY", "distance_mi": null, "most_recent_inspection_score": 0, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x875287498485f2cf:0x34d77d999b5ff05c", "name": "Shake Shack", "address": "Shake Shack, 11020 S State St Suite B, Sandy, UT 84070, United States", "latitude": 40.5512315, "longitude": -111.8914131, "avg_rating": 3.5, "num_of_reviews": 1761, "price": "\u20a9\u20a9", "slchd_establishment_key": "SHAKE SHACK|11020 S STATE ST|SANDY", "distance_mi": null, "most_recent_inspection_score": 0, "critical_violation_count": 5, "total_violation_count": 29}, {"gmap_id": "0x8752f517bce84b1f:0x7528e0916ed69ea7", "name": "Millcreek Coffee Roasters", "address": "Millcreek Coffee Roasters, 657 S Main St, Salt Lake City, UT 84111", "latitude": 40.7548447, "longitude": -111.8906937, "avg_rating": 4.7, "num_of_reviews": 428, "price": "$", "slchd_establishment_key": "MILLCREEK COFFEE ROASTERS - COMMISSARY|651 S MAIN ST|SALT LAKE CITY", "distance_mi": null, "most_recent_inspection_score": 0, "critical_violation_count": 3, "total_violation_count": 9}, {"gmap_id": "0x8752876077272fd3:0x40e212483e248131", "name": "Garage Grill", "address": "Garage Grill, 1122 East Draper Pkwy, Draper, UT 84020", "latitude": 40.527366, "longitude": -111.858826, "avg_rating": 4.3, "num_of_reviews": 1168, "price": "$$", "slchd_establishment_key": "GARAGE GRILL - DOG PATIO|1122 E DRAPER PKWY|DRAPER", "distance_mi": null, "most_recent_inspection_score": 0, "critical_violation_count": 2, "total_violation_count": 3}, {"gmap_id": "0x87528a3ab929f967:0xac9f3e4abc0aabf1", "name": "Ice Haus", "address": "Ice Haus, 7 E 4800 S, Murray, UT 84107", "latitude": 40.667156899999995, "longitude": -111.8912137, "avg_rating": 4.5, "num_of_reviews": 1542, "price": null, "slchd_establishment_key": "ICE HAUS - DOG PATIO|7 W 4800 S|MURRAY", "distance_mi": null, "most_recent_inspection_score": 0, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x8752f53ce4896ed5:0xfdec02c9038d7ade", "name": "Proper Burger Company", "address": "Proper Burger Company, 865 S Main St, Salt Lake City, UT 84111", "latitude": 40.7507258, "longitude": -111.8904492, "avg_rating": 4.4, "num_of_reviews": 2068, "price": "$$", "slchd_establishment_key": "PROPER BURGER COMPANY - DOG PATIO|865 S MAIN ST|SALT LAKE CITY", "distance_mi": null, "most_recent_inspection_score": 0, "critical_violation_count": 1, "total_violation_count": 7}, {"gmap_id": "0x8752f554dfb14507:0x51c1bc9ad18c7776", "name": "Tea Zaanti", "address": "Tea Zaanti, 1944 1100 E, Salt Lake City, UT 84106", "latitude": 40.727937999999995, "longitude": -111.8598893, "avg_rating": 4.9, "num_of_reviews": 208, "price": "$$", "slchd_establishment_key": "TEA ZAANTI DOG PATIO|1944 S 1100 E|SALT LAKE CITY", "distance_mi": null, "most_recent_inspection_score": 0, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x8752f5dcf3e361e9:0x3457bd45a2234b0d", "name": "Vessel Kitchen", "address": "Vessel Kitchen, 905 E 900 S, Salt Lake City, UT 84105, United States", "latitude": 40.7500638, "longitude": -111.8648002, "avg_rating": 4.4, "num_of_reviews": 177, "price": null, "slchd_establishment_key": "VESSEL KITCHEN DOG PATIO|905 E 900 S|SALT LAKE CITY", "distance_mi": null, "most_recent_inspection_score": 0, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x8752f50dd93f0431:0x94c50005b9542f70", "name": "Taqueria 27 Downtown", "address": "Taqueria 27 Downtown, 149 E 200 S, Salt Lake City, UT 84111", "latitude": 40.7652726, "longitude": -111.8863843, "avg_rating": 4.4, "num_of_reviews": 818, "price": "$$", "slchd_establishment_key": "TAQUERIA 27 DOWNTOWN - DOG PATIO|149 E 200 S|SALT LAKE CITY", "distance_mi": null, "most_recent_inspection_score": 0, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x875261eac67710ad:0x62d86f7118b5decf", "name": "The Brickyard Bar", "address": "The Brickyard Bar, 3000 S Highland Dr, Salt Lake City, UT 84106", "latitude": 40.7061891, "longitude": -111.8534567, "avg_rating": 4.4, "num_of_reviews": 113, "price": null, "slchd_establishment_key": "BRICKYARD BAR DOG PATIO|3000 S HIGHLAND DR|MILLCREEK", "distance_mi": null, "most_recent_inspection_score": 0, "critical_violation_count": 0, "total_violation_count": 1}, {"gmap_id": "0x8752f51f692b4659:0xfef2ac50a16c0f0", "name": "Fisher Brewing Company", "address": "Fisher Brewing Company, 320 W 800 S, Salt Lake City, UT 84101", "latitude": 40.752157, "longitude": -111.9004478, "avg_rating": 4.7, "num_of_reviews": 746, "price": "$", "slchd_establishment_key": "FISHER BREWING COMPANY - DOG PATIO|320 W 800 S|SALT LAKE CITY", "distance_mi": null, "most_recent_inspection_score": 0, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x8752f5ad1637abad:0xe5861053bb8195c4", "name": "Mountain West Cider", "address": "Mountain West Cider, 425 N 400 W, Salt Lake City, UT 84103", "latitude": 40.7787718, "longitude": -111.9030368, "avg_rating": 4.7, "num_of_reviews": 188, "price": null, "slchd_establishment_key": "MOUNTAIN WEST HARD CIDER CO DOG PATIO|425 N 400 W|SALT LAKE CITY", "distance_mi": null, "most_recent_inspection_score": 0, "critical_violation_count": 0, "total_violation_count": 0}]}
+
+Observation: {"row_count": 15, "rows": [{"gmap_id": "0x875289fb88e4c227:0xb7d79eb08391358b", "name": "Sagato Bakery & Cafe", "address": "Sagato Bakery & Cafe, 44 W 7200 S, Midvale, UT 84047", "latitude": 40.6211146, "longitude": -111.8924398, "avg_rating": 4.5, "num_of_reviews": 286, "price": "$$", "slchd_establishment_key": "SAGATO BAKERY & CAFE|44 W 7200 S|MIDVALE", "distance_mi": null, "most_recent_inspection_score": 1, "critical_violation_count": 47, "total_violation_count": 88}, {"gmap_id": "0x87528a0c5743b6cf:0x4391e502cef85f35", "name": "Stella Grill", "address": "Stella Grill, 4291 S 900 E, Millcreek, UT 84124", "latitude": 40.6782156, "longitude": -111.8652192, "avg_rating": 4.5, "num_of_reviews": 825, "price": "$$", "slchd_establishment_key": "STELLA GRILL|4291 S 900 E|MILLCREEK TS", "distance_mi": null, "most_recent_inspection_score": 10, "critical_violation_count": 38, "total_violation_count": 123}, {"gmap_id": "0x87528bfb9df074cf:0x548b15973c8842cf", "name": "Texas Roadhouse", "address": "Texas Roadhouse, 1904 W 5400 S, Taylorsville, UT 84129", "latitude": 40.654219999999995, "longitude": -111.94307, "avg_rating": 4.4, "num_of_reviews": 5210, "price": "$$", "slchd_establishment_key": "TEXAS ROADHOUSE|1904 W 5400 S|TAYLORSVILLE", "distance_mi": null, "most_recent_inspection_score": 14, "critical_violation_count": 38, "total_violation_count": 113}, {"gmap_id": "0x8752f50f798a1405:0xfea701e9797089a0", "name": "Siegfried's Delicatessen", "address": "Siegfried's Delicatessen, 20 W 200 S, Salt Lake City, UT 84101", "latitude": 40.7653389, "longitude": -111.8921167, "avg_rating": 4.7, "num_of_reviews": 2233, "price": "$", "slchd_establishment_key": "SIEGFRIED DELICATESSEN|20 W 200 S|SALT LAKE CITY", "distance_mi": null, "most_recent_inspection_score": 6, "critical_violation_count": 34, "total_violation_count": 64}, {"gmap_id": "0x87528b1bcf77198f:0xfad9c11dc4f7963d", "name": "Navajo Hogan", "address": "Navajo Hogan, 447 E 3300 S, South Salt Lake, UT 84115", "latitude": 40.700084, "longitude": -111.8784008, "avg_rating": 4.7, "num_of_reviews": 228, "price": "$", "slchd_establishment_key": "NAVAJO HOGAN|447 E 3300 S|SOUTH SALT LAKE", "distance_mi": null, "most_recent_inspection_score": 4, "critical_violation_count": 33, "total_violation_count": 83}, {"gmap_id": "0x875288fe77730141:0xf6e226107ffedd5e", "name": "Old Towne Tavern", "address": "Old Towne Tavern, 7662 S Main St, Midvale, UT 84047", "latitude": 40.611996, "longitude": -111.910568, "avg_rating": 4.4, "num_of_reviews": 206, "price": "$", "slchd_establishment_key": "OLD TOWNE TAVERN|7662 S MAIN ST|MIDVALE", "distance_mi": null, "most_recent_inspection_score": 10, "critical_violation_count": 30, "total_violation_count": 62}, {"gmap_id": "0x875285f5869edf59:0x335ef22815c8272c", "name": "Burger King", "address": "Burger King, 10396 River Heights Dr, South Jordan, UT 84095", "latitude": 40.5623113, "longitude": -111.9727314, "avg_rating": 3.2, "num_of_reviews": 703, "price": "$", "slchd_establishment_key": "BURGER KING|10396 S RIVER HEIGHT DR|SOUTH JORDAN", "distance_mi": null, "most_recent_inspection_score": 3, "critical_violation_count": 28, "total_violation_count": 104}, {"gmap_id": "0x875287b80273212d:0xea3f6fc309457a70", "name": "Lee Sushi", "address": "Lee Sushi, 71 W 10600 S, Sandy, UT 84070", "latitude": 40.5583239, "longitude": -111.8927873, "avg_rating": 4.6, "num_of_reviews": 382, "price": "$", "slchd_establishment_key": "LEE SUSHI|71 W 10600 S|SANDY", "distance_mi": null, "most_recent_inspection_score": 10, "critical_violation_count": 28, "total_violation_count": 72}, {"gmap_id": "0x875289607798bc43:0xd6795328c6f3d4fb", "name": "Vessel Kitchen", "address": "Vessel Kitchen, 1146 E Fort Union Blvd, Midvale, UT 84047", "latitude": 40.6240281, "longitude": -111.8601902, "avg_rating": 4.5, "num_of_reviews": 368, "price": "$$", "slchd_establishment_key": "VESSEL KITCHEN|1146 E FORT UNION BLVD|MIDVALE", "distance_mi": null, "most_recent_inspection_score": 13, "critical_violation_count": 28, "total_violation_count": 85}, {"gmap_id": "0x8752868563321415:0xcec82141213df78e", "name": "Little Caesars Pizza", "address": "Little Caesars Pizza, 1836 W 12600 S, Riverton, UT 84065", "latitude": 40.522569999999995, "longitude": -111.94092, "avg_rating": 3.6, "num_of_reviews": 338, "price": "$", "slchd_establishment_key": "LITTLE CAESARS PIZZA|1822 W 12600 S|RIVERTON", "distance_mi": null, "most_recent_inspection_score": 3, "critical_violation_count": 27, "total_violation_count": 95}, {"gmap_id": "0x87528e358e42f1d1:0xa956db3f6ff0411e", "name": "Arctic Circle", "address": "Arctic Circle, 8677 S 5600 W, West Jordan, UT 84081", "latitude": 40.593326999999995, "longitude": -112.0236405, "avg_rating": 3.9, "num_of_reviews": 698, "price": "$", "slchd_establishment_key": "ARCTIC CIRCLE 127|8677 S 5600 W|WEST JORDAN", "distance_mi": null, "most_recent_inspection_score": 16, "critical_violation_count": 27, "total_violation_count": 63}, {"gmap_id": "0x87528edb8071719b:0xb34437f22c7b5873", "name": "Arctic Circle", "address": "Arctic Circle, 3365 W 7800 S, West Jordan, UT 84088", "latitude": 40.6090528, "longitude": -111.9700581, "avg_rating": 3.9, "num_of_reviews": 898, "price": "$", "slchd_establishment_key": "ARCTIC CIRCLE 111|3365 W 7800 S|WEST JORDAN", "distance_mi": null, "most_recent_inspection_score": 19, "critical_violation_count": 27, "total_violation_count": 95}, {"gmap_id": "0x8752861a5598a809:0x2bf79ddef1ada513", "name": "Del Taco", "address": "Del Taco, 1651 S Jordan Pkwy, South Jordan, UT 84095", "latitude": 40.561944, "longitude": -111.937222, "avg_rating": 4.1, "num_of_reviews": 578, "price": "$", "slchd_establishment_key": "DEL TACO|1651 W SOUTH JORDAN PKWY|SOUTH JORDAN", "distance_mi": null, "most_recent_inspection_score": 11, "critical_violation_count": 25, "total_violation_count": 78}, {"gmap_id": "0x8752f53db6626f03:0x33dd97535d182238", "name": "Taco Time", "address": "Taco Time, 810 S State St, Salt Lake City, UT 84111", "latitude": 40.7514575, "longitude": -111.8887262, "avg_rating": 4.2, "num_of_reviews": 853, "price": "$", "slchd_establishment_key": "TACO TIME|810 S STATE ST|SALT LAKE CITY", "distance_mi": null, "most_recent_inspection_score": 10, "critical_violation_count": 25, "total_violation_count": 75}, {"gmap_id": "0x875260191232bdd3:0xbe32d1825e3fd8e5", "name": "Baskin-Robbins", "address": "Baskin-Robbins, 1465 E 2100 S, Salt Lake City, UT 84105", "latitude": 40.7261477, "longitude": -111.8488999, "avg_rating": 4.3, "num_of_reviews": 344, "price": "$", "slchd_establishment_key": "BASKIN ROBBINS|1465 E 2100 S|SALT LAKE CITY", "distance_mi": null, "most_recent_inspection_score": 5, "critical_violation_count": 25, "total_violation_count": 98}]}
+
+Action: retrieve_regulation({'query': 'inspection scoring risk level points critical violation'})
+
+Observation: [R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 8-406 Core Item Violation, p.214]
+211  
+8-4 INSPECTION AND CORRECTION OF VIOLATIONS 
+ 
+Subparts 
+ 
+8-401 Frequency 
+8-402 Competency and Access 
+8-403 Report of Findings 
+8-404 Imminent Health Hazard 
+8-405 Violation of Priority Item or Priority 
+Foundation Item 
+8-406 Core Item Violation 
+ 
+ 
+ 
+Frequency 8-401.10 Establishing Inspection Interval. 
+ 
+(A) Except as specified in ¶¶ (B) and (C) of this section, the 
+REGULATORY AUTHORITY shall inspect a FOOD ESTABLISHMENT at 
+least once every 6 months and twice in a season for seasonal 
+operations. 
+ 
+(B) The REGULATORY AUTHORITY may increase the interval 
+between inspections beyond 6 months if: 
+ 
+(1) The FOOD ESTABLISHMENT is fully operating under an 
+APPROVED and validated HACCP PLAN as specified under 
+§ 8-201.14 and ¶¶ 8-103.12(A) and (B); 
+ 
+(2) The FOOD ESTABLISHMENT is assigned a less frequent 
+inspection frequency based on a written RISK-based 
+inspection schedule that is being uniformly applied 
+throughout the jurisdiction or
+
+---
+
+[R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 8-405.20 Verification and Documentation of, p.220]
+217  
+Violation of 
+Priority Item or 
+Priority 
+Foundation Item 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+Core Item 
+Violation 
+8-405.11 Timely Correction. 
+ 
+(A) Except as specified in ¶ (B) of this section, a PERMIT 
+HOLDER shall at the time of inspection correct a violation of a 
+PRIORITY ITEM or PRIORITY FOUNDATION ITEM of this Code and 
+implement corrective actions for a HACCP PLAN provision that 
+is not in compliance with its CRITICAL LIMIT. Pf 
+ 
+(B) Considering the nature of the potential HAZARD involved 
+and the complexity of the corrective action needed, the 
+REGULATORY AUTHORITY may agree to or specify a longer time 
+frame, not to exceed: 
+ 
+(1) 72 hours after the inspection, for the PERMIT HOLDER 
+to correct violations of a PRIORITY ITEM; or 
+ 
+(2) 10 calendar days after the inspection, for the PERMIT 
+HOLDER to correct violations of a PRIORITY FOUNDATION 
+ITEM or HACCP PLAN deviations.
+
+---
+
+[R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 8-403.30 Issuing Report and Obtaining, p.218]
+215  
+(3) Nonconformance with PRIORITY ITEMS OR PRIORITY 
+FOUNDATION ITEMS of this Code, 
+ 
+(4) Failure of the appropriate FOOD EMPLOYEES to 
+demonstrate their knowledge of, and ability to perform 
+in accordance with, the procedural, monitoring, 
+verification, and corrective action practices required by 
+the REGULATORY AUTHORITY as specified under 
+§ 8-103.12, 
+ 
+(5) Failure of the PERSON IN CHARGE to provide records 
+required by the REGULATORY AUTHORITY for determining 
+conformance with a HACCP PLAN as specified under 
+Subparagraph 8-201.14(D)(6), and 
+ 
+(6) Nonconformance with CRITICAL LIMITS of a HACCP 
+PLAN. 
+ 
+ 
+ 
+8-403.20 Specifying Time Frame for Corrections. 
+ 
+The REGULATORY AUTHORITY shall specify on the inspection 
+report form the time frame for correction of the violations as 
+specified under §§ 8-404.11, 8-405.11, and 8-406.11. 
+ 
+ 
+ 
+8-403.30 Issuing Report and Obtaining 
+Acknowledgment of Receipt. 
+ 
+ 
+At the conclusion of the inspection and according to LAW, the
+
+---
+
+[R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 2-103 Duties, p.27]
+26  
+Knowledge 2-102.11 Demonstration. 
+ 
+Based on the RISKS inherent to the FOOD operation, during 
+inspections and upon request the PERSON IN CHARGE shall 
+demonstrate to the REGULATORY AUTHORITY knowledge of 
+foodborne disease prevention, application of the HAZARD 
+Analysis and CRITICAL CONTROL POINT principles, and the 
+requirements of this Code.  The PERSON IN CHARGE shall 
+demonstrate this knowledge by: 
+ 
+(A) Complying with this Code by having no violations of 
+PRIORITY ITEMS during the current inspection; Pf 
+ 
+(B) Being a certified FOOD protection manager who has 
+shown proficiency of required information through passing a 
+test that is part of an ACCREDITED PROGRAM;Pf or 
+ 
+(C) Responding correctly to the inspector's questions as they 
+relate to the specific FOOD operation. The areas of 
+knowledge include: 
+ 
+(1) Describing the relationship between the prevention of 
+foodborne disease and the personal hygiene of a FOOD 
+EMPLOYEE; Pf
+
+Action: plot_chart({'query': 'SELECT inspection_score FROM inspections WHERE inspection_score IS NOT NULL', 'chart_type': 'histogram', 'x': 'inspection_score', 'title': 'Distribution of Inspection Scores Across All 7,798 Inspections (0=clean, higher=worse)'})
+
+Action: plot_chart({'query': "\nSELECT CASE WHEN inspection_score = 0 THEN '1: 0 (clean)'\n            WHEN inspection_score BETWEEN 1 AND 5 THEN '2: 1-5'\n            WHEN inspection_score BETWEEN 6 AND 10 THEN '3: 6-10'\n            WHEN inspection_score BETWEEN 11 AND 20 THEN '4: 11-20'\n            WHEN inspection_score BETWEEN 21 AND 40 THEN '5: 21-40'\n            ELSE '6: 41+' END AS score_bucket,\n       count(*) AS n\nFROM inspections WHERE inspection_score IS NOT NULL\nGROUP BY score_bucket ORDER BY score_bucket\n", 'chart_type': 'bar', 'x': 'score_bucket', 'y': 'n', 'title': 'Inspection Count by Score Severity Bucket'})
+
+Action: plot_chart({'query': "\nSELECT date_part('year', inspection_date) AS yr, avg(inspection_score) AS avg_score\nFROM inspections WHERE inspection_score IS NOT NULL\nGROUP BY yr ORDER BY yr\n", 'chart_type': 'line', 'x': 'yr', 'y': 'avg_score', 'title': 'Average Inspection Score by Year (2009-2026)'})
+
+Action: plot_chart({'query': '\nSELECT it.description AS inspection_type, avg(i.inspection_score) AS avg_score, count(*) AS n\nFROM inspections i JOIN inspection_types it ON i.inspection_type_id = it.inspection_type_id\nWHERE i.inspection_score IS NOT NULL\nGROUP BY it.description ORDER BY n DESC\n', 'chart_type': 'bar', 'x': 'inspection_type', 'y': 'avg_score', 'title': 'Average Inspection Score by Inspection Type'})
+
+Action: plot_chart({'query': '\nWITH ranked AS (\n  SELECT ek.name, ek.slchd_establishment_key, i.inspection_score,\n         row_number() OVER (PARTITION BY i.slchd_establishment_key ORDER BY i.inspection_date DESC) rn\n  FROM inspections i JOIN establishment_keys ek ON i.slchd_establishment_key = ek.slchd_establishment_key\n  WHERE i.inspection_score IS NOT NULL\n)\nSELECT name, inspection_score AS most_recent_score\nFROM ranked WHERE rn=1\nORDER BY inspection_score DESC LIMIT 15\n', 'chart_type': 'bar', 'x': 'name', 'y': 'most_recent_score', 'title': 'Top 15 Establishments by Most Recent (Worst) Inspection Score'})
+
+Action: plot_chart({'query': '\nSELECT ek.name, count(*) AS critical_violations\nFROM violations v\nJOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\nJOIN inspections i ON v.inspection_id = i.inspection_id\nJOIN establishment_keys ek ON i.slchd_establishment_key = ek.slchd_establishment_key\nWHERE vc.critical = true\nGROUP BY ek.name\nORDER BY critical_violations DESC LIMIT 15\n', 'chart_type': 'bar', 'x': 'name', 'y': 'critical_violations', 'title': 'Top 15 Establishments by Total Critical Violations (All-Time)'})
+
+Observation: Chart created: 'Distribution of Inspection Scores Across All 7,798 Inspections (0=clean, higher=worse)' (histogram, 7798 rows). It will be shown to the user below your answer.
+
+Observation: Chart created: 'Inspection Count by Score Severity Bucket' (bar, 6 rows). It will be shown to the user below your answer.
+
+Observation: Chart created: 'Average Inspection Score by Year (2009-2026)' (line, 18 rows). It will be shown to the user below your answer.
+
+Observation: Chart created: 'Average Inspection Score by Inspection Type' (bar, 4 rows). It will be shown to the user below your answer.
+
+Observation: Chart created: 'Top 15 Establishments by Most Recent (Worst) Inspection Score' (bar, 15 rows). It will be shown to the user below your answer.
+
+Observation: Chart created: 'Top 15 Establishments by Total Critical Violations (All-Time)' (bar, 15 rows). It will be shown to the user below your answer.
+
+--- Usage: 96100 tokens, ~$0.2376 ---
