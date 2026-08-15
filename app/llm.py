@@ -97,7 +97,9 @@ def get_llm(model: str | None = None, provider: str | None = None, temperature: 
             )
         return ChatAnthropic(
             model=model or os.getenv("ANTHROPIC_MODEL", DEFAULT_MODELS["anthropic"]),
-            temperature=temperature,
+            # No temperature= here: current Claude models (Sonnet 5, Opus 5, ...)
+            # reject the parameter outright — "temperature is deprecated for
+            # this model" — not just non-default values, any value at all.
             api_key=api_key,
         )
 
