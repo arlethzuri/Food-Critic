@@ -1,0 +1,153 @@
+Question: Which street has the highest number of 3 star restaurants?
+
+Variant: v1_memory | Provider: ollama | Model: gemma4:26b
+Timestamp: 2026-08-15T05:59:33.233708+00:00 | Duration: 182.28s
+
+--- Answer ---
+Based on the available data, there is no single street that contains more than one restaurant with an average rating of exactly 3.0 stars. Each street identified in the dataset with a 3-star restaurant currently only has one such establishment.
+
+For example, some of the streets containing 3-star restaurants include:
+* **2056 Harrison Blvd** (1 restaurant)
+* **10450 S State St** (1 restaurant)
+* **1532 1450 S St** (1 restaurant)
+* **23 E 100 N** (1 restaurant)
+* **55 Main St #408** (1 restaurant)
+
+--- Reasoning trace ---
+Action: get_schema({})
+
+Observation: Project food_health_viz {
+  database_type: 'DuckDB'
+}
+
+Table establishment_keys {
+  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']
+  name varchar [not null]
+  address varchar [not null]
+  city varchar [not null]
+  city_state_zip varchar
+  establishment_type varchar
+  source varchar [note: 'friend_slc | own_scrape']
+  slchd_lat double
+  slchd_lon double
+  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']
+
+  Note: 'SLCHD establishment list, one row per portal listing.'
+}
+
+Table category {
+  category_id integer [pk]
+  category varchar
+}
+
+Table establishments {
+  gmap_id varchar [pk]
+  name varchar
+  address varchar
+  description varchar
+  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']
+  avg_rating double
+  num_of_reviews integer
+  price varchar
+  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']
+
+  Note: 'One row per Google Local place — all restaurants, not just SLCHD-matched.'
+}
+
+Table establishment_attributes {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  attribute varchar [not null]
+
+  indexes { (gmap_id, attribute) [pk] }
+
+  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. "Service options") dropped.'
+}
+
+Table establishment_categories {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  category_id integer [ref: > category.category_id, not null]
+
+  indexes { (gmap_id, category_id) [pk] }
+}
+
+Table gmap_hours {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  day integer [not null, note: '0=Sun … 6=Sat']
+  open_min bigint
+  open_max bigint
+
+  indexes { (gmap_id, day) [pk] }
+
+  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'
+}
+
+Table review {
+  user_id varchar
+  name varchar
+  time bigint
+  rating double
+  text varchar
+  resp varchar
+  gmap_id varchar [ref: > establishments.gmap_id]
+}
+
+Table inspection_types {
+  inspection_type_id integer [pk, note: 'parsed leading number, e.g. "01 - Routine" -> 1']
+  description varchar [note: 'e.g. "Routine"']
+}
+
+Table inspections {
+  inspection_id bigint [pk, increment]
+  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]
+  inspection_date date [not null]
+  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable — 27 rows have no type']
+  inspection_score integer
+
+  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'
+}
+
+Table violation_codes {
+  violation_code_id integer [pk, increment]
+  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. "4.5.18"']
+  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']
+  critical boolean [not null]
+}
+
+Table violations {
+  violation_id bigint [pk, increment]
+  inspection_id bigint [ref: > inspections.inspection_id, not null]
+  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]
+  violation_description varchar [note: 'per-occurrence free text']
+  violation_occurrences integer
+  violation_cos boolean [note: 'corrected on site']
+  violation_phr varchar [note: 'public health rationale']
+
+  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'
+}
+
+
+Action: run_sql({'query': 'SELECT address FROM establishments LIMIT 5'})
+
+Observation: {"row_count": 5, "truncated": false, "rows": [{"address": "Maverik Adventure's First Stop, 3330 S 500 W, South Salt Lake, UT 84115"}, {"address": "Wingstop, 2275 N University Pkwy, Provo, UT 84604"}, {"address": "Metropolitan Restaurant, 173 Broadway, Salt Lake City, UT 84101"}, {"address": "Mara's Mexican Cafe, 22 Main St, Layton, UT 84041"}, {"address": "The Granite Club, 3820 Highland Dr, Millcreek, UT 84106"}]}
+
+Action: run_sql({'query': 'SELECT name, address FROM establishments LIMIT 5'})
+
+Observation: {"row_count": 5, "truncated": false, "rows": [{"name": "Maverik Adventure's First Stop", "address": "Maverik Adventure's First Stop, 3330 S 500 W, South Salt Lake, UT 84115"}, {"name": "Wingstop", "address": "Wingstop, 2275 N University Pkwy, Provo, UT 84604"}, {"name": "Metropolitan Restaurant", "address": "Metropolitan Restaurant, 173 Broadway, Salt Lake City, UT 84101"}, {"name": "Mara's Mexican Cafe", "address": "Mara's Mexican Cafe, 22 Main St, Layton, UT 84041"}, {"name": "The Granite Club", "address": "The Granite Club, 3820 Highland Dr, Millcreek, UT 84106"}]}
+
+Action: run_sql({'query': 'SELECT address FROM establishments WHERE avg_rating = 3.0 LIMIT 10'})
+
+Observation: {"row_count": 10, "truncated": false, "rows": [{"address": "La Puente Restaurant #7 Sandy, 61 W 10600 S, Sandy, UT 84070"}, {"address": "TA, 1889 Pheasant Ln, Tooele, UT 84074"}, {"address": "Maverik Adventure's First Stop, 520 W Main St, Lehi, UT 84043"}, {"address": "Summit Fitness Kitchen Meal Prep, 1532 1450 S St, St. George, UT 84790"}, {"address": "Arctic Circle, 3883 5400 S, Salt Lake City, UT 84118"}, {"address": "The Cat Lounge, 500 E State St, American Fork, UT 84003"}, {"address": "Farr's Fresh Ice Cream & Frozen Yogurt Cafe, 496 N 990 W, American Fork, UT 84003"}, {"address": "Bistro H, 281 Zion Park Blvd, Springdale, UT 84767"}, {"address": "Applebee\u2019s Grill + Bar, 11460 District Dr, South Jordan, UT 84095"}, {"address": "Arby's, 10 Center St, Panguitch, UT 84759"}]}
+
+Action: run_sql({'query': "SELECT trim(split_part(address, ',', 2)) AS street, COUNT(*) AS restaurant_count\nFROM establishments\nWHERE avg_rating = 3.0\nGROUP BY street\nORDER BY restaurant_count DESC\nLIMIT 10;"})
+
+Observation: {"row_count": 10, "truncated": false, "rows": [{"street": "2056 Harrison Blvd", "restaurant_count": 1}, {"street": "10450 S State St", "restaurant_count": 1}, {"street": "1532 1450 S St", "restaurant_count": 1}, {"street": "23 E 100 N", "restaurant_count": 1}, {"street": "55 Main St #408", "restaurant_count": 1}, {"street": "787 N Dixie Dr", "restaurant_count": 1}, {"street": "529 S 200 W", "restaurant_count": 1}, {"street": "1565 E 3900 S", "restaurant_count": 1}, {"street": "785 E 200 S", "restaurant_count": 1}, {"street": "2450 S Redwood Rd", "restaurant_count": 1}]}
+
+Action: run_sql({'query': "SELECT trim(split_part(address, ',', 2)) AS street, COUNT(*) AS restaurant_count\nFROM establishments\nWHERE avg_rating = 3.0\nGROUP BY street\nHAVING COUNT(*) > 1\nORDER BY restaurant_count DESC;"})
+
+Observation: {"row_count": 0, "truncated": false, "rows": []}
+
+Action: run_sql({'query': "SELECT trim(split_part(address, ',', 2)) AS street, COUNT(*) AS restaurant_count\nFROM establishments\nGROUP BY street\nORDER BY restaurant_count DESC\nLIMIT 10;"})
+
+Observation: {"row_count": 10, "truncated": false, "rows": [{"street": null, "restaurant_count": 46}, {"street": "Salt Lake City", "restaurant_count": 16}, {"street": "10450 State St", "restaurant_count": 9}, {"street": "Salt Lake City International Airport", "restaurant_count": 8}, {"street": "39 W 100 N", "restaurant_count": 8}, {"street": "776 N Terminal Dr", "restaurant_count": 7}, {"street": "2975 Club House Dr", "restaurant_count": 7}, {"street": "1200 Towne Centre Blvd", "restaurant_count": 7}, {"street": "Orem", "restaurant_count": 7}, {"street": "Brigham Young University", "restaurant_count": 7}]}
+
+--- Usage: 32773 tokens, ~$0.0000 ---

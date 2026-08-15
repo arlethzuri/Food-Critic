@@ -1,0 +1,138 @@
+Question: Which street has the highest number of 3 star restaurants?
+
+Variant: v2_memory | Provider: ollama | Model: gemma4:26b
+Timestamp: 2026-08-15T05:59:09.157484+00:00 | Duration: 156.5s
+
+--- Answer ---
+Based on the available data, no single street has more than one restaurant with an average rating of exactly 3 stars. Each 3-star restaurant in the dataset is located on a unique street address.
+
+--- Reasoning trace ---
+Action: get_schema({})
+
+Observation: Project food_health_viz {
+  database_type: 'DuckDB'
+}
+
+Table establishment_keys {
+  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']
+  name varchar [not null]
+  address varchar [not null]
+  city varchar [not null]
+  city_state_zip varchar
+  establishment_type varchar
+  source varchar [note: 'friend_slc | own_scrape']
+  slchd_lat double
+  slchd_lon double
+  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']
+
+  Note: 'SLCHD establishment list, one row per portal listing.'
+}
+
+Table category {
+  category_id integer [pk]
+  category varchar
+}
+
+Table establishments {
+  gmap_id varchar [pk]
+  name varchar
+  address varchar
+  description varchar
+  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']
+  avg_rating double
+  num_of_reviews integer
+  price varchar
+  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']
+
+  Note: 'One row per Google Local place — all restaurants, not just SLCHD-matched.'
+}
+
+Table establishment_attributes {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  attribute varchar [not null]
+
+  indexes { (gmap_id, attribute) [pk] }
+
+  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. "Service options") dropped.'
+}
+
+Table establishment_categories {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  category_id integer [ref: > category.category_id, not null]
+
+  indexes { (gmap_id, category_id) [pk] }
+}
+
+Table gmap_hours {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  day integer [not null, note: '0=Sun … 6=Sat']
+  open_min bigint
+  open_max bigint
+
+  indexes { (gmap_id, day) [pk] }
+
+  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'
+}
+
+Table review {
+  user_id varchar
+  name varchar
+  time bigint
+  rating double
+  text varchar
+  resp varchar
+  gmap_id varchar [ref: > establishments.gmap_id]
+}
+
+Table inspection_types {
+  inspection_type_id integer [pk, note: 'parsed leading number, e.g. "01 - Routine" -> 1']
+  description varchar [note: 'e.g. "Routine"']
+}
+
+Table inspections {
+  inspection_id bigint [pk, increment]
+  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]
+  inspection_date date [not null]
+  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable — 27 rows have no type']
+  inspection_score integer
+
+  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'
+}
+
+Table violation_codes {
+  violation_code_id integer [pk, increment]
+  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. "4.5.18"']
+  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']
+  critical boolean [not null]
+}
+
+Table violations {
+  violation_id bigint [pk, increment]
+  inspection_id bigint [ref: > inspections.inspection_id, not null]
+  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]
+  violation_description varchar [note: 'per-occurrence free text']
+  violation_occurrences integer
+  violation_cos boolean [note: 'corrected on site']
+  violation_phr varchar [note: 'public health rationale']
+
+  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'
+}
+
+
+Action: run_sql({'query': "SELECT split_part(address, ',', 1) AS street, COUNT(*) AS restaurant_count\nFROM establishments\nWHERE avg_rating = 3\nGROUP BY 1\nORDER BY 2 DESC\nLIMIT 10;"})
+
+Observation: {"row_count": 10, "truncated": false, "rows": [{"street": "McDonald's", "restaurant_count": 7}, {"street": "KFC", "restaurant_count": 6}, {"street": "Burger King", "restaurant_count": 5}, {"street": "Domino's Pizza", "restaurant_count": 5}, {"street": "Pizza Hut", "restaurant_count": 4}, {"street": "Subway", "restaurant_count": 4}, {"street": "Wendy's", "restaurant_count": 4}, {"street": "Applebee\u2019s Grill + Bar", "restaurant_count": 2}, {"street": "Maverik Adventure's First Stop", "restaurant_count": 2}, {"street": "Arby's", "restaurant_count": 2}]}
+
+Action: run_sql({'query': 'SELECT address, name FROM establishments LIMIT 5;'})
+
+Observation: {"row_count": 5, "truncated": false, "rows": [{"address": "Maverik Adventure's First Stop, 3330 S 500 W, South Salt Lake, UT 84115", "name": "Maverik Adventure's First Stop"}, {"address": "Wingstop, 2275 N University Pkwy, Provo, UT 84604", "name": "Wingstop"}, {"address": "Metropolitan Restaurant, 173 Broadway, Salt Lake City, UT 84101", "name": "Metropolitan Restaurant"}, {"address": "Mara's Mexican Cafe, 22 Main St, Layton, UT 84041", "name": "Mara's Mexican Cafe"}, {"address": "The Granite Club, 3820 Highland Dr, Millcreek, UT 84106", "name": "The Granite Club"}]}
+
+Action: run_sql({'query': "SELECT trim(split_part(address, ',', 2)) AS street, COUNT(*) AS restaurant_count\nFROM establishments\nWHERE avg_rating = 3\nGROUP BY 1\nORDER BY 2 DESC\nLIMIT 10;"})
+
+Observation: {"row_count": 10, "truncated": false, "rows": [{"street": "785 E 200 S", "restaurant_count": 1}, {"street": "2450 S Redwood Rd", "restaurant_count": 1}, {"street": "2282 S Redwood Rd", "restaurant_count": 1}, {"street": "3540 S 8400 W", "restaurant_count": 1}, {"street": "2310 E 2100 S", "restaurant_count": 1}, {"street": "3743 Jordan Landing Blvd", "restaurant_count": 1}, {"street": "1809 W State St Ste A-4", "restaurant_count": 1}, {"street": "11460 District Dr", "restaurant_count": 1}, {"street": "1228 S Redwood Rd", "restaurant_count": 1}, {"street": "12447 S Crossing Dr #2", "restaurant_count": 1}]}
+
+Action: run_sql({'query': "SELECT trim(split_part(address, ',', 2)) AS street, COUNT(*) AS restaurant_count\nFROM establishments\nWHERE avg_rating = 3\nGROUP BY 1\nHAVING COUNT(*) > 1\nORDER BY 2 DESC;"})
+
+Observation: {"row_count": 0, "truncated": false, "rows": []}
+
+--- Usage: 22709 tokens, ~$0.0000 ---
