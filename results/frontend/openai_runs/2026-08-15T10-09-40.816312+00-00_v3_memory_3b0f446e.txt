@@ -1,0 +1,179 @@
+Question: Which street has the highest number of 3 star restaurants?
+
+Variant: v3_memory | Provider: openai | Model: gpt-5.6-terra
+Timestamp: 2026-08-15T10:09:40.816312+00:00 | Duration: 25.15s
+
+--- Answer ---
+## Result
+There is a tie: **N Main St** and **State St** each have **6 restaurants rated exactly 3.0 stars** in the dataset.
+
+### Tie details
+- **N Main St — 6:** Burger King (Clearfield), Burger King (Logan), KFC (Clearfield), McDonald’s (Layton), Taco Time (Heber City), and Wendy’s (Moab).
+- **State St — 6:** Burger King (Sandy), Illy (Murray), Osaka Japan (Sandy), Pizza Hut (Murray), SUBWAY®Restaurants (Midvale), and The Training Table Sandy (Sandy).
+
+The accompanying bar chart shows the leading streets; the next-highest is **S Redwood Rd** with **4** 3-star restaurants. Street names were normalized by removing numeric address components, so this is a dataset-wide result rather than Salt Lake County-only.
+
+Hypothesis: none (confidence: high)
+
+--- Reasoning trace ---
+Action: get_schema({})
+
+Observation: Project food_health_viz {
+  database_type: 'DuckDB'
+}
+
+Table establishment_keys {
+  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']
+  name varchar [not null]
+  address varchar [not null]
+  city varchar [not null]
+  city_state_zip varchar
+  establishment_type varchar
+  source varchar [note: 'friend_slc | own_scrape']
+  slchd_lat double
+  slchd_lon double
+  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']
+
+  Note: 'SLCHD establishment list, one row per portal listing.'
+}
+
+Table category {
+  category_id integer [pk]
+  category varchar
+}
+
+Table establishments {
+  gmap_id varchar [pk]
+  name varchar
+  address varchar
+  description varchar
+  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']
+  avg_rating double
+  num_of_reviews integer
+  price varchar
+  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']
+
+  Note: 'One row per Google Local place — all restaurants, not just SLCHD-matched.'
+}
+
+Table establishment_attributes {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  attribute varchar [not null]
+
+  indexes { (gmap_id, attribute) [pk] }
+
+  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. "Service options") dropped.'
+}
+
+Table establishment_categories {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  category_id integer [ref: > category.category_id, not null]
+
+  indexes { (gmap_id, category_id) [pk] }
+}
+
+Table gmap_hours {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  day integer [not null, note: '0=Sun … 6=Sat']
+  open_min bigint
+  open_max bigint
+
+  indexes { (gmap_id, day) [pk] }
+
+  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'
+}
+
+Table review {
+  user_id varchar
+  name varchar
+  time bigint
+  rating double
+  text varchar
+  resp varchar
+  gmap_id varchar [ref: > establishments.gmap_id]
+}
+
+Table inspection_types {
+  inspection_type_id integer [pk, note: 'parsed leading number, e.g. "01 - Routine" -> 1']
+  description varchar [note: 'e.g. "Routine"']
+}
+
+Table inspections {
+  inspection_id bigint [pk, increment]
+  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]
+  inspection_date date [not null]
+  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable — 27 rows have no type']
+  inspection_score integer
+
+  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'
+}
+
+Table violation_codes {
+  violation_code_id integer [pk, increment]
+  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. "4.5.18"']
+  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']
+  critical boolean [not null]
+}
+
+Table violations {
+  violation_id bigint [pk, increment]
+  inspection_id bigint [ref: > inspections.inspection_id, not null]
+  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]
+  violation_description varchar [note: 'per-occurrence free text']
+  violation_occurrences integer
+  violation_cos boolean [note: 'corrected on site']
+  violation_phr varchar [note: 'public health rationale']
+
+  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'
+}
+
+
+Action: search_establishments({'category_contains': '', 'limit': 50, 'max_inspection_score': None, 'max_price_level': None, 'min_critical_violations': None, 'min_inspection_score': None, 'min_rating': None, 'name_contains': '', 'near_lat': None, 'near_lon': None, 'radius_mi': None, 'require_inspection_data': False, 'sort_by': 'avg_rating', 'sort_desc': True})
+
+Observation: {"row_count": 50, "rows": [{"gmap_id": "0x80ca68fa12af91a1:0x88b2f37739beec16", "name": "Katering Koncepts, Inc.", "address": "Katering Koncepts, Inc., 1495 S Black Ridge Dr #210, St. George, UT 84770", "latitude": 37.0830651, "longitude": -113.5872769, "avg_rating": 5.0, "num_of_reviews": 18, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x87528c9517beabed:0x6fc817c15be75308", "name": "Taquer\u00eda La Sabrosita", "address": "Taquer\u00eda La Sabrosita, 3495 W 3500 S, West Valley City, UT 84119", "latitude": 40.696069699999995, "longitude": -111.9744907, "avg_rating": 5.0, "num_of_reviews": 7, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x87530fda7aaa7117:0xe86320be513a5d3f", "name": "O-Town Beach Club", "address": "O-Town Beach Club, 2350 Lincoln Ave, Ogden, UT 84401", "latitude": 41.2236905, "longitude": -111.9750387, "avg_rating": 5.0, "num_of_reviews": 1, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x8752614ef9ffad43:0x65f9cb6c43d2d040", "name": "TEKES USA", "address": "TEKES USA, 2236 S 1300 E d5, Salt Lake City, UT 84106", "latitude": 40.722805, "longitude": -111.8555544, "avg_rating": 5.0, "num_of_reviews": 8, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x8752f5c7ee3da119:0xa598b3e3e1115abb", "name": "Villa Yelito", "address": "Villa Yelito, 876 W 800 S, Salt Lake City, UT 84104", "latitude": 40.7522638, "longitude": -111.9162218, "avg_rating": 5.0, "num_of_reviews": 7, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x874d918f560841bd:0x689a6f6b84780469", "name": "Q one Teriyaki Express", "address": "Q one Teriyaki Express, 495 E 600 N Unit 1, Provo, UT 84606", "latitude": 40.241923, "longitude": -111.650263, "avg_rating": 5.0, "num_of_reviews": 18, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x80cac2bd755f2c63:0xaac02cfd1eedb6c", "name": "Zion Hawaiian", "address": "Zion Hawaiian, 932 Zion \u2013 Mount Carmel Hwy, Springdale, UT 84767", "latitude": 37.1890011, "longitude": -112.9999502, "avg_rating": 5.0, "num_of_reviews": 1, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x8752879500845b2d:0x2788362b8f632a96", "name": "Krab Kingz SLC", "address": "Krab Kingz SLC, 1072 UT-151, South Jordan, UT 84095", "latitude": 40.5610815, "longitude": -111.9208523, "avg_rating": 5.0, "num_of_reviews": 5, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x87528bbf95c471f3:0xf507e4e92bc60b9f", "name": "The Farmers Food Truck", "address": null, "latitude": 40.6680859, "longitude": -111.8904695, "avg_rating": 5.0, "num_of_reviews": 1, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x87528f349b2fd5bd:0x70a1ac96d17e12d6", "name": "Mocha Motive", "address": null, "latitude": 40.776608, "longitude": -111.920485, "avg_rating": 5.0, "num_of_reviews": 8, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x87537f88291204bd:0xdf58b944c797ad87", "name": "Hyrum Museum Candy Cabin Store", "address": "Hyrum Museum Candy Cabin Store, 72 W Main St, Hyrum, UT 84319", "latitude": 41.6344009, "longitude": -111.8570943, "avg_rating": 5.0, "num_of_reviews": 2, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x874d9b3d772c592b:0x90020af49ad50c7e", "name": "Behind The Bar Soda Catering", "address": null, "latitude": 40.6582706, "longitude": -112.452552, "avg_rating": 5.0, "num_of_reviews": 8, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x87537f60a5eef9cd:0xab63edf109413d15", "name": "Margo's pop'n go", "address": "Margo's pop'n go, 91 S Center St, Wellsville, UT 84339", "latitude": 41.6369316, "longitude": -111.9347154, "avg_rating": 5.0, "num_of_reviews": 5, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x874df50a7c5c2f7f:0x76fa29f3070471c2", "name": "Yalla food truck", "address": "Yalla food truck, 75 N Main St, Heber City, UT 84032", "latitude": 40.508631699999995, "longitude": -111.4142208, "avg_rating": 5.0, "num_of_reviews": 36, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x875287aae9611fcf:0x330232e8b932560f", "name": "Shweta'z Cake Studio", "address": "Shweta'z Cake Studio, 11253 Woodfield Rd, South Jordan, UT 84095", "latitude": 40.5470407, "longitude": -111.9341307, "avg_rating": 5.0, "num_of_reviews": 8, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x874d9b660b776e1b:0x59d375bb9532e007", "name": "Sabor Colombiano", "address": "Sabor Colombiano, murray, 4841s state stret, Orem, UT 84097", "latitude": 40.3030854, "longitude": -111.6759172, "avg_rating": 5.0, "num_of_reviews": 8, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x8745631c6c92b44f:0x21b255c2107a1c35", "name": "Frigid Frogg Shaved Ice", "address": "Frigid Frogg Shaved Ice, 1400 W Hwy 40 Frontage Road by Esquire RV, Vernal, UT 84078", "latitude": 40.4466004, "longitude": -109.554701, "avg_rating": 5.0, "num_of_reviews": 1, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x80caf3e8f4d272cd:0x3eddf390ae396add", "name": "River Rock Roasting Drive Thru", "address": "River Rock Roasting Drive Thru, 481 N Main St, La Verkin, UT 84745", "latitude": 37.2112305, "longitude": -113.2695523, "avg_rating": 5.0, "num_of_reviews": 4, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x875308ac10359ac5:0x32b5b4846f93502e", "name": "shepard union building", "address": "shepard union building, W Campus Dr, Ogden, UT 84403", "latitude": 41.1900864, "longitude": -111.9472048, "avg_rating": 5.0, "num_of_reviews": 1, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x874a3f8f8be19245:0xf4dd7c0dfce586dd", "name": "Etta Place Cider", "address": "Etta Place Cider, 700 W Main St, Torrey, UT 84775", "latitude": 38.299056799999995, "longitude": -111.4331328, "avg_rating": 5.0, "num_of_reviews": 16, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x80ca5b40a0448823:0x5f8fdbf14f60b143", "name": "Flour & Honey", "address": null, "latitude": 37.3092309, "longitude": -113.476182, "avg_rating": 5.0, "num_of_reviews": 2, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x8753035a3f6cf31d:0x829288d85ed045d", "name": "Sushi Burrito", "address": "Sushi Burrito, 2672 N Hill Field Rd, Layton, UT 84041", "latitude": 41.0987446, "longitude": -111.9727894, "avg_rating": 5.0, "num_of_reviews": 3, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x8752f4ce7b5b911f:0x8ac1d6809aed5785", "name": "Pella Food Services", "address": "Pella Food Services, 940 1700 S, Salt Lake City, UT 84104", "latitude": 40.7340702, "longitude": -111.9179065, "avg_rating": 5.0, "num_of_reviews": 1, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x80cac52f3db356d1:0xf6274f64c9e11b56", "name": "Blue Belly Pizzeria", "address": "Blue Belly Pizzeria, 220 N Fork County Rd, Orderville, UT 84758", "latitude": 37.2709794, "longitude": -112.8757652, "avg_rating": 5.0, "num_of_reviews": 1, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x87547e74dfbda9fb:0xd58cb187e04ffc39", "name": "FlowerGirl Snow Shave Ice", "address": "FlowerGirl Snow Shave Ice, 430 N 100 E, Logan, UT 84321", "latitude": 41.7396032, "longitude": -111.831648, "avg_rating": 5.0, "num_of_reviews": 1, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x87528d9c6cf91e1b:0x20a7aebf6aebee0d", "name": "Dulceria azul", "address": "Dulceria azul, 5448 S 4220 W, Kearns, UT 84118", "latitude": 40.6523038, "longitude": -111.992028, "avg_rating": 5.0, "num_of_reviews": 8, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x874563f43212470f:0xe8f88f49d21e2603", "name": "Dine-A-Ville Pink Dinosaur", "address": "Dine-A-Ville Pink Dinosaur, 905 E Main St, Vernal, UT 84078", "latitude": 40.4565931, "longitude": -109.5115767, "avg_rating": 5.0, "num_of_reviews": 2, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x8752f73c74e35087:0xe012d7f2b5ce9ef2", "name": "Sno Delicious", "address": "Sno Delicious, 012930108, North Salt Lake, UT 84054", "latitude": 40.8538568, "longitude": -111.9301737, "avg_rating": 5.0, "num_of_reviews": 2, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x87530f2d1de185fd:0x1b4695d9770ae0a5", "name": "Laan Thai Restaurant", "address": "Laan Thai Restaurant, 2327 Washington Blvd, Ogden, UT 84401", "latitude": 41.2242476, "longitude": -111.9707542, "avg_rating": 5.0, "num_of_reviews": 28, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x87530eddd004495b:0xc18d435dfbdd59c7", "name": "Peddlers Cafe & Catering", "address": "Peddlers Cafe & Catering, 3632 N Wolf Creek Dr, Eden, UT 84310", "latitude": 41.3244432, "longitude": -111.8277895, "avg_rating": 5.0, "num_of_reviews": 8, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x87528aa45f90d2bf:0xb86d41dcccd1f8ea", "name": "Botanica", "address": "Botanica, 2030 900 E, Salt Lake City, UT 84105", "latitude": 40.7260159, "longitude": -111.8655453, "avg_rating": 5.0, "num_of_reviews": 2, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x874d9751460145b9:0xb9346df224fc50d7", "name": "EM SUSHI BURRITO", "address": "EM SUSHI BURRITO, 27 100 W, Provo, UT 84601", "latitude": 40.2342265, "longitude": -111.6607043, "avg_rating": 5.0, "num_of_reviews": 4, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x874d118bafab1f1d:0x938644831dbf1235", "name": "Cast Iron Bistro", "address": "Cast Iron Bistro, 321 US-6, Eureka, UT 84628", "latitude": 39.953846899999995, "longitude": -112.1216606, "avg_rating": 5.0, "num_of_reviews": 7, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x874887e5b480aa29:0x943d8df2ae87815a", "name": "The Desert Spoon", "address": "The Desert Spoon, The Desert Moon Hotel & RV/Tent Campground, 75 West Old Highway 6 & 50, Thompson Springs, UT 84540", "latitude": 38.9710792, "longitude": -109.7156769, "avg_rating": 5.0, "num_of_reviews": 8, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x87530daadfe4dccb:0x479efa285299b78a", "name": "Birdies Cone Pies", "address": null, "latitude": 41.208103, "longitude": -112.7313031, "avg_rating": 5.0, "num_of_reviews": 4, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x874ccb92e59031ff:0x5aa024482502a780", "name": "The Loft Steakhouse", "address": "The Loft Steakhouse, 411 E Main St, Delta, UT 84624", "latitude": 39.352654, "longitude": -112.5655128, "avg_rating": 5.0, "num_of_reviews": 3, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x87528133fecc2e0f:0x4922d69d10ce66bf", "name": "Pink Beehive Cotton Candy", "address": "Pink Beehive Cotton Candy, 14568 Stone Fly Cir, Riverton, UT 84065", "latitude": 40.4872801, "longitude": -111.9220905, "avg_rating": 5.0, "num_of_reviews": 6, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x874b139d43d19beb:0xc8f4dba74025d4b", "name": "Bowlify Superfoods", "address": "Bowlify Superfoods, 1172 UT-118, Richfield, UT 84701", "latitude": 38.7518508, "longitude": -112.0879127, "avg_rating": 5.0, "num_of_reviews": 8, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x874d815d421f4e95:0x8718787708ce2f11", "name": "El mesquite las Vegas", "address": "El mesquite las Vegas, Lehi, UT 84043", "latitude": 40.3916172, "longitude": -111.8507662, "avg_rating": 5.0, "num_of_reviews": 1, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x874d975b7e776cf7:0xc140792e504728d1", "name": "Eastern Tastes Teriyaki", "address": "Eastern Tastes Teriyaki, 1200 Towne Centre Blvd #2084, Provo, UT 84601", "latitude": 40.2169746, "longitude": -111.6627188, "avg_rating": 5.0, "num_of_reviews": 3, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x875281d588c4591f:0x6942a639cc8cd27", "name": "The Cake Alley dba Carrie's Cakes (By Appointment Only)", "address": "The Cake Alley dba Carrie's Cakes (By Appointment Only), 3135 W Wild Flower Ln, Lehi, UT 84043", "latitude": 40.4322403, "longitude": -111.8995936, "avg_rating": 5.0, "num_of_reviews": 2, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x8752803bb6bb30eb:0x71b86cb8e1b081ff", "name": "Cabela's Fresh Homemade Fudge", "address": "Cabela's Fresh Homemade Fudge, 2502 Chapel Ridge Rd, Lehi, UT 84043", "latitude": 40.4372164, "longitude": -111.8892012, "avg_rating": 5.0, "num_of_reviews": 3, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x874d9b76820653f3:0xd4719c9cadb47857", "name": "Homemade Ice Cream. Nieve de garrafa artesanal.", "address": "Homemade Ice Cream. Nieve de garrafa artesanal., 2048 W Center St, Provo, UT 84601", "latitude": 40.2341886, "longitude": -111.6943815, "avg_rating": 5.0, "num_of_reviews": 1, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x8752f5528f182417:0x458b879a84008105", "name": "Kafe Mamai", "address": "Kafe Mamai, 751 W 800 S, Salt Lake City, UT 84104", "latitude": 40.7517324, "longitude": -111.9127582, "avg_rating": 5.0, "num_of_reviews": 8, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x8754616d6a50ed55:0xa4c7546c416e165a", "name": "JJ's Shave Ice", "address": "JJ's Shave Ice, 195 W Main St, Richmond, UT 84333", "latitude": 41.9224934, "longitude": -111.8141925, "avg_rating": 5.0, "num_of_reviews": 2, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x80b561e72ec18ea7:0xf4b8d443bdbeff76", "name": "Lighthouse Seafood and Grill", "address": "Lighthouse Seafood and Grill, 1180 Sage Dr F, Cedar City, UT 84720", "latitude": 37.6568298, "longitude": -113.0830993, "avg_rating": 5.0, "num_of_reviews": 1, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x8752f558c5a29e8f:0x7e752c9e0fbbf601", "name": "Midnimo restaurant", "address": "Midnimo restaurant, 55 N Redwood Rd Ste D, Salt Lake City, UT 84116", "latitude": 40.7707535, "longitude": -111.9405123, "avg_rating": 5.0, "num_of_reviews": 5, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x874d97aa26b6f5bb:0x90d5060b76eb47f", "name": "Beehive Catering", "address": "Beehive Catering, 2365 Mountain Vista Ln #1, Provo, UT 84606", "latitude": 40.2019423, "longitude": -111.624046, "avg_rating": 5.0, "num_of_reviews": 48, "price": "$", "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x8752893c2270ed7b:0x2e4ca2de2d3bbeb", "name": "Caleo restaurant", "address": "Caleo restaurant, 742 W Center St A, Midvale, UT 84047", "latitude": 40.6108501, "longitude": -111.9113078, "avg_rating": 5.0, "num_of_reviews": 8, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}, {"gmap_id": "0x87530d5927983143:0xe6c7d84170874b1f", "name": "Yummy Sweets and Soda Shoppe", "address": "Yummy Sweets and Soda Shoppe, 1150 N, US-89 Ste F, Harrisville, UT 84404", "latitude": 41.2784121, "longitude": -111.98285, "avg_rating": 5.0, "num_of_reviews": 34, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}]}
+
+Action: run_sql({'query': "WITH rated AS (\n  SELECT\n    regexp_extract(address, '^[^,]*,\\\\s*([^,]+)', 1) AS street,\n    gmap_id\n  FROM establishments\n  WHERE avg_rating = 3.0\n    AND address IS NOT NULL\n), counts AS (\n  SELECT street, COUNT(*) AS restaurant_count\n  FROM rated\n  WHERE street IS NOT NULL AND street <> ''\n  GROUP BY street\n)\nSELECT street, restaurant_count\nFROM counts\nORDER BY restaurant_count DESC, street ASC\nLIMIT 10"})
+
+Observation: {"row_count": 0, "truncated": false, "rows": []}
+
+Action: get_column_glossary({'table_dot_column': 'establishments.address'})
+
+Observation: No glossary entry for 'establishments.address' — it's probably self-explanatory from get_schema.
+
+Action: run_sql({'query': 'SELECT address, avg_rating\nFROM establishments\nWHERE avg_rating = 3.0 AND address IS NOT NULL\nLIMIT 20'})
+
+Observation: {"row_count": 20, "truncated": false, "rows": [{"address": "La Puente Restaurant #7 Sandy, 61 W 10600 S, Sandy, UT 84070", "avg_rating": 3.0}, {"address": "TA, 1889 Pheasant Ln, Tooele, UT 84074", "avg_rating": 3.0}, {"address": "Maverik Adventure's First Stop, 520 W Main St, Lehi, UT 84043", "avg_rating": 3.0}, {"address": "Summit Fitness Kitchen Meal Prep, 1532 1450 S St, St. George, UT 84790", "avg_rating": 3.0}, {"address": "Arctic Circle, 3883 5400 S, Salt Lake City, UT 84118", "avg_rating": 3.0}, {"address": "The Cat Lounge, 500 E State St, American Fork, UT 84003", "avg_rating": 3.0}, {"address": "Farr's Fresh Ice Cream & Frozen Yogurt Cafe, 496 N 990 W, American Fork, UT 84003", "avg_rating": 3.0}, {"address": "Bistro H, 281 Zion Park Blvd, Springdale, UT 84767", "avg_rating": 3.0}, {"address": "Applebee\u2019s Grill + Bar, 11460 District Dr, South Jordan, UT 84095", "avg_rating": 3.0}, {"address": "Arby's, 10 Center St, Panguitch, UT 84759", "avg_rating": 3.0}, {"address": "McDonald's, 140 S Rio Grande St #6, Salt Lake City, UT 84101", "avg_rating": 3.0}, {"address": "Cafe Silvestre, 282 7200 S, Midvale, UT 84047", "avg_rating": 3.0}, {"address": "Apollo Burger, 504 N 900 W, American Fork, UT 84003", "avg_rating": 3.0}, {"address": "Dickey's Barbecue Pit, 2085 W. Highway 40 A, Vernal, UT 84078", "avg_rating": 3.0}, {"address": "Great Steak, 6191 State St #1310, Murray, UT 84107", "avg_rating": 3.0}, {"address": "Pho Bhan, 2056 Harrison Blvd, Ogden, UT 84401", "avg_rating": 3.0}, {"address": "Kozy Caf\u00e9, 3525 S Echo Rd, Coalville, UT 84017", "avg_rating": 3.0}, {"address": "Freebirds World Burrito, 5419 S Redwood Rd, Taylorsville, UT 84123", "avg_rating": 3.0}, {"address": "Taco Bell, 8836 Highway 40, Tooele, UT 84074", "avg_rating": 3.0}, {"address": "Pizza Hut, 785 E 200 S, Lehi, UT 84043", "avg_rating": 3.0}]}
+
+Action: run_sql({'query': "WITH rated AS (\n  SELECT\n    trim(regexp_extract(address, '^[^,]*,\\\\s*([^,]+)', 1)) AS street,\n    gmap_id\n  FROM establishments\n  WHERE avg_rating = 3.0\n    AND address IS NOT NULL\n), counts AS (\n  SELECT street, COUNT(*) AS restaurant_count\n  FROM rated\n  WHERE street IS NOT NULL AND street <> ''\n  GROUP BY street\n)\nSELECT street, restaurant_count\nFROM counts\nORDER BY restaurant_count DESC, street ASC\nLIMIT 10"})
+
+Observation: {"row_count": 0, "truncated": false, "rows": []}
+
+Action: run_sql({'query': "SELECT regexp_extract(address, '^[^,]*,\\\\s*([^,]+)', 1) AS street\nFROM establishments\nWHERE avg_rating=3.0 AND address IS NOT NULL\nLIMIT 5"})
+
+Observation: {"row_count": 5, "truncated": false, "rows": [{"street": ""}, {"street": ""}, {"street": ""}, {"street": ""}, {"street": ""}]}
+
+Action: run_sql({'query': "WITH rated AS (\n  SELECT\n    trim(split_part(address, ',', 2)) AS street,\n    gmap_id\n  FROM establishments\n  WHERE avg_rating = 3.0\n    AND address IS NOT NULL\n), counts AS (\n  SELECT street, COUNT(*) AS restaurant_count\n  FROM rated\n  WHERE street <> ''\n  GROUP BY street\n)\nSELECT street, restaurant_count\nFROM counts\nORDER BY restaurant_count DESC, street ASC\nLIMIT 10"})
+
+Observation: {"row_count": 10, "truncated": false, "rows": [{"street": "10 Center St", "restaurant_count": 1}, {"street": "10235 State St", "restaurant_count": 1}, {"street": "10450 S State St", "restaurant_count": 1}, {"street": "10450 State St", "restaurant_count": 1}, {"street": "10672 State St", "restaurant_count": 1}, {"street": "11428 S Pkwy Plaza Dr #300", "restaurant_count": 1}, {"street": "11460 District Dr", "restaurant_count": 1}, {"street": "1155 N Hill Field Rd", "restaurant_count": 1}, {"street": "1206-1222 W State Rd", "restaurant_count": 1}, {"street": "1224 E Main St", "restaurant_count": 1}]}
+
+Action: run_sql({'query': "WITH rated AS (\n  SELECT\n    trim(split_part(address, ',', 2)) AS street_address,\n    gmap_id\n  FROM establishments\n  WHERE avg_rating = 3.0\n    AND address IS NOT NULL\n), normalized AS (\n  SELECT\n    trim(regexp_replace(street_address, '^[0-9]+(?:-[0-9]+)?\\\\s+', '')) AS street,\n    gmap_id\n  FROM rated\n), counts AS (\n  SELECT street, COUNT(*) AS restaurant_count\n  FROM normalized\n  WHERE street <> ''\n  GROUP BY street\n)\nSELECT street, restaurant_count\nFROM counts\nORDER BY restaurant_count DESC, street ASC\nLIMIT 10"})
+
+Observation: {"row_count": 10, "truncated": false, "rows": [{"street": "10 Center St", "restaurant_count": 1}, {"street": "10235 State St", "restaurant_count": 1}, {"street": "10450 S State St", "restaurant_count": 1}, {"street": "10450 State St", "restaurant_count": 1}, {"street": "10672 State St", "restaurant_count": 1}, {"street": "11428 S Pkwy Plaza Dr #300", "restaurant_count": 1}, {"street": "11460 District Dr", "restaurant_count": 1}, {"street": "1155 N Hill Field Rd", "restaurant_count": 1}, {"street": "1206-1222 W State Rd", "restaurant_count": 1}, {"street": "1224 E Main St", "restaurant_count": 1}]}
+
+Action: run_sql({'query': "SELECT regexp_replace('10 Center St', '^[0-9]+\\\\s+', '') AS test"})
+
+Observation: {"row_count": 1, "truncated": false, "rows": [{"test": "10 Center St"}]}
+
+Action: run_sql({'query': "WITH rated AS (\n  SELECT\n    trim(split_part(address, ',', 2)) AS street_address,\n    gmap_id\n  FROM establishments\n  WHERE avg_rating = 3.0\n    AND address IS NOT NULL\n), normalized AS (\n  SELECT\n    trim(regexp_replace(street_address, '[0-9]+', '')) AS street,\n    gmap_id\n  FROM rated\n), counts AS (\n  SELECT street, COUNT(*) AS restaurant_count\n  FROM normalized\n  WHERE street <> ''\n  GROUP BY street\n)\nSELECT street, restaurant_count\nFROM counts\nORDER BY restaurant_count DESC, street ASC\nLIMIT 10"})
+
+Observation: {"row_count": 10, "truncated": false, "rows": [{"street": "N Main St", "restaurant_count": 6}, {"street": "State St", "restaurant_count": 6}, {"street": "S Redwood Rd", "restaurant_count": 4}, {"street": "E 3900 S", "restaurant_count": 2}, {"street": "E State St", "restaurant_count": 2}, {"street": "S 5600 W", "restaurant_count": 2}, {"street": "-1222 W State Rd", "restaurant_count": 1}, {"street": "1450 S St", "restaurant_count": 1}, {"street": "3600 W", "restaurant_count": 1}, {"street": "5400 S", "restaurant_count": 1}]}
+
+Action: run_sql({'query': "WITH rated AS (\n  SELECT trim(split_part(address, ',', 2)) AS street_address, name, address\n  FROM establishments\n  WHERE avg_rating = 3.0 AND address IS NOT NULL\n), normalized AS (\n  SELECT trim(regexp_replace(street_address, '[0-9]+', '')) AS street, name, address\n  FROM rated\n)\nSELECT street, name, address\nFROM normalized\nWHERE street IN ('N Main St','State St')\nORDER BY street, name"})
+
+Observation: {"row_count": 12, "truncated": false, "rows": [{"street": "N Main St", "name": "Burger King", "address": "Burger King, 729 N Main St, Clearfield, UT 84015"}, {"street": "N Main St", "name": "Burger King", "address": "Burger King, 202 N Main St, Logan, UT 84321"}, {"street": "N Main St", "name": "KFC", "address": "KFC, 609 N Main St, Clearfield, UT 84015"}, {"street": "N Main St", "name": "McDonald's", "address": "McDonald's, 2080 N Main St, Layton, UT 84041"}, {"street": "N Main St", "name": "Taco Time", "address": "Taco Time, 570 N Main St, Heber City, UT 84032"}, {"street": "N Main St", "name": "Wendy's", "address": "Wendy's, 260 N Main St, Moab, UT 84532"}, {"street": "State St", "name": "Burger King", "address": "Burger King, 10235 State St, Sandy, UT 84070"}, {"street": "State St", "name": "Illy", "address": "Illy, 6191 State St, Murray, UT 84107"}, {"street": "State St", "name": "Osaka Japan", "address": "Osaka Japan, 10450 State St, Sandy, UT 84070"}, {"street": "State St", "name": "Pizza Hut", "address": "Pizza Hut, 5467 State St, Murray, UT 84107"}, {"street": "State St", "name": "SUBWAY\u00aeRestaurants", "address": "SUBWAY\u00aeRestaurants, 7093 State St, Midvale, UT 84047"}, {"street": "State St", "name": "The Training Table Sandy", "address": "The Training Table Sandy, 10672 State St, Sandy, UT 84070"}]}
+
+Action: plot_chart({'chart_type': 'bar', 'color': '', 'query': "WITH rated AS (\n  SELECT trim(split_part(address, ',', 2)) AS street_address\n  FROM establishments\n  WHERE avg_rating = 3.0 AND address IS NOT NULL\n), normalized AS (\n  SELECT trim(regexp_replace(street_address, '[0-9]+', '')) AS street\n  FROM rated\n), counts AS (\n  SELECT street, COUNT(*) AS restaurant_count\n  FROM normalized\n  WHERE street <> ''\n  GROUP BY street\n)\nSELECT street, restaurant_count\nFROM counts\nORDER BY restaurant_count DESC, street ASC\nLIMIT 10", 'title': 'Top streets by number of 3-star restaurants', 'x': 'street', 'y': 'restaurant_count'})
+
+Observation: Chart created: 'Top streets by number of 3-star restaurants' (bar, 10 rows). It will be shown to the user below your answer.
+
+--- Usage: 177431 tokens, ~$0.3699 ---

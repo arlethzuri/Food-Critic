@@ -1,0 +1,876 @@
+{
+  "source": "frontend",
+  "run_id": "ad269d87",
+  "timestamp": "2026-08-15T09:51:57.232666+00:00",
+  "variant": "v3_memory",
+  "provider": "openai",
+  "model": "gpt-5.6-terra",
+  "question": "Which do you recommend I try?",
+  "output_text": "## Recommendation: Red Lotus Bistro\n\nI\u2019d try **Red Lotus Bistro** first if your priority is the strongest customer satisfaction signal: it has a **4.8/5 average rating** from **188 reviews**, compared with **King Buffet\u2019s 4.1/5** from **3,262 reviews**.\n\n| Restaurant | Rating | Reviews | Best for |\n|---|---:|---:|---|\n| **Red Lotus Bistro** | **4.8/5** | 188 | Higher-rated dining choice |\n| King Buffet | 4.1/5 | **3,262** | A heavily reviewed, likely more familiar buffet-style option |\n\n### Important limitation\nNeither restaurant has a matched Salt Lake County Health Department inspection record in this dataset. That does **not** indicate either is clean or unsafe\u2014it only means I can\u2019t use inspection history to break the tie. This is common in the data: **98.4% of establishments lack a matched SLCHD inspection history**.\n\n### Visualization\nThe comparison chart shown above contrasts their ratings and review volumes.",
+  "structured_response": {
+    "narrative_answer": "## Recommendation: Red Lotus Bistro\n\nI\u2019d try **Red Lotus Bistro** first if your priority is the strongest customer satisfaction signal: it has a **4.8/5 average rating** from **188 reviews**, compared with **King Buffet\u2019s 4.1/5** from **3,262 reviews**.\n\n| Restaurant | Rating | Reviews | Best for |\n|---|---:|---:|---|\n| **Red Lotus Bistro** | **4.8/5** | 188 | Higher-rated dining choice |\n| King Buffet | 4.1/5 | **3,262** | A heavily reviewed, likely more familiar buffet-style option |\n\n### Important limitation\nNeither restaurant has a matched Salt Lake County Health Department inspection record in this dataset. That does **not** indicate either is clean or unsafe\u2014it only means I can\u2019t use inspection history to break the tie. This is common in the data: **98.4% of establishments lack a matched SLCHD inspection history**.\n\n### Visualization\nThe comparison chart shown above contrasts their ratings and review volumes.",
+    "hypothesis": "well_reviewed",
+    "confidence": "medium",
+    "establishment_name": "Red Lotus Bistro",
+    "supporting_evidence": [
+      {
+        "source_type": "sql_fact",
+        "source_ref": "search_establishments result: Red Lotus Bistro (gmap_id 0x8752f516eb00ca79:0x8cafc8ea615234ce)",
+        "relates_to_concept": "Establishment.avg_rating",
+        "summary": "Red Lotus Bistro has a 4.8/5 average rating across 188 reviews, exceeding King Buffet's 4.1/5 rating.",
+        "direction": "supports"
+      }
+    ],
+    "undermining_evidence": [
+      {
+        "source_type": "sql_fact",
+        "source_ref": "search_establishments result: King Buffet (gmap_id 0x87528bfd2fa99e01:0x8ea26f9955b10a4)",
+        "relates_to_concept": "Establishment.num_of_reviews",
+        "summary": "Red Lotus Bistro's 188 reviews are substantially fewer than King Buffet's 3,262 reviews, so its higher rating is based on a smaller reviewer sample.",
+        "direction": "undermines"
+      },
+      {
+        "source_type": "sql_fact",
+        "source_ref": "search_establishments results: Red Lotus Bistro and King Buffet",
+        "relates_to_concept": "Establishment.slchd_establishment_key",
+        "summary": "Both restaurants have null matched SLCHD establishment keys, preventing an inspection-history comparison.",
+        "direction": "undermines"
+      }
+    ],
+    "candidate_pool": []
+  },
+  "trace_text": "Action: search_establishments({'category_contains': 'chinese', 'limit': 1, 'max_inspection_score': None, 'max_price_level': None, 'min_critical_violations': None, 'min_inspection_score': None, 'min_rating': None, 'name_contains': '', 'near_lat': None, 'near_lon': None, 'radius_mi': None, 'require_inspection_data': False, 'sort_by': 'avg_rating', 'sort_desc': True})\n\nAction: search_establishments({'category_contains': 'chinese', 'limit': 1, 'max_inspection_score': None, 'max_price_level': None, 'min_critical_violations': None, 'min_inspection_score': None, 'min_rating': None, 'name_contains': '', 'near_lat': None, 'near_lon': None, 'radius_mi': None, 'require_inspection_data': False, 'sort_by': 'num_of_reviews', 'sort_desc': True})\n\nObservation: {\"row_count\": 1, \"rows\": [{\"gmap_id\": \"0x8752f516eb00ca79:0x8cafc8ea615234ce\", \"name\": \"Red Lotus Bistro\", \"address\": \"Red Lotus Bistro, 329 S State St, Salt Lake City, UT 84111\", \"latitude\": 40.7619092, \"longitude\": -111.8880399, \"avg_rating\": 4.8, \"num_of_reviews\": 188, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}]}\n\nObservation: {\"row_count\": 1, \"rows\": [{\"gmap_id\": \"0x87528bfd2fa99e01:0x8ea26f9955b10a4\", \"name\": \"King Buffet\", \"address\": \"King Buffet, 5668 S Redwood Rd, Taylorsville, UT 84123\", \"latitude\": 40.6481979, \"longitude\": -111.9406255, \"avg_rating\": 4.1, \"num_of_reviews\": 3262, \"price\": \"$$\", \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}]}\n\nAction: plot_chart({'chart_type': 'bar', 'color': 'metric', 'query': \"SELECT 'Red Lotus Bistro' AS restaurant, 'Average rating (out of 5)' AS metric, 4.8 AS value UNION ALL SELECT 'King Buffet' AS restaurant, 'Average rating (out of 5)' AS metric, 4.1 AS value UNION ALL SELECT 'Red Lotus Bistro' AS restaurant, 'Review count' AS metric, 188.0 AS value UNION ALL SELECT 'King Buffet' AS restaurant, 'Review count' AS metric, 3262.0 AS value\", 'title': 'Highest-Rated vs. Most-Reviewed Chinese Restaurant', 'x': 'restaurant', 'y': 'value'})\n\nObservation: Chart created: 'Highest-Rated vs. Most-Reviewed Chinese Restaurant' (bar, 4 rows). It will be shown to the user below your answer.",
+  "timeline": [
+    {
+      "index": 0,
+      "kind": "map",
+      "tool_name": "search_establishments",
+      "tool_args": {
+        "category_contains": "chinese",
+        "limit": 1,
+        "max_inspection_score": null,
+        "max_price_level": null,
+        "min_critical_violations": null,
+        "min_inspection_score": null,
+        "min_rating": null,
+        "name_contains": "",
+        "near_lat": null,
+        "near_lon": null,
+        "radius_mi": null,
+        "require_inspection_data": false,
+        "sort_by": "avg_rating",
+        "sort_desc": true
+      },
+      "caption": "Searching establishments: category contains 'chinese'",
+      "rows": [
+        {
+          "gmap_id": "0x8752f516eb00ca79:0x8cafc8ea615234ce",
+          "name": "Red Lotus Bistro",
+          "address": "Red Lotus Bistro, 329 S State St, Salt Lake City, UT 84111",
+          "latitude": 40.7619092,
+          "longitude": -111.8880399,
+          "avg_rating": 4.8,
+          "num_of_reviews": 188,
+          "price": null,
+          "slchd_establishment_key": null,
+          "distance_mi": null,
+          "most_recent_inspection_score": null,
+          "critical_violation_count": 0,
+          "total_violation_count": 0
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "kind": "map",
+      "tool_name": "search_establishments",
+      "tool_args": {
+        "category_contains": "chinese",
+        "limit": 1,
+        "max_inspection_score": null,
+        "max_price_level": null,
+        "min_critical_violations": null,
+        "min_inspection_score": null,
+        "min_rating": null,
+        "name_contains": "",
+        "near_lat": null,
+        "near_lon": null,
+        "radius_mi": null,
+        "require_inspection_data": false,
+        "sort_by": "num_of_reviews",
+        "sort_desc": true
+      },
+      "caption": "Searching establishments: category contains 'chinese'",
+      "rows": [
+        {
+          "gmap_id": "0x87528bfd2fa99e01:0x8ea26f9955b10a4",
+          "name": "King Buffet",
+          "address": "King Buffet, 5668 S Redwood Rd, Taylorsville, UT 84123",
+          "latitude": 40.6481979,
+          "longitude": -111.9406255,
+          "avg_rating": 4.1,
+          "num_of_reviews": 3262,
+          "price": "$$",
+          "slchd_establishment_key": null,
+          "distance_mi": null,
+          "most_recent_inspection_score": null,
+          "critical_violation_count": 0,
+          "total_violation_count": 0
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "kind": "chart",
+      "tool_name": "plot_chart",
+      "tool_args": {
+        "chart_type": "bar",
+        "color": "metric",
+        "query": "SELECT 'Red Lotus Bistro' AS restaurant, 'Average rating (out of 5)' AS metric, 4.8 AS value UNION ALL SELECT 'King Buffet' AS restaurant, 'Average rating (out of 5)' AS metric, 4.1 AS value UNION ALL SELECT 'Red Lotus Bistro' AS restaurant, 'Review count' AS metric, 188.0 AS value UNION ALL SELECT 'King Buffet' AS restaurant, 'Review count' AS metric, 3262.0 AS value",
+        "title": "Highest-Rated vs. Most-Reviewed Chinese Restaurant",
+        "x": "restaurant",
+        "y": "value"
+      },
+      "caption": "Charting: Highest-Rated vs. Most-Reviewed Chinese Restaurant",
+      "rows": []
+    }
+  ],
+  "messages": [
+    {
+      "type": "HumanMessage",
+      "content": "Compare the highest rated Chinese restaurant against the most reviewed Chinese restaurant."
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "search_establishments",
+          "args": {
+            "category_contains": "chinese",
+            "limit": 1,
+            "max_inspection_score": null,
+            "max_price_level": null,
+            "min_critical_violations": null,
+            "min_inspection_score": null,
+            "min_rating": null,
+            "name_contains": "",
+            "near_lat": null,
+            "near_lon": null,
+            "radius_mi": null,
+            "require_inspection_data": false,
+            "sort_by": "avg_rating",
+            "sort_desc": true
+          },
+          "id": "call_7xAwLSmWD2SXVMPXbQZkEdvy",
+          "type": "tool_call"
+        },
+        {
+          "name": "search_establishments",
+          "args": {
+            "category_contains": "chinese",
+            "limit": 1,
+            "max_inspection_score": null,
+            "max_price_level": null,
+            "min_critical_violations": null,
+            "min_inspection_score": null,
+            "min_rating": null,
+            "name_contains": "",
+            "near_lat": null,
+            "near_lon": null,
+            "radius_mi": null,
+            "require_inspection_data": false,
+            "sort_by": "num_of_reviews",
+            "sort_desc": true
+          },
+          "id": "call_iOsNJ8d3UIBMxHASmAUSBbNC",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 3956,
+        "output_tokens": 206,
+        "total_tokens": 4162,
+        "input_token_details": {
+          "audio": 0,
+          "cache_creation": 17,
+          "cache_read": 3936
+        },
+        "output_token_details": {
+          "audio": 0,
+          "reasoning": 0
+        }
+      },
+      "model_name": "gpt-5.6-terra"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 1, \"rows\": [{\"gmap_id\": \"0x8752f516eb00ca79:0x8cafc8ea615234ce\", \"name\": \"Red Lotus Bistro\", \"address\": \"Red Lotus Bistro, 329 S State St, Salt Lake City, UT 84111\", \"latitude\": 40.7619092, \"longitude\": -111.8880399, \"avg_rating\": 4.8, \"num_of_reviews\": 188, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}]}",
+      "tool_call_id": "call_7xAwLSmWD2SXVMPXbQZkEdvy",
+      "name": "search_establishments"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 1, \"rows\": [{\"gmap_id\": \"0x87528bfd2fa99e01:0x8ea26f9955b10a4\", \"name\": \"King Buffet\", \"address\": \"King Buffet, 5668 S Redwood Rd, Taylorsville, UT 84123\", \"latitude\": 40.6481979, \"longitude\": -111.9406255, \"avg_rating\": 4.1, \"num_of_reviews\": 3262, \"price\": \"$$\", \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}]}",
+      "tool_call_id": "call_iOsNJ8d3UIBMxHASmAUSBbNC",
+      "name": "search_establishments"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "plot_chart",
+          "args": {
+            "chart_type": "bar",
+            "color": "metric",
+            "query": "SELECT 'Red Lotus Bistro' AS restaurant, 'Average rating (out of 5)' AS metric, 4.8 AS value UNION ALL SELECT 'King Buffet' AS restaurant, 'Average rating (out of 5)' AS metric, 4.1 AS value UNION ALL SELECT 'Red Lotus Bistro' AS restaurant, 'Review count' AS metric, 188.0 AS value UNION ALL SELECT 'King Buffet' AS restaurant, 'Review count' AS metric, 3262.0 AS value",
+            "title": "Highest-Rated vs. Most-Reviewed Chinese Restaurant",
+            "x": "restaurant",
+            "y": "value"
+          },
+          "id": "call_IVJnEaCWJ7hAt41QFxyaqMP0",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 4492,
+        "output_tokens": 149,
+        "total_tokens": 4641,
+        "input_token_details": {
+          "audio": 0,
+          "cache_creation": 536,
+          "cache_read": 3953
+        },
+        "output_token_details": {
+          "audio": 0,
+          "reasoning": 0
+        }
+      },
+      "model_name": "gpt-5.6-terra"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "Chart created: 'Highest-Rated vs. Most-Reviewed Chinese Restaurant' (bar, 4 rows). It will be shown to the user below your answer.",
+      "tool_call_id": "call_IVJnEaCWJ7hAt41QFxyaqMP0",
+      "name": "plot_chart"
+    },
+    {
+      "type": "AIMessage",
+      "content": "{\"establishment_name\":\"Red Lotus Bistro and King Buffet\",\"hypothesis\":\"no_inspection_data_available\",\"confidence\":\"high\",\"narrative_answer\":\"## Comparison\\n\\n| Measure | Highest-rated Chinese restaurant | Most-reviewed Chinese restaurant |\\n|---|---:|---:|\\n| Restaurant | **Red Lotus Bistro** | **King Buffet** |\\n| Address | 329 S State St, Salt Lake City, UT 84111 | 5668 S Redwood Rd, Taylorsville, UT 84123 |\\n| Average Google rating | **4.8 / 5** | 4.1 / 5 |\\n| Google review count | 188 | **3,262** |\\n| Price | Not listed | $$ |\\n\\n### Takeaway\\n**Red Lotus Bistro** leads on customer rating, at **4.8/5**, which is **0.7 points higher** than King Buffet\u2019s 4.1/5. **King Buffet** has far more review volume\u2014**3,262 reviews versus 188**, about **17 times as many**\u2014so its rating reflects a much larger reviewer sample.\\n\\n### Inspection-data note\\nNeither establishment has a matched Salt Lake County Health Department inspection listing in this dataset. This is not evidence of a clean inspection record; it means inspection history cannot be compared here. This limitation is common: **98.4% of establishments in the dataset have no matched SLCHD inspection history**.\\n\\n### Visualization\\nThe bar chart compares both rating and review-count measures for the two restaurants.\",\"supporting_evidence\":[{\"direction\":\"supports\",\"relates_to_concept\":\"Establishment.slchd_establishment_key\",\"source_type\":\"sql_fact\",\"source_ref\":\"search_establishments result: Red Lotus Bistro (gmap_id 0x8752f516eb00ca79:0x8cafc8ea615234ce)\",\"summary\":\"Red Lotus Bistro has a null matched SLCHD establishment key, so no matched inspection history is available in this dataset.\"},{\"direction\":\"supports\",\"relates_to_concept\":\"Establishment.slchd_establishment_key\",\"source_type\":\"sql_fact\",\"source_ref\":\"search_establishments result: King Buffet (gmap_id 0x87528bfd2fa99e01:0x8ea26f9955b10a4)\",\"summary\":\"King Buffet has a null matched SLCHD establishment key, so no matched inspection history is available in this dataset.\"}],\"undermining_evidence\":[],\"candidate_pool\":[]}",
+      "tool_calls": [],
+      "usage_metadata": {
+        "input_tokens": 4685,
+        "output_tokens": 533,
+        "total_tokens": 5218,
+        "input_token_details": {
+          "audio": 0,
+          "cache_creation": 193,
+          "cache_read": 4489
+        },
+        "output_token_details": {
+          "audio": 0,
+          "reasoning": 0
+        }
+      },
+      "model_name": "gpt-5.6-terra"
+    },
+    {
+      "type": "HumanMessage",
+      "content": "Which do you recommend I try?"
+    },
+    {
+      "type": "AIMessage",
+      "content": "{\"establishment_name\":\"Red Lotus Bistro\",\"hypothesis\":\"well_reviewed\",\"confidence\":\"medium\",\"narrative_answer\":\"## Recommendation: Red Lotus Bistro\\n\\nI\u2019d try **Red Lotus Bistro** first if your priority is the strongest customer satisfaction signal: it has a **4.8/5 average rating** from **188 reviews**, compared with **King Buffet\u2019s 4.1/5** from **3,262 reviews**.\\n\\n| Restaurant | Rating | Reviews | Best for |\\n|---|---:|---:|---|\\n| **Red Lotus Bistro** | **4.8/5** | 188 | Higher-rated dining choice |\\n| King Buffet | 4.1/5 | **3,262** | A heavily reviewed, likely more familiar buffet-style option |\\n\\n### Important limitation\\nNeither restaurant has a matched Salt Lake County Health Department inspection record in this dataset. That does **not** indicate either is clean or unsafe\u2014it only means I can\u2019t use inspection history to break the tie. This is common in the data: **98.4% of establishments lack a matched SLCHD inspection history**.\\n\\n### Visualization\\nThe comparison chart shown above contrasts their ratings and review volumes.\",\"supporting_evidence\":[{\"direction\":\"supports\",\"relates_to_concept\":\"Establishment.avg_rating\",\"source_type\":\"sql_fact\",\"source_ref\":\"search_establishments result: Red Lotus Bistro (gmap_id 0x8752f516eb00ca79:0x8cafc8ea615234ce)\",\"summary\":\"Red Lotus Bistro has a 4.8/5 average rating across 188 reviews, exceeding King Buffet's 4.1/5 rating.\"}],\"undermining_evidence\":[{\"direction\":\"undermines\",\"relates_to_concept\":\"Establishment.num_of_reviews\",\"source_type\":\"sql_fact\",\"source_ref\":\"search_establishments result: King Buffet (gmap_id 0x87528bfd2fa99e01:0x8ea26f9955b10a4)\",\"summary\":\"Red Lotus Bistro's 188 reviews are substantially fewer than King Buffet's 3,262 reviews, so its higher rating is based on a smaller reviewer sample.\"},{\"direction\":\"undermines\",\"relates_to_concept\":\"Establishment.slchd_establishment_key\",\"source_type\":\"sql_fact\",\"source_ref\":\"search_establishments results: Red Lotus Bistro and King Buffet\",\"summary\":\"Both restaurants have null matched SLCHD establishment keys, preventing an inspection-history comparison.\"}],\"candidate_pool\":[]}",
+      "tool_calls": [],
+      "usage_metadata": {
+        "input_tokens": 5232,
+        "output_tokens": 539,
+        "total_tokens": 5771,
+        "input_token_details": {
+          "audio": 0,
+          "cache_read": 4682,
+          "cache_creation": 547
+        },
+        "output_token_details": {
+          "audio": 0,
+          "reasoning": 0
+        }
+      },
+      "model_name": "gpt-5.6-terra"
+    }
+  ],
+  "charts": [
+    {
+      "data": [
+        {
+          "hovertemplate": "avg_rating=%{x}<br>name=%{y}<extra></extra>",
+          "legendgroup": "",
+          "marker": {
+            "color": "#000001",
+            "pattern": {
+              "shape": ""
+            }
+          },
+          "name": "",
+          "orientation": "h",
+          "showlegend": false,
+          "textposition": "auto",
+          "x": {
+            "dtype": "f8",
+            "bdata": "ZmZmZmZmEEA="
+          },
+          "xaxis": "x",
+          "y": [
+            "King Buffet"
+          ],
+          "yaxis": "y",
+          "type": "bar"
+        }
+      ],
+      "layout": {
+        "template": {
+          "data": {
+            "candlestick": [
+              {
+                "decreasing": {
+                  "line": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "line": {
+                    "color": "#000032"
+                  }
+                },
+                "type": "candlestick"
+              }
+            ],
+            "contourcarpet": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contourcarpet"
+              }
+            ],
+            "contour": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contour"
+              }
+            ],
+            "heatmap": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "heatmap"
+              }
+            ],
+            "histogram2d": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "histogram2d"
+              }
+            ],
+            "icicle": [
+              {
+                "textfont": {
+                  "color": "white"
+                },
+                "type": "icicle"
+              }
+            ],
+            "sankey": [
+              {
+                "textfont": {
+                  "color": "#000036"
+                },
+                "type": "sankey"
+              }
+            ],
+            "scatter": [
+              {
+                "marker": {
+                  "line": {
+                    "width": 0
+                  }
+                },
+                "type": "scatter"
+              }
+            ],
+            "table": [
+              {
+                "cells": {
+                  "fill": {
+                    "color": "#000038"
+                  },
+                  "font": {
+                    "color": "#000037"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "header": {
+                  "fill": {
+                    "color": "#000040"
+                  },
+                  "font": {
+                    "color": "#000036"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "type": "table"
+              }
+            ],
+            "waterfall": [
+              {
+                "connector": {
+                  "line": {
+                    "color": "#000036",
+                    "width": 2
+                  }
+                },
+                "decreasing": {
+                  "marker": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "marker": {
+                    "color": "#000032"
+                  }
+                },
+                "totals": {
+                  "marker": {
+                    "color": "#000034"
+                  }
+                },
+                "type": "waterfall"
+              }
+            ]
+          },
+          "layout": {
+            "coloraxis": {
+              "colorscale": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorscale": {
+              "diverging": [
+                [
+                  0.0,
+                  "#000021"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000022"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000023"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000024"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000025"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000026"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000027"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000028"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000029"
+                ],
+                [
+                  1.0,
+                  "#000030"
+                ]
+              ],
+              "sequential": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ],
+              "sequentialminus": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorway": [
+              "#000001",
+              "#000002",
+              "#000003",
+              "#000004",
+              "#000005",
+              "#000006",
+              "#000007",
+              "#000008",
+              "#000009",
+              "#000010"
+            ]
+          }
+        },
+        "xaxis": {
+          "anchor": "y",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "avg_rating"
+          }
+        },
+        "yaxis": {
+          "anchor": "x",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "name"
+          },
+          "autorange": "reversed"
+        },
+        "legend": {
+          "tracegroupgap": 0
+        },
+        "margin": {
+          "t": 30,
+          "l": 10,
+          "r": 10,
+          "b": 10
+        },
+        "barmode": "relative",
+        "height": 400
+      }
+    }
+  ],
+  "candidate_pool_raw": [],
+  "duration_seconds": 5.52,
+  "usage": {
+    "available": true,
+    "per_call": [
+      {
+        "input_tokens": 3956,
+        "output_tokens": 206,
+        "total_tokens": 4162
+      },
+      {
+        "input_tokens": 4492,
+        "output_tokens": 149,
+        "total_tokens": 4641
+      },
+      {
+        "input_tokens": 4685,
+        "output_tokens": 533,
+        "total_tokens": 5218
+      },
+      {
+        "input_tokens": 5232,
+        "output_tokens": 539,
+        "total_tokens": 5771
+      }
+    ],
+    "input_tokens": 18365,
+    "output_tokens": 1427,
+    "total_tokens": 19792
+  },
+  "tokens_per_minute": 215122.0,
+  "estimated_cost_usd": 0.053854,
+  "success": true,
+  "error": null,
+  "chart_image_files": [
+    "2026-08-15T09-51-57.232666+00-00_v3_memory_ad269d87_chart0.png"
+  ]
+}

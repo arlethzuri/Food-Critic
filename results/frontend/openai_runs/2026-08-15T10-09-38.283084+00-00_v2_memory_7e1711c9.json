@@ -1,0 +1,1140 @@
+{
+  "source": "frontend",
+  "run_id": "7e1711c9",
+  "timestamp": "2026-08-15T10:09:38.283084+00:00",
+  "variant": "v2_memory",
+  "provider": "openai",
+  "model": "gpt-5.6-terra",
+  "question": "Which street has the highest number of 3 star restaurants?",
+  "output_text": "**N Main St** and **State St** tie for the highest count, with **6 approximately 3-star restaurants each** (ratings from 2.95 to 3.04 in the dataset).\n\nNext were **S Redwood Rd** with **4**, followed by **E 3900 S**, **E State St**, and **S 5600 W** with **2 each**.\n\nThe chart shows the top 10 street-name groupings.",
+  "structured_response": null,
+  "trace_text": "Action: get_schema({})\n\nObservation: Project food_health_viz {\n  database_type: 'DuckDB'\n}\n\nTable establishment_keys {\n  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']\n  name varchar [not null]\n  address varchar [not null]\n  city varchar [not null]\n  city_state_zip varchar\n  establishment_type varchar\n  source varchar [note: 'friend_slc | own_scrape']\n  slchd_lat double\n  slchd_lon double\n  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']\n\n  Note: 'SLCHD establishment list, one row per portal listing.'\n}\n\nTable category {\n  category_id integer [pk]\n  category varchar\n}\n\nTable establishments {\n  gmap_id varchar [pk]\n  name varchar\n  address varchar\n  description varchar\n  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']\n  avg_rating double\n  num_of_reviews integer\n  price varchar\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']\n\n  Note: 'One row per Google Local place \u2014 all restaurants, not just SLCHD-matched.'\n}\n\nTable establishment_attributes {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  attribute varchar [not null]\n\n  indexes { (gmap_id, attribute) [pk] }\n\n  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. \"Service options\") dropped.'\n}\n\nTable establishment_categories {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  category_id integer [ref: > category.category_id, not null]\n\n  indexes { (gmap_id, category_id) [pk] }\n}\n\nTable gmap_hours {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  day integer [not null, note: '0=Sun \u2026 6=Sat']\n  open_min bigint\n  open_max bigint\n\n  indexes { (gmap_id, day) [pk] }\n\n  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'\n}\n\nTable review {\n  user_id varchar\n  name varchar\n  time bigint\n  rating double\n  text varchar\n  resp varchar\n  gmap_id varchar [ref: > establishments.gmap_id]\n}\n\nTable inspection_types {\n  inspection_type_id integer [pk, note: 'parsed leading number, e.g. \"01 - Routine\" -> 1']\n  description varchar [note: 'e.g. \"Routine\"']\n}\n\nTable inspections {\n  inspection_id bigint [pk, increment]\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]\n  inspection_date date [not null]\n  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable \u2014 27 rows have no type']\n  inspection_score integer\n\n  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'\n}\n\nTable violation_codes {\n  violation_code_id integer [pk, increment]\n  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. \"4.5.18\"']\n  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']\n  critical boolean [not null]\n}\n\nTable violations {\n  violation_id bigint [pk, increment]\n  inspection_id bigint [ref: > inspections.inspection_id, not null]\n  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]\n  violation_description varchar [note: 'per-occurrence free text']\n  violation_occurrences integer\n  violation_cos boolean [note: 'corrected on site']\n  violation_phr varchar [note: 'public health rationale']\n\n  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'\n}\n\n\nAction: search_establishments({'min_rating': 3, 'limit': 1})\n\nObservation: {\"row_count\": 1, \"rows\": [{\"gmap_id\": \"0x80cac2bd755f2c63:0xaac02cfd1eedb6c\", \"name\": \"Zion Hawaiian\", \"address\": \"Zion Hawaiian, 932 Zion \\u2013 Mount Carmel Hwy, Springdale, UT 84767\", \"latitude\": 37.1890011, \"longitude\": -112.9999502, \"avg_rating\": 5.0, \"num_of_reviews\": 1, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}]}\n\nAction: run_sql({'query': \"WITH three_star AS (\\n  SELECT trim(regexp_replace(address, '^[^,]*,\\\\\\\\s*', '')) AS street_address\\n  FROM establishments\\n  WHERE avg_rating >= 2.95 AND avg_rating < 3.05\\n), streets AS (\\n  SELECT regexp_replace(street_address, ',.*$', '') AS street\\n  FROM three_star\\n  WHERE street_address IS NOT NULL AND street_address <> ''\\n)\\nSELECT street, COUNT(*) AS restaurant_count\\nFROM streets\\nGROUP BY street\\nORDER BY restaurant_count DESC, street\\nLIMIT 10\"})\n\nObservation: {\"row_count\": 10, \"truncated\": false, \"rows\": [{\"street\": \"McDonald's\", \"restaurant_count\": 7}, {\"street\": \"KFC\", \"restaurant_count\": 6}, {\"street\": \"Burger King\", \"restaurant_count\": 5}, {\"street\": \"Domino's Pizza\", \"restaurant_count\": 5}, {\"street\": \"Pizza Hut\", \"restaurant_count\": 4}, {\"street\": \"Subway\", \"restaurant_count\": 4}, {\"street\": \"Wendy's\", \"restaurant_count\": 4}, {\"street\": \"Applebee\\u2019s Grill + Bar\", \"restaurant_count\": 2}, {\"street\": \"Arby's\", \"restaurant_count\": 2}, {\"street\": \"Maverik Adventure's First Stop\", \"restaurant_count\": 2}]}\n\nAction: run_sql({'query': 'SELECT address FROM establishments WHERE avg_rating >= 2.95 AND avg_rating < 3.05 LIMIT 10'})\n\nObservation: {\"row_count\": 10, \"truncated\": false, \"rows\": [{\"address\": \"La Puente Restaurant #7 Sandy, 61 W 10600 S, Sandy, UT 84070\"}, {\"address\": \"TA, 1889 Pheasant Ln, Tooele, UT 84074\"}, {\"address\": \"Maverik Adventure's First Stop, 520 W Main St, Lehi, UT 84043\"}, {\"address\": \"Summit Fitness Kitchen Meal Prep, 1532 1450 S St, St. George, UT 84790\"}, {\"address\": \"Arctic Circle, 3883 5400 S, Salt Lake City, UT 84118\"}, {\"address\": \"The Cat Lounge, 500 E State St, American Fork, UT 84003\"}, {\"address\": \"Farr's Fresh Ice Cream & Frozen Yogurt Cafe, 496 N 990 W, American Fork, UT 84003\"}, {\"address\": \"Bistro H, 281 Zion Park Blvd, Springdale, UT 84767\"}, {\"address\": \"Applebee\\u2019s Grill + Bar, 11460 District Dr, South Jordan, UT 84095\"}, {\"address\": \"Arby's, 10 Center St, Panguitch, UT 84759\"}]}\n\nAction: run_sql({'query': \"WITH three_star AS (\\n  SELECT regexp_replace(address, '^[^,]*,\\\\\\\\s*', '') AS remainder\\n  FROM establishments\\n  WHERE avg_rating >= 2.95 AND avg_rating < 3.05\\n), parsed AS (\\n  SELECT regexp_extract(remainder, '^([^,]+),', 1) AS street\\n  FROM three_star\\n)\\nSELECT street, COUNT(*) AS restaurant_count\\nFROM parsed\\nWHERE street <> ''\\nGROUP BY street\\nORDER BY restaurant_count DESC, street\\nLIMIT 10\"})\n\nObservation: {\"row_count\": 10, \"truncated\": false, \"rows\": [{\"street\": \"McDonald's\", \"restaurant_count\": 7}, {\"street\": \"KFC\", \"restaurant_count\": 6}, {\"street\": \"Burger King\", \"restaurant_count\": 5}, {\"street\": \"Domino's Pizza\", \"restaurant_count\": 5}, {\"street\": \"Pizza Hut\", \"restaurant_count\": 4}, {\"street\": \"Subway\", \"restaurant_count\": 4}, {\"street\": \"Wendy's\", \"restaurant_count\": 4}, {\"street\": \"Applebee\\u2019s Grill + Bar\", \"restaurant_count\": 2}, {\"street\": \"Arby's\", \"restaurant_count\": 2}, {\"street\": \"Maverik Adventure's First Stop\", \"restaurant_count\": 2}]}\n\nAction: run_sql({'query': \"SELECT regexp_replace(address, '^[^,]*,\\\\\\\\s*', '') AS remainder, regexp_extract(regexp_replace(address, '^[^,]*,\\\\\\\\s*', ''), '^([^,]+),', 1) AS street FROM establishments WHERE avg_rating >= 2.95 AND avg_rating < 3.05 LIMIT 5\"})\n\nObservation: {\"row_count\": 5, \"truncated\": false, \"rows\": [{\"remainder\": \"La Puente Restaurant #7 Sandy, 61 W 10600 S, Sandy, UT 84070\", \"street\": \"La Puente Restaurant #7 Sandy\"}, {\"remainder\": \"TA, 1889 Pheasant Ln, Tooele, UT 84074\", \"street\": \"TA\"}, {\"remainder\": \"Maverik Adventure's First Stop, 520 W Main St, Lehi, UT 84043\", \"street\": \"Maverik Adventure's First Stop\"}, {\"remainder\": \"Summit Fitness Kitchen Meal Prep, 1532 1450 S St, St. George, UT 84790\", \"street\": \"Summit Fitness Kitchen Meal Prep\"}, {\"remainder\": \"Arctic Circle, 3883 5400 S, Salt Lake City, UT 84118\", \"street\": \"Arctic Circle\"}]}\n\nAction: run_sql({'query': \"WITH parsed AS (\\n  SELECT regexp_extract(address, '^[^,]*,\\\\\\\\s*([^,]+),', 1) AS street\\n  FROM establishments\\n  WHERE avg_rating >= 2.95 AND avg_rating < 3.05\\n)\\nSELECT street, COUNT(*) AS restaurant_count\\nFROM parsed\\nWHERE street <> ''\\nGROUP BY street\\nORDER BY restaurant_count DESC, street\\nLIMIT 10\"})\n\nObservation: {\"row_count\": 0, \"truncated\": false, \"rows\": []}\n\nAction: run_sql({'query': \"SELECT address, regexp_extract(address, '^[^,]*,\\\\\\\\s*([^,]+),', 1) AS street FROM establishments WHERE avg_rating >= 2.95 AND avg_rating < 3.05 LIMIT 5\"})\n\nObservation: {\"row_count\": 5, \"truncated\": false, \"rows\": [{\"address\": \"La Puente Restaurant #7 Sandy, 61 W 10600 S, Sandy, UT 84070\", \"street\": \"\"}, {\"address\": \"TA, 1889 Pheasant Ln, Tooele, UT 84074\", \"street\": \"\"}, {\"address\": \"Maverik Adventure's First Stop, 520 W Main St, Lehi, UT 84043\", \"street\": \"\"}, {\"address\": \"Summit Fitness Kitchen Meal Prep, 1532 1450 S St, St. George, UT 84790\", \"street\": \"\"}, {\"address\": \"Arctic Circle, 3883 5400 S, Salt Lake City, UT 84118\", \"street\": \"\"}]}\n\nAction: run_sql({'query': \"WITH parsed AS (\\n  SELECT split_part(split_part(address, ', ', 2), ', ', 1) AS street\\n  FROM establishments\\n  WHERE avg_rating >= 2.95 AND avg_rating < 3.05\\n)\\nSELECT street, COUNT(*) AS restaurant_count\\nFROM parsed\\nWHERE street <> ''\\nGROUP BY street\\nORDER BY restaurant_count DESC, street\\nLIMIT 10\"})\n\nObservation: {\"row_count\": 10, \"truncated\": false, \"rows\": [{\"street\": \"10 Center St\", \"restaurant_count\": 1}, {\"street\": \"10235 State St\", \"restaurant_count\": 1}, {\"street\": \"10450 S State St\", \"restaurant_count\": 1}, {\"street\": \"10450 State St\", \"restaurant_count\": 1}, {\"street\": \"10672 State St\", \"restaurant_count\": 1}, {\"street\": \"11428 S Pkwy Plaza Dr #300\", \"restaurant_count\": 1}, {\"street\": \"11460 District Dr\", \"restaurant_count\": 1}, {\"street\": \"1155 N Hill Field Rd\", \"restaurant_count\": 1}, {\"street\": \"1206-1222 W State Rd\", \"restaurant_count\": 1}, {\"street\": \"1224 E Main St\", \"restaurant_count\": 1}]}\n\nAction: run_sql({'query': \"WITH parsed AS (\\n  SELECT split_part(split_part(address, ', ', 2), ', ', 1) AS street\\n  FROM establishments\\n  WHERE avg_rating >= 2.95 AND avg_rating < 3.05\\n), normalized AS (\\n  SELECT regexp_replace(street, '^[0-9]+(?:-[0-9]+)?\\\\\\\\s+', '') AS street_name\\n  FROM parsed\\n)\\nSELECT street_name, COUNT(*) AS restaurant_count\\nFROM normalized\\nWHERE street_name <> ''\\nGROUP BY street_name\\nORDER BY restaurant_count DESC, street_name\\nLIMIT 10\"})\n\nObservation: {\"row_count\": 10, \"truncated\": false, \"rows\": [{\"street_name\": \"10 Center St\", \"restaurant_count\": 1}, {\"street_name\": \"10235 State St\", \"restaurant_count\": 1}, {\"street_name\": \"10450 S State St\", \"restaurant_count\": 1}, {\"street_name\": \"10450 State St\", \"restaurant_count\": 1}, {\"street_name\": \"10672 State St\", \"restaurant_count\": 1}, {\"street_name\": \"11428 S Pkwy Plaza Dr #300\", \"restaurant_count\": 1}, {\"street_name\": \"11460 District Dr\", \"restaurant_count\": 1}, {\"street_name\": \"1155 N Hill Field Rd\", \"restaurant_count\": 1}, {\"street_name\": \"1206-1222 W State Rd\", \"restaurant_count\": 1}, {\"street_name\": \"1224 E Main St\", \"restaurant_count\": 1}]}\n\nAction: run_sql({'query': \"SELECT regexp_replace('61 W 10600 S', '^[0-9]+\\\\\\\\s+', '') AS x\"})\n\nObservation: {\"row_count\": 1, \"truncated\": false, \"rows\": [{\"x\": \"61 W 10600 S\"}]}\n\nAction: run_sql({'query': \"WITH parsed AS (\\n  SELECT split_part(split_part(address, ', ', 2), ', ', 1) AS street\\n  FROM establishments\\n  WHERE avg_rating >= 2.95 AND avg_rating < 3.05\\n), normalized AS (\\n  SELECT regexp_replace(street, '^[0-9]+ +', '') AS street_name\\n  FROM parsed\\n)\\nSELECT street_name, COUNT(*) AS restaurant_count\\nFROM normalized\\nWHERE street_name <> ''\\nGROUP BY street_name\\nORDER BY restaurant_count DESC, street_name\\nLIMIT 10\"})\n\nObservation: {\"row_count\": 10, \"truncated\": false, \"rows\": [{\"street_name\": \"N Main St\", \"restaurant_count\": 6}, {\"street_name\": \"State St\", \"restaurant_count\": 6}, {\"street_name\": \"S Redwood Rd\", \"restaurant_count\": 4}, {\"street_name\": \"E 3900 S\", \"restaurant_count\": 2}, {\"street_name\": \"E State St\", \"restaurant_count\": 2}, {\"street_name\": \"S 5600 W\", \"restaurant_count\": 2}, {\"street_name\": \"1206-1222 W State Rd\", \"restaurant_count\": 1}, {\"street_name\": \"1450 S St\", \"restaurant_count\": 1}, {\"street_name\": \"3600 W\", \"restaurant_count\": 1}, {\"street_name\": \"5400 S\", \"restaurant_count\": 1}]}\n\nAction: plot_chart({'chart_type': 'bar', 'query': \"WITH parsed AS (\\n  SELECT split_part(split_part(address, ', ', 2), ', ', 1) AS street\\n  FROM establishments\\n  WHERE avg_rating >= 2.95 AND avg_rating < 3.05\\n), normalized AS (\\n  SELECT regexp_replace(street, '^[0-9]+ +', '') AS street_name\\n  FROM parsed\\n)\\nSELECT street_name, COUNT(*) AS restaurant_count\\nFROM normalized\\nWHERE street_name <> ''\\nGROUP BY street_name\\nORDER BY restaurant_count DESC, street_name\\nLIMIT 10\", 'title': 'Streets with the Most Approximately 3-Star Restaurants', 'x': 'street_name', 'y': 'restaurant_count'})\n\nObservation: Chart created: 'Streets with the Most Approximately 3-Star Restaurants' (bar, 10 rows). It will be shown to the user below your answer.",
+  "timeline": [],
+  "messages": [
+    {
+      "type": "HumanMessage",
+      "content": "Which street has the highest number of 3 star restaurants?"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "get_schema",
+          "args": {},
+          "id": "call_dWRXc6XJFSAK5GON7hxdLYnp",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 1905,
+        "output_tokens": 13,
+        "total_tokens": 1918,
+        "input_token_details": {
+          "audio": 0,
+          "cache_read": 1886,
+          "cache_creation": 16
+        },
+        "output_token_details": {
+          "audio": 0,
+          "reasoning": 0
+        }
+      },
+      "model_name": "gpt-5.6-terra"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "Project food_health_viz {\n  database_type: 'DuckDB'\n}\n\nTable establishment_keys {\n  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']\n  name varchar [not null]\n  address varchar [not null]\n  city varchar [not null]\n  city_state_zip varchar\n  establishment_type varchar\n  source varchar [note: 'friend_slc | own_scrape']\n  slchd_lat double\n  slchd_lon double\n  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']\n\n  Note: 'SLCHD establishment list, one row per portal listing.'\n}\n\nTable category {\n  category_id integer [pk]\n  category varchar\n}\n\nTable establishments {\n  gmap_id varchar [pk]\n  name varchar\n  address varchar\n  description varchar\n  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']\n  avg_rating double\n  num_of_reviews integer\n  price varchar\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']\n\n  Note: 'One row per Google Local place \u2014 all restaurants, not just SLCHD-matched.'\n}\n\nTable establishment_attributes {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  attribute varchar [not null]\n\n  indexes { (gmap_id, attribute) [pk] }\n\n  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. \"Service options\") dropped.'\n}\n\nTable establishment_categories {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  category_id integer [ref: > category.category_id, not null]\n\n  indexes { (gmap_id, category_id) [pk] }\n}\n\nTable gmap_hours {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  day integer [not null, note: '0=Sun \u2026 6=Sat']\n  open_min bigint\n  open_max bigint\n\n  indexes { (gmap_id, day) [pk] }\n\n  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'\n}\n\nTable review {\n  user_id varchar\n  name varchar\n  time bigint\n  rating double\n  text varchar\n  resp varchar\n  gmap_id varchar [ref: > establishments.gmap_id]\n}\n\nTable inspection_types {\n  inspection_type_id integer [pk, note: 'parsed leading number, e.g. \"01 - Routine\" -> 1']\n  description varchar [note: 'e.g. \"Routine\"']\n}\n\nTable inspections {\n  inspection_id bigint [pk, increment]\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]\n  inspection_date date [not null]\n  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable \u2014 27 rows have no type']\n  inspection_score integer\n\n  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'\n}\n\nTable violation_codes {\n  violation_code_id integer [pk, increment]\n  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. \"4.5.18\"']\n  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']\n  critical boolean [not null]\n}\n\nTable violations {\n  violation_id bigint [pk, increment]\n  inspection_id bigint [ref: > inspections.inspection_id, not null]\n  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]\n  violation_description varchar [note: 'per-occurrence free text']\n  violation_occurrences integer\n  violation_cos boolean [note: 'corrected on site']\n  violation_phr varchar [note: 'public health rationale']\n\n  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'\n}\n",
+      "tool_call_id": "call_dWRXc6XJFSAK5GON7hxdLYnp",
+      "name": "get_schema"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "search_establishments",
+          "args": {
+            "min_rating": 3,
+            "limit": 1
+          },
+          "id": "call_tKgybGu8A5bVvjZBDma3rons",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 2793,
+        "output_tokens": 24,
+        "total_tokens": 2817,
+        "input_token_details": {
+          "audio": 0,
+          "cache_read": 1902,
+          "cache_creation": 888
+        },
+        "output_token_details": {
+          "audio": 0,
+          "reasoning": 0
+        }
+      },
+      "model_name": "gpt-5.6-terra"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 1, \"rows\": [{\"gmap_id\": \"0x80cac2bd755f2c63:0xaac02cfd1eedb6c\", \"name\": \"Zion Hawaiian\", \"address\": \"Zion Hawaiian, 932 Zion \\u2013 Mount Carmel Hwy, Springdale, UT 84767\", \"latitude\": 37.1890011, \"longitude\": -112.9999502, \"avg_rating\": 5.0, \"num_of_reviews\": 1, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": null, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}]}",
+      "tool_call_id": "call_tKgybGu8A5bVvjZBDma3rons",
+      "name": "search_establishments"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "WITH three_star AS (\n  SELECT trim(regexp_replace(address, '^[^,]*,\\\\s*', '')) AS street_address\n  FROM establishments\n  WHERE avg_rating >= 2.95 AND avg_rating < 3.05\n), streets AS (\n  SELECT regexp_replace(street_address, ',.*$', '') AS street\n  FROM three_star\n  WHERE street_address IS NOT NULL AND street_address <> ''\n)\nSELECT street, COUNT(*) AS restaurant_count\nFROM streets\nGROUP BY street\nORDER BY restaurant_count DESC, street\nLIMIT 10"
+          },
+          "id": "call_I9dHMEG6vsbwkVE6esp6uO43",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 2992,
+        "output_tokens": 136,
+        "total_tokens": 3128,
+        "input_token_details": {
+          "audio": 0,
+          "cache_read": 2790,
+          "cache_creation": 199
+        },
+        "output_token_details": {
+          "audio": 0,
+          "reasoning": 0
+        }
+      },
+      "model_name": "gpt-5.6-terra"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 10, \"truncated\": false, \"rows\": [{\"street\": \"McDonald's\", \"restaurant_count\": 7}, {\"street\": \"KFC\", \"restaurant_count\": 6}, {\"street\": \"Burger King\", \"restaurant_count\": 5}, {\"street\": \"Domino's Pizza\", \"restaurant_count\": 5}, {\"street\": \"Pizza Hut\", \"restaurant_count\": 4}, {\"street\": \"Subway\", \"restaurant_count\": 4}, {\"street\": \"Wendy's\", \"restaurant_count\": 4}, {\"street\": \"Applebee\\u2019s Grill + Bar\", \"restaurant_count\": 2}, {\"street\": \"Arby's\", \"restaurant_count\": 2}, {\"street\": \"Maverik Adventure's First Stop\", \"restaurant_count\": 2}]}",
+      "tool_call_id": "call_I9dHMEG6vsbwkVE6esp6uO43",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "SELECT address FROM establishments WHERE avg_rating >= 2.95 AND avg_rating < 3.05 LIMIT 10"
+          },
+          "id": "call_Aewusev8gzDikeyLm7PKkXd4",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 3311,
+        "output_tokens": 39,
+        "total_tokens": 3350,
+        "input_token_details": {
+          "audio": 0,
+          "cache_read": 2989,
+          "cache_creation": 319
+        },
+        "output_token_details": {
+          "audio": 0,
+          "reasoning": 0
+        }
+      },
+      "model_name": "gpt-5.6-terra"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 10, \"truncated\": false, \"rows\": [{\"address\": \"La Puente Restaurant #7 Sandy, 61 W 10600 S, Sandy, UT 84070\"}, {\"address\": \"TA, 1889 Pheasant Ln, Tooele, UT 84074\"}, {\"address\": \"Maverik Adventure's First Stop, 520 W Main St, Lehi, UT 84043\"}, {\"address\": \"Summit Fitness Kitchen Meal Prep, 1532 1450 S St, St. George, UT 84790\"}, {\"address\": \"Arctic Circle, 3883 5400 S, Salt Lake City, UT 84118\"}, {\"address\": \"The Cat Lounge, 500 E State St, American Fork, UT 84003\"}, {\"address\": \"Farr's Fresh Ice Cream & Frozen Yogurt Cafe, 496 N 990 W, American Fork, UT 84003\"}, {\"address\": \"Bistro H, 281 Zion Park Blvd, Springdale, UT 84767\"}, {\"address\": \"Applebee\\u2019s Grill + Bar, 11460 District Dr, South Jordan, UT 84095\"}, {\"address\": \"Arby's, 10 Center St, Panguitch, UT 84759\"}]}",
+      "tool_call_id": "call_Aewusev8gzDikeyLm7PKkXd4",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "WITH three_star AS (\n  SELECT regexp_replace(address, '^[^,]*,\\\\s*', '') AS remainder\n  FROM establishments\n  WHERE avg_rating >= 2.95 AND avg_rating < 3.05\n), parsed AS (\n  SELECT regexp_extract(remainder, '^([^,]+),', 1) AS street\n  FROM three_star\n)\nSELECT street, COUNT(*) AS restaurant_count\nFROM parsed\nWHERE street <> ''\nGROUP BY street\nORDER BY restaurant_count DESC, street\nLIMIT 10"
+          },
+          "id": "call_OJRkC37f3lPApnSz5RV8na9I",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 3631,
+        "output_tokens": 128,
+        "total_tokens": 3759,
+        "input_token_details": {
+          "audio": 0,
+          "cache_read": 3308,
+          "cache_creation": 320
+        },
+        "output_token_details": {
+          "audio": 0,
+          "reasoning": 0
+        }
+      },
+      "model_name": "gpt-5.6-terra"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 10, \"truncated\": false, \"rows\": [{\"street\": \"McDonald's\", \"restaurant_count\": 7}, {\"street\": \"KFC\", \"restaurant_count\": 6}, {\"street\": \"Burger King\", \"restaurant_count\": 5}, {\"street\": \"Domino's Pizza\", \"restaurant_count\": 5}, {\"street\": \"Pizza Hut\", \"restaurant_count\": 4}, {\"street\": \"Subway\", \"restaurant_count\": 4}, {\"street\": \"Wendy's\", \"restaurant_count\": 4}, {\"street\": \"Applebee\\u2019s Grill + Bar\", \"restaurant_count\": 2}, {\"street\": \"Arby's\", \"restaurant_count\": 2}, {\"street\": \"Maverik Adventure's First Stop\", \"restaurant_count\": 2}]}",
+      "tool_call_id": "call_OJRkC37f3lPApnSz5RV8na9I",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "SELECT regexp_replace(address, '^[^,]*,\\\\s*', '') AS remainder, regexp_extract(regexp_replace(address, '^[^,]*,\\\\s*', ''), '^([^,]+),', 1) AS street FROM establishments WHERE avg_rating >= 2.95 AND avg_rating < 3.05 LIMIT 5"
+          },
+          "id": "call_JAuvMDEN63IUzA5zDnoXhTB2",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 3942,
+        "output_tokens": 86,
+        "total_tokens": 4028,
+        "input_token_details": {
+          "audio": 0,
+          "cache_read": 3628,
+          "cache_creation": 311
+        },
+        "output_token_details": {
+          "audio": 0,
+          "reasoning": 0
+        }
+      },
+      "model_name": "gpt-5.6-terra"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 5, \"truncated\": false, \"rows\": [{\"remainder\": \"La Puente Restaurant #7 Sandy, 61 W 10600 S, Sandy, UT 84070\", \"street\": \"La Puente Restaurant #7 Sandy\"}, {\"remainder\": \"TA, 1889 Pheasant Ln, Tooele, UT 84074\", \"street\": \"TA\"}, {\"remainder\": \"Maverik Adventure's First Stop, 520 W Main St, Lehi, UT 84043\", \"street\": \"Maverik Adventure's First Stop\"}, {\"remainder\": \"Summit Fitness Kitchen Meal Prep, 1532 1450 S St, St. George, UT 84790\", \"street\": \"Summit Fitness Kitchen Meal Prep\"}, {\"remainder\": \"Arctic Circle, 3883 5400 S, Salt Lake City, UT 84118\", \"street\": \"Arctic Circle\"}]}",
+      "tool_call_id": "call_JAuvMDEN63IUzA5zDnoXhTB2",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "WITH parsed AS (\n  SELECT regexp_extract(address, '^[^,]*,\\\\s*([^,]+),', 1) AS street\n  FROM establishments\n  WHERE avg_rating >= 2.95 AND avg_rating < 3.05\n)\nSELECT street, COUNT(*) AS restaurant_count\nFROM parsed\nWHERE street <> ''\nGROUP BY street\nORDER BY restaurant_count DESC, street\nLIMIT 10"
+          },
+          "id": "call_9BBZjWYmXX7FU26fNCK0oHNn",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 4239,
+        "output_tokens": 104,
+        "total_tokens": 4343,
+        "input_token_details": {
+          "audio": 0,
+          "cache_read": 3939,
+          "cache_creation": 297
+        },
+        "output_token_details": {
+          "audio": 0,
+          "reasoning": 0
+        }
+      },
+      "model_name": "gpt-5.6-terra"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 0, \"truncated\": false, \"rows\": []}",
+      "tool_call_id": "call_9BBZjWYmXX7FU26fNCK0oHNn",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "SELECT address, regexp_extract(address, '^[^,]*,\\\\s*([^,]+),', 1) AS street FROM establishments WHERE avg_rating >= 2.95 AND avg_rating < 3.05 LIMIT 5"
+          },
+          "id": "call_8W7COpqvUlFpTmr6atXTlFJS",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 4372,
+        "output_tokens": 63,
+        "total_tokens": 4435,
+        "input_token_details": {
+          "audio": 0,
+          "cache_read": 4236,
+          "cache_creation": 133
+        },
+        "output_token_details": {
+          "audio": 0,
+          "reasoning": 0
+        }
+      },
+      "model_name": "gpt-5.6-terra"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 5, \"truncated\": false, \"rows\": [{\"address\": \"La Puente Restaurant #7 Sandy, 61 W 10600 S, Sandy, UT 84070\", \"street\": \"\"}, {\"address\": \"TA, 1889 Pheasant Ln, Tooele, UT 84074\", \"street\": \"\"}, {\"address\": \"Maverik Adventure's First Stop, 520 W Main St, Lehi, UT 84043\", \"street\": \"\"}, {\"address\": \"Summit Fitness Kitchen Meal Prep, 1532 1450 S St, St. George, UT 84790\", \"street\": \"\"}, {\"address\": \"Arctic Circle, 3883 5400 S, Salt Lake City, UT 84118\", \"street\": \"\"}]}",
+      "tool_call_id": "call_8W7COpqvUlFpTmr6atXTlFJS",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "WITH parsed AS (\n  SELECT split_part(split_part(address, ', ', 2), ', ', 1) AS street\n  FROM establishments\n  WHERE avg_rating >= 2.95 AND avg_rating < 3.05\n)\nSELECT street, COUNT(*) AS restaurant_count\nFROM parsed\nWHERE street <> ''\nGROUP BY street\nORDER BY restaurant_count DESC, street\nLIMIT 10"
+          },
+          "id": "call_ln6exdIBlPcXTneaSLIVPFNT",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 4617,
+        "output_tokens": 99,
+        "total_tokens": 4716,
+        "input_token_details": {
+          "audio": 0,
+          "cache_read": 4369,
+          "cache_creation": 245
+        },
+        "output_token_details": {
+          "audio": 0,
+          "reasoning": 0
+        }
+      },
+      "model_name": "gpt-5.6-terra"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 10, \"truncated\": false, \"rows\": [{\"street\": \"10 Center St\", \"restaurant_count\": 1}, {\"street\": \"10235 State St\", \"restaurant_count\": 1}, {\"street\": \"10450 S State St\", \"restaurant_count\": 1}, {\"street\": \"10450 State St\", \"restaurant_count\": 1}, {\"street\": \"10672 State St\", \"restaurant_count\": 1}, {\"street\": \"11428 S Pkwy Plaza Dr #300\", \"restaurant_count\": 1}, {\"street\": \"11460 District Dr\", \"restaurant_count\": 1}, {\"street\": \"1155 N Hill Field Rd\", \"restaurant_count\": 1}, {\"street\": \"1206-1222 W State Rd\", \"restaurant_count\": 1}, {\"street\": \"1224 E Main St\", \"restaurant_count\": 1}]}",
+      "tool_call_id": "call_ln6exdIBlPcXTneaSLIVPFNT",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "WITH parsed AS (\n  SELECT split_part(split_part(address, ', ', 2), ', ', 1) AS street\n  FROM establishments\n  WHERE avg_rating >= 2.95 AND avg_rating < 3.05\n), normalized AS (\n  SELECT regexp_replace(street, '^[0-9]+(?:-[0-9]+)?\\\\s+', '') AS street_name\n  FROM parsed\n)\nSELECT street_name, COUNT(*) AS restaurant_count\nFROM normalized\nWHERE street_name <> ''\nGROUP BY street_name\nORDER BY restaurant_count DESC, street_name\nLIMIT 10"
+          },
+          "id": "call_LYFlbo185lSNxSsIDLoleKdU",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 4916,
+        "output_tokens": 140,
+        "total_tokens": 5056,
+        "input_token_details": {
+          "audio": 0,
+          "cache_read": 4614,
+          "cache_creation": 299
+        },
+        "output_token_details": {
+          "audio": 0,
+          "reasoning": 0
+        }
+      },
+      "model_name": "gpt-5.6-terra"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 10, \"truncated\": false, \"rows\": [{\"street_name\": \"10 Center St\", \"restaurant_count\": 1}, {\"street_name\": \"10235 State St\", \"restaurant_count\": 1}, {\"street_name\": \"10450 S State St\", \"restaurant_count\": 1}, {\"street_name\": \"10450 State St\", \"restaurant_count\": 1}, {\"street_name\": \"10672 State St\", \"restaurant_count\": 1}, {\"street_name\": \"11428 S Pkwy Plaza Dr #300\", \"restaurant_count\": 1}, {\"street_name\": \"11460 District Dr\", \"restaurant_count\": 1}, {\"street_name\": \"1155 N Hill Field Rd\", \"restaurant_count\": 1}, {\"street_name\": \"1206-1222 W State Rd\", \"restaurant_count\": 1}, {\"street_name\": \"1224 E Main St\", \"restaurant_count\": 1}]}",
+      "tool_call_id": "call_LYFlbo185lSNxSsIDLoleKdU",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "SELECT regexp_replace('61 W 10600 S', '^[0-9]+\\\\s+', '') AS x"
+          },
+          "id": "call_AqwFU7Vo4SyoIH7jMkcChC9D",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 5266,
+        "output_tokens": 39,
+        "total_tokens": 5305,
+        "input_token_details": {
+          "audio": 0,
+          "cache_read": 0,
+          "cache_creation": 5263
+        },
+        "output_token_details": {
+          "audio": 0,
+          "reasoning": 0
+        }
+      },
+      "model_name": "gpt-5.6-terra"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 1, \"truncated\": false, \"rows\": [{\"x\": \"61 W 10600 S\"}]}",
+      "tool_call_id": "call_AqwFU7Vo4SyoIH7jMkcChC9D",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "WITH parsed AS (\n  SELECT split_part(split_part(address, ', ', 2), ', ', 1) AS street\n  FROM establishments\n  WHERE avg_rating >= 2.95 AND avg_rating < 3.05\n), normalized AS (\n  SELECT regexp_replace(street, '^[0-9]+ +', '') AS street_name\n  FROM parsed\n)\nSELECT street_name, COUNT(*) AS restaurant_count\nFROM normalized\nWHERE street_name <> ''\nGROUP BY street_name\nORDER BY restaurant_count DESC, street_name\nLIMIT 10"
+          },
+          "id": "call_3heG4XHPrENXnnQBzis0mO4g",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 5344,
+        "output_tokens": 132,
+        "total_tokens": 5476,
+        "input_token_details": {
+          "audio": 0,
+          "cache_read": 5263,
+          "cache_creation": 78
+        },
+        "output_token_details": {
+          "audio": 0,
+          "reasoning": 0
+        }
+      },
+      "model_name": "gpt-5.6-terra"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 10, \"truncated\": false, \"rows\": [{\"street_name\": \"N Main St\", \"restaurant_count\": 6}, {\"street_name\": \"State St\", \"restaurant_count\": 6}, {\"street_name\": \"S Redwood Rd\", \"restaurant_count\": 4}, {\"street_name\": \"E 3900 S\", \"restaurant_count\": 2}, {\"street_name\": \"E State St\", \"restaurant_count\": 2}, {\"street_name\": \"S 5600 W\", \"restaurant_count\": 2}, {\"street_name\": \"1206-1222 W State Rd\", \"restaurant_count\": 1}, {\"street_name\": \"1450 S St\", \"restaurant_count\": 1}, {\"street_name\": \"3600 W\", \"restaurant_count\": 1}, {\"street_name\": \"5400 S\", \"restaurant_count\": 1}]}",
+      "tool_call_id": "call_3heG4XHPrENXnnQBzis0mO4g",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "plot_chart",
+          "args": {
+            "chart_type": "bar",
+            "query": "WITH parsed AS (\n  SELECT split_part(split_part(address, ', ', 2), ', ', 1) AS street\n  FROM establishments\n  WHERE avg_rating >= 2.95 AND avg_rating < 3.05\n), normalized AS (\n  SELECT regexp_replace(street, '^[0-9]+ +', '') AS street_name\n  FROM parsed\n)\nSELECT street_name, COUNT(*) AS restaurant_count\nFROM normalized\nWHERE street_name <> ''\nGROUP BY street_name\nORDER BY restaurant_count DESC, street_name\nLIMIT 10",
+            "title": "Streets with the Most Approximately 3-Star Restaurants",
+            "x": "street_name",
+            "y": "restaurant_count"
+          },
+          "id": "call_7HTcoKIGLOXmdlroMHGl5Ck9",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 5673,
+        "output_tokens": 161,
+        "total_tokens": 5834,
+        "input_token_details": {
+          "audio": 0,
+          "cache_read": 5341,
+          "cache_creation": 329
+        },
+        "output_token_details": {
+          "audio": 0,
+          "reasoning": 0
+        }
+      },
+      "model_name": "gpt-5.6-terra"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "Chart created: 'Streets with the Most Approximately 3-Star Restaurants' (bar, 10 rows). It will be shown to the user below your answer.",
+      "tool_call_id": "call_7HTcoKIGLOXmdlroMHGl5Ck9",
+      "name": "plot_chart"
+    },
+    {
+      "type": "AIMessage",
+      "content": "**N Main St** and **State St** tie for the highest count, with **6 approximately 3-star restaurants each** (ratings from 2.95 to 3.04 in the dataset).\n\nNext were **S Redwood Rd** with **4**, followed by **E 3900 S**, **E State St**, and **S 5600 W** with **2 each**.\n\nThe chart shows the top 10 street-name groupings.",
+      "tool_calls": [],
+      "usage_metadata": {
+        "input_tokens": 5879,
+        "output_tokens": 96,
+        "total_tokens": 5975,
+        "input_token_details": {
+          "audio": 0,
+          "cache_read": 5670,
+          "cache_creation": 206
+        },
+        "output_token_details": {
+          "audio": 0,
+          "reasoning": 0
+        }
+      },
+      "model_name": "gpt-5.6-terra"
+    }
+  ],
+  "charts": [
+    {
+      "data": [
+        {
+          "hovertemplate": "street_name=%{x}<br>restaurant_count=%{y}<extra></extra>",
+          "legendgroup": "",
+          "marker": {
+            "color": "#000001",
+            "pattern": {
+              "shape": ""
+            }
+          },
+          "name": "",
+          "orientation": "v",
+          "showlegend": false,
+          "textposition": "auto",
+          "x": [
+            "N Main St",
+            "State St",
+            "S Redwood Rd",
+            "E 3900 S",
+            "E State St",
+            "S 5600 W",
+            "1206-1222 W State Rd",
+            "1450 S St",
+            "3600 W",
+            "5400 S"
+          ],
+          "xaxis": "x",
+          "y": {
+            "dtype": "i1",
+            "bdata": "BgYEAgICAQEBAQ=="
+          },
+          "yaxis": "y",
+          "type": "bar"
+        }
+      ],
+      "layout": {
+        "template": {
+          "data": {
+            "candlestick": [
+              {
+                "decreasing": {
+                  "line": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "line": {
+                    "color": "#000032"
+                  }
+                },
+                "type": "candlestick"
+              }
+            ],
+            "contourcarpet": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contourcarpet"
+              }
+            ],
+            "contour": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contour"
+              }
+            ],
+            "heatmap": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "heatmap"
+              }
+            ],
+            "histogram2d": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "histogram2d"
+              }
+            ],
+            "icicle": [
+              {
+                "textfont": {
+                  "color": "white"
+                },
+                "type": "icicle"
+              }
+            ],
+            "sankey": [
+              {
+                "textfont": {
+                  "color": "#000036"
+                },
+                "type": "sankey"
+              }
+            ],
+            "scatter": [
+              {
+                "marker": {
+                  "line": {
+                    "width": 0
+                  }
+                },
+                "type": "scatter"
+              }
+            ],
+            "table": [
+              {
+                "cells": {
+                  "fill": {
+                    "color": "#000038"
+                  },
+                  "font": {
+                    "color": "#000037"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "header": {
+                  "fill": {
+                    "color": "#000040"
+                  },
+                  "font": {
+                    "color": "#000036"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "type": "table"
+              }
+            ],
+            "waterfall": [
+              {
+                "connector": {
+                  "line": {
+                    "color": "#000036",
+                    "width": 2
+                  }
+                },
+                "decreasing": {
+                  "marker": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "marker": {
+                    "color": "#000032"
+                  }
+                },
+                "totals": {
+                  "marker": {
+                    "color": "#000034"
+                  }
+                },
+                "type": "waterfall"
+              }
+            ]
+          },
+          "layout": {
+            "coloraxis": {
+              "colorscale": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorscale": {
+              "diverging": [
+                [
+                  0.0,
+                  "#000021"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000022"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000023"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000024"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000025"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000026"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000027"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000028"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000029"
+                ],
+                [
+                  1.0,
+                  "#000030"
+                ]
+              ],
+              "sequential": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ],
+              "sequentialminus": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorway": [
+              "#000001",
+              "#000002",
+              "#000003",
+              "#000004",
+              "#000005",
+              "#000006",
+              "#000007",
+              "#000008",
+              "#000009",
+              "#000010"
+            ]
+          }
+        },
+        "xaxis": {
+          "anchor": "y",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "street_name"
+          }
+        },
+        "yaxis": {
+          "anchor": "x",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "restaurant_count"
+          }
+        },
+        "legend": {
+          "tracegroupgap": 0
+        },
+        "title": {
+          "text": "Streets with the Most Approximately 3-Star Restaurants"
+        },
+        "barmode": "relative"
+      }
+    }
+  ],
+  "candidate_pool_raw": [
+    {
+      "gmap_id": "0x80cac2bd755f2c63:0xaac02cfd1eedb6c",
+      "name": "Zion Hawaiian",
+      "address": "Zion Hawaiian, 932 Zion \u2013 Mount Carmel Hwy, Springdale, UT 84767",
+      "latitude": 37.1890011,
+      "longitude": -112.9999502,
+      "avg_rating": 5.0,
+      "num_of_reviews": 1,
+      "price": null,
+      "slchd_establishment_key": null,
+      "distance_mi": null,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    }
+  ],
+  "duration_seconds": 23.68,
+  "usage": {
+    "available": true,
+    "per_call": [
+      {
+        "input_tokens": 1905,
+        "output_tokens": 13,
+        "total_tokens": 1918
+      },
+      {
+        "input_tokens": 2793,
+        "output_tokens": 24,
+        "total_tokens": 2817
+      },
+      {
+        "input_tokens": 2992,
+        "output_tokens": 136,
+        "total_tokens": 3128
+      },
+      {
+        "input_tokens": 3311,
+        "output_tokens": 39,
+        "total_tokens": 3350
+      },
+      {
+        "input_tokens": 3631,
+        "output_tokens": 128,
+        "total_tokens": 3759
+      },
+      {
+        "input_tokens": 3942,
+        "output_tokens": 86,
+        "total_tokens": 4028
+      },
+      {
+        "input_tokens": 4239,
+        "output_tokens": 104,
+        "total_tokens": 4343
+      },
+      {
+        "input_tokens": 4372,
+        "output_tokens": 63,
+        "total_tokens": 4435
+      },
+      {
+        "input_tokens": 4617,
+        "output_tokens": 99,
+        "total_tokens": 4716
+      },
+      {
+        "input_tokens": 4916,
+        "output_tokens": 140,
+        "total_tokens": 5056
+      },
+      {
+        "input_tokens": 5266,
+        "output_tokens": 39,
+        "total_tokens": 5305
+      },
+      {
+        "input_tokens": 5344,
+        "output_tokens": 132,
+        "total_tokens": 5476
+      },
+      {
+        "input_tokens": 5673,
+        "output_tokens": 161,
+        "total_tokens": 5834
+      },
+      {
+        "input_tokens": 5879,
+        "output_tokens": 96,
+        "total_tokens": 5975
+      }
+    ],
+    "input_tokens": 58880,
+    "output_tokens": 1260,
+    "total_tokens": 60140
+  },
+  "tokens_per_minute": 152383.8,
+  "estimated_cost_usd": 0.13288,
+  "success": true,
+  "error": null,
+  "chart_image_files": [
+    "2026-08-15T10-09-38.283084+00-00_v2_memory_7e1711c9_chart0.png"
+  ]
+}

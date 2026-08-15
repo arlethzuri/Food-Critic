@@ -1,0 +1,2418 @@
+{
+  "source": "frontend",
+  "run_id": "eb48dd0e",
+  "timestamp": "2026-08-15T10:07:26.207452+00:00",
+  "variant": "v1_memory",
+  "provider": "openai",
+  "model": "gpt-5.6-terra",
+  "question": "Show me detailed visual analytics and statistics of inspection scores across all establishments.",
+  "output_text": "## Inspection-score overview\n\nThe analysis covers **7,798 scored inspection visits** across **1,291 establishments** with at least one recorded score. There are **8,020 total inspection records**; **222 (2.77%)** have no score recorded.\n\n- **Average score:** **10.29**\n- **Median score:** **7**\n- **Standard deviation:** **12.07**\n- **Range:** **0 to 297**\n- **Zero-score inspections:** **710 (9.1%)**\n\nThe mean being higher than the median, together with the maximum of 297, indicates a **right-skewed distribution**: most inspections cluster at relatively low scores, while a smaller number of high-score visits pull the average upward.\n\n## Score distribution\n\nThe largest groups were:\n\n| Score band | Inspections | Share |\n|---|---:|---:|\n| 0 | 710 | 9.1% |\n| 1\u20134 | 2,072 | 26.6% |\n| 5\u20139 | 1,934 | 24.8% |\n| 10\u201319 | 1,994 | 25.6% |\n| 20\u201329 | 672 | 8.6% |\n| 30+ | 416 | 5.3% |\n\nIn total, **4,716 inspections (60.5%)** scored below 10, while **1,088 (14.0%)** scored 20 or higher.\n\n## Change over time\n\nAnnual average scores varied over the available history:\n\n- The highest annual average in the more recent, higher-volume period was **12.08 in 2022** (869 scored inspections).\n- The average was **12.01 in 2023** (879 inspections) and **11.49 in 2024** (1,227 inspections).\n- It declined to **8.90 in 2025** (1,343 inspections) and **6.33 in 2026** (865 inspections).\n- The 2026 figure is partial-year data relative to the current date, so it should not be treated as a full-year comparison.\n\nThe annual median similarly moved from **9 in 2022** to **8 in 2023\u201324**, **6 in 2025**, and **5 in 2026**.\n\n## By inspection type\n\nAmong inspection types with at least 20 scored visits:\n\n| Inspection type | Scored visits | Mean score | Median score | Zero-score share |\n|---|---:|---:|---:|---:|\n| Routine | 7,380 | 10.45 | 8 | 7.9% |\n| Followup | 211 | 6.19 | 3 | 30.3% |\n| Critical Item | 202 | 9.02 | 3 | 28.7% |\n\nRoutine inspections account for the overwhelming majority of scored visits (**7,380 of 7,798; 94.6%**). Follow-up and Critical Item visits have lower average and median scores in this dataset, alongside substantially larger shares of zero-score visits.\n\nThe charts shown visualize the overall score distribution, score bands, annual average trend, and differences by inspection type.",
+  "structured_response": null,
+  "trace_text": "Action: get_schema({})\n\nObservation: Project food_health_viz {\n  database_type: 'DuckDB'\n}\n\nTable establishment_keys {\n  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']\n  name varchar [not null]\n  address varchar [not null]\n  city varchar [not null]\n  city_state_zip varchar\n  establishment_type varchar\n  source varchar [note: 'friend_slc | own_scrape']\n  slchd_lat double\n  slchd_lon double\n  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']\n\n  Note: 'SLCHD establishment list, one row per portal listing.'\n}\n\nTable category {\n  category_id integer [pk]\n  category varchar\n}\n\nTable establishments {\n  gmap_id varchar [pk]\n  name varchar\n  address varchar\n  description varchar\n  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']\n  avg_rating double\n  num_of_reviews integer\n  price varchar\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']\n\n  Note: 'One row per Google Local place \u2014 all restaurants, not just SLCHD-matched.'\n}\n\nTable establishment_attributes {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  attribute varchar [not null]\n\n  indexes { (gmap_id, attribute) [pk] }\n\n  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. \"Service options\") dropped.'\n}\n\nTable establishment_categories {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  category_id integer [ref: > category.category_id, not null]\n\n  indexes { (gmap_id, category_id) [pk] }\n}\n\nTable gmap_hours {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  day integer [not null, note: '0=Sun \u2026 6=Sat']\n  open_min bigint\n  open_max bigint\n\n  indexes { (gmap_id, day) [pk] }\n\n  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'\n}\n\nTable review {\n  user_id varchar\n  name varchar\n  time bigint\n  rating double\n  text varchar\n  resp varchar\n  gmap_id varchar [ref: > establishments.gmap_id]\n}\n\nTable inspection_types {\n  inspection_type_id integer [pk, note: 'parsed leading number, e.g. \"01 - Routine\" -> 1']\n  description varchar [note: 'e.g. \"Routine\"']\n}\n\nTable inspections {\n  inspection_id bigint [pk, increment]\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]\n  inspection_date date [not null]\n  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable \u2014 27 rows have no type']\n  inspection_score integer\n\n  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'\n}\n\nTable violation_codes {\n  violation_code_id integer [pk, increment]\n  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. \"4.5.18\"']\n  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']\n  critical boolean [not null]\n}\n\nTable violations {\n  violation_id bigint [pk, increment]\n  inspection_id bigint [ref: > inspections.inspection_id, not null]\n  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]\n  violation_description varchar [note: 'per-occurrence free text']\n  violation_occurrences integer\n  violation_cos boolean [note: 'corrected on site']\n  violation_phr varchar [note: 'public health rationale']\n\n  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'\n}\n\n\nAction: run_sql({'query': 'WITH scored AS (\\n  SELECT inspection_score\\n  FROM inspections\\n  WHERE inspection_score IS NOT NULL\\n)\\nSELECT\\n  COUNT(*) AS scored_inspections,\\n  MIN(inspection_score) AS min_score,\\n  MAX(inspection_score) AS max_score,\\n  ROUND(AVG(inspection_score), 2) AS mean_score,\\n  MEDIAN(inspection_score) AS median_score,\\n  ROUND(STDDEV_SAMP(inspection_score), 2) AS sd_score,\\n  SUM(CASE WHEN inspection_score = 0 THEN 1 ELSE 0 END) AS zero_score_inspections,\\n  ROUND(100.0 * SUM(CASE WHEN inspection_score = 0 THEN 1 ELSE 0 END) / COUNT(*), 1) AS zero_score_pct\\nFROM scored;'})\n\nAction: run_sql({'query': \"SELECT\\n  CASE\\n    WHEN inspection_score = 0 THEN '0'\\n    WHEN inspection_score BETWEEN 1 AND 4 THEN '1\u20134'\\n    WHEN inspection_score BETWEEN 5 AND 9 THEN '5\u20139'\\n    WHEN inspection_score BETWEEN 10 AND 19 THEN '10\u201319'\\n    WHEN inspection_score BETWEEN 20 AND 29 THEN '20\u201329'\\n    ELSE '30+'\\n  END AS score_band,\\n  CASE\\n    WHEN inspection_score = 0 THEN 1\\n    WHEN inspection_score BETWEEN 1 AND 4 THEN 2\\n    WHEN inspection_score BETWEEN 5 AND 9 THEN 3\\n    WHEN inspection_score BETWEEN 10 AND 19 THEN 4\\n    WHEN inspection_score BETWEEN 20 AND 29 THEN 5\\n    ELSE 6\\n  END AS band_order,\\n  COUNT(*) AS inspections,\\n  ROUND(100.0 * COUNT(*) / SUM(COUNT(*)) OVER (), 1) AS pct_of_scored_inspections\\nFROM inspections\\nWHERE inspection_score IS NOT NULL\\nGROUP BY 1, 2\\nORDER BY band_order;\"})\n\nAction: run_sql({'query': 'SELECT\\n  EXTRACT(YEAR FROM inspection_date)::INTEGER AS inspection_year,\\n  COUNT(*) AS scored_inspections,\\n  ROUND(AVG(inspection_score), 2) AS mean_score,\\n  MEDIAN(inspection_score) AS median_score,\\n  ROUND(100.0 * SUM(CASE WHEN inspection_score = 0 THEN 1 ELSE 0 END) / COUNT(*), 1) AS zero_score_pct\\nFROM inspections\\nWHERE inspection_score IS NOT NULL\\nGROUP BY 1\\nORDER BY inspection_year;'})\n\nAction: run_sql({'query': 'SELECT\\n  it.description AS inspection_type,\\n  COUNT(*) AS scored_inspections,\\n  ROUND(AVG(i.inspection_score), 2) AS mean_score,\\n  MEDIAN(i.inspection_score) AS median_score,\\n  ROUND(100.0 * SUM(CASE WHEN i.inspection_score = 0 THEN 1 ELSE 0 END) / COUNT(*), 1) AS zero_score_pct\\nFROM inspections i\\nLEFT JOIN inspection_types it ON i.inspection_type_id = it.inspection_type_id\\nWHERE i.inspection_score IS NOT NULL\\nGROUP BY 1\\nHAVING COUNT(*) >= 20\\nORDER BY scored_inspections DESC;'})\n\nAction: run_sql({'query': 'SELECT\\n  COUNT(*) AS total_inspections,\\n  SUM(CASE WHEN inspection_score IS NULL THEN 1 ELSE 0 END) AS missing_score_inspections,\\n  ROUND(100.0 * SUM(CASE WHEN inspection_score IS NULL THEN 1 ELSE 0 END) / COUNT(*), 2) AS missing_score_pct,\\n  COUNT(DISTINCT slchd_establishment_key) AS establishments_with_inspections,\\n  COUNT(DISTINCT CASE WHEN inspection_score IS NOT NULL THEN slchd_establishment_key END) AS establishments_with_scored_inspections\\nFROM inspections;'})\n\nObservation: {\"row_count\": 1, \"truncated\": false, \"rows\": [{\"scored_inspections\": 7798, \"min_score\": 0, \"max_score\": 297, \"mean_score\": 10.29, \"median_score\": 7.0, \"sd_score\": 12.07, \"zero_score_inspections\": 710.0, \"zero_score_pct\": 9.1}]}\n\nObservation: {\"row_count\": 6, \"truncated\": false, \"rows\": [{\"score_band\": \"0\", \"band_order\": 1, \"inspections\": 710, \"pct_of_scored_inspections\": 9.1}, {\"score_band\": \"1\\u20134\", \"band_order\": 2, \"inspections\": 2072, \"pct_of_scored_inspections\": 26.6}, {\"score_band\": \"5\\u20139\", \"band_order\": 3, \"inspections\": 1934, \"pct_of_scored_inspections\": 24.8}, {\"score_band\": \"10\\u201319\", \"band_order\": 4, \"inspections\": 1994, \"pct_of_scored_inspections\": 25.6}, {\"score_band\": \"20\\u201329\", \"band_order\": 5, \"inspections\": 672, \"pct_of_scored_inspections\": 8.6}, {\"score_band\": \"30+\", \"band_order\": 6, \"inspections\": 416, \"pct_of_scored_inspections\": 5.3}]}\n\nObservation: {\"row_count\": 18, \"truncated\": false, \"rows\": [{\"inspection_year\": 2009, \"scored_inspections\": 3, \"mean_score\": 7.0, \"median_score\": 4.0, \"zero_score_pct\": 0.0}, {\"inspection_year\": 2010, \"scored_inspections\": 5, \"mean_score\": 4.8, \"median_score\": 3.0, \"zero_score_pct\": 20.0}, {\"inspection_year\": 2011, \"scored_inspections\": 7, \"mean_score\": 6.71, \"median_score\": 7.0, \"zero_score_pct\": 14.3}, {\"inspection_year\": 2012, \"scored_inspections\": 10, \"mean_score\": 6.0, \"median_score\": 5.5, \"zero_score_pct\": 0.0}, {\"inspection_year\": 2013, \"scored_inspections\": 22, \"mean_score\": 8.91, \"median_score\": 8.5, \"zero_score_pct\": 9.1}, {\"inspection_year\": 2014, \"scored_inspections\": 70, \"mean_score\": 8.73, \"median_score\": 6.0, \"zero_score_pct\": 10.0}, {\"inspection_year\": 2015, \"scored_inspections\": 77, \"mean_score\": 13.0, \"median_score\": 11.0, \"zero_score_pct\": 1.3}, {\"inspection_year\": 2016, \"scored_inspections\": 158, \"mean_score\": 12.25, \"median_score\": 8.0, \"zero_score_pct\": 3.8}, {\"inspection_year\": 2017, \"scored_inspections\": 239, \"mean_score\": 11.41, \"median_score\": 8.0, \"zero_score_pct\": 5.4}, {\"inspection_year\": 2018, \"scored_inspections\": 456, \"mean_score\": 11.09, \"median_score\": 9.0, \"zero_score_pct\": 5.9}, {\"inspection_year\": 2019, \"scored_inspections\": 601, \"mean_score\": 10.19, \"median_score\": 8.0, \"zero_score_pct\": 9.0}, {\"inspection_year\": 2020, \"scored_inspections\": 362, \"mean_score\": 9.8, \"median_score\": 7.0, \"zero_score_pct\": 9.1}, {\"inspection_year\": 2021, \"scored_inspections\": 605, \"mean_score\": 10.4, \"median_score\": 8.0, \"zero_score_pct\": 10.4}, {\"inspection_year\": 2022, \"scored_inspections\": 869, \"mean_score\": 12.08, \"median_score\": 9.0, \"zero_score_pct\": 8.1}, {\"inspection_year\": 2023, \"scored_inspections\": 879, \"mean_score\": 12.01, \"median_score\": 8.0, \"zero_score_pct\": 8.2}, {\"inspection_year\": 2024, \"scored_inspections\": 1227, \"mean_score\": 11.49, \"median_score\": 8.0, \"zero_score_pct\": 10.5}, {\"inspection_year\": 2025, \"scored_inspections\": 1343, \"mean_score\": 8.9, \"median_score\": 6.0, \"zero_score_pct\": 11.0}, {\"inspection_year\": 2026, \"scored_inspections\": 865, \"mean_score\": 6.33, \"median_score\": 5.0, \"zero_score_pct\": 9.6}]}\n\nObservation: {\"row_count\": 3, \"truncated\": false, \"rows\": [{\"inspection_type\": \"Routine\", \"scored_inspections\": 7380, \"mean_score\": 10.45, \"median_score\": 8.0, \"zero_score_pct\": 7.9}, {\"inspection_type\": \"Followup\", \"scored_inspections\": 211, \"mean_score\": 6.19, \"median_score\": 3.0, \"zero_score_pct\": 30.3}, {\"inspection_type\": \"Critical Item\", \"scored_inspections\": 202, \"mean_score\": 9.02, \"median_score\": 3.0, \"zero_score_pct\": 28.7}]}\n\nObservation: {\"row_count\": 1, \"truncated\": false, \"rows\": [{\"total_inspections\": 8020, \"missing_score_inspections\": 222.0, \"missing_score_pct\": 2.77, \"establishments_with_inspections\": 1315, \"establishments_with_scored_inspections\": 1291}]}\n\nAction: plot_chart({'chart_type': 'histogram', 'query': 'SELECT inspection_score FROM inspections WHERE inspection_score IS NOT NULL', 'x': 'inspection_score', 'title': 'Distribution of scored inspection visits across Salt Lake County establishments'})\n\nAction: plot_chart({'chart_type': 'line', 'query': 'SELECT EXTRACT(YEAR FROM inspection_date)::INTEGER AS inspection_year, ROUND(AVG(inspection_score), 2) AS mean_score, MEDIAN(inspection_score) AS median_score FROM inspections WHERE inspection_score IS NOT NULL GROUP BY 1 ORDER BY 1', 'x': 'inspection_year', 'y': 'mean_score', 'title': 'Average inspection score by year'})\n\nAction: plot_chart({'chart_type': 'bar', 'query': \"SELECT CASE WHEN inspection_score = 0 THEN '0' WHEN inspection_score BETWEEN 1 AND 4 THEN '1\u20134' WHEN inspection_score BETWEEN 5 AND 9 THEN '5\u20139' WHEN inspection_score BETWEEN 10 AND 19 THEN '10\u201319' WHEN inspection_score BETWEEN 20 AND 29 THEN '20\u201329' ELSE '30+' END AS score_band, CASE WHEN inspection_score = 0 THEN 1 WHEN inspection_score BETWEEN 1 AND 4 THEN 2 WHEN inspection_score BETWEEN 5 AND 9 THEN 3 WHEN inspection_score BETWEEN 10 AND 19 THEN 4 WHEN inspection_score BETWEEN 20 AND 29 THEN 5 ELSE 6 END AS band_order, COUNT(*) AS inspections FROM inspections WHERE inspection_score IS NOT NULL GROUP BY 1,2 ORDER BY band_order\", 'x': 'score_band', 'y': 'inspections', 'title': 'Scored inspections by score band'})\n\nAction: plot_chart({'chart_type': 'bar', 'query': \"SELECT COALESCE(it.description, 'Unspecified') AS inspection_type, COUNT(*) AS scored_inspections, ROUND(AVG(i.inspection_score), 2) AS mean_score FROM inspections i LEFT JOIN inspection_types it ON i.inspection_type_id = it.inspection_type_id WHERE i.inspection_score IS NOT NULL GROUP BY 1 HAVING COUNT(*) >= 20 ORDER BY scored_inspections DESC\", 'x': 'inspection_type', 'y': 'mean_score', 'title': 'Average inspection score by inspection type (types with 20+ scored visits)'})\n\nObservation: Chart created: 'Distribution of scored inspection visits across Salt Lake County establishments' (histogram, 7798 rows). It will be shown to the user below your answer.\n\nObservation: Chart created: 'Average inspection score by year' (line, 18 rows). It will be shown to the user below your answer.\n\nObservation: Chart created: 'Scored inspections by score band' (bar, 6 rows). It will be shown to the user below your answer.\n\nObservation: Chart created: 'Average inspection score by inspection type (types with 20+ scored visits)' (bar, 3 rows). It will be shown to the user below your answer.",
+  "timeline": [],
+  "messages": [
+    {
+      "type": "HumanMessage",
+      "content": "Show me detailed visual analytics and statistics of inspection scores across all establishments."
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "get_schema",
+          "args": {},
+          "id": "call_EAEkQQ2HDCQ0DHTIbeWN3OK8",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 1798,
+        "output_tokens": 13,
+        "total_tokens": 1811,
+        "input_token_details": {
+          "audio": 0,
+          "cache_read": 1777,
+          "cache_creation": 18
+        },
+        "output_token_details": {
+          "audio": 0,
+          "reasoning": 0
+        }
+      },
+      "model_name": "gpt-5.6-terra"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "Project food_health_viz {\n  database_type: 'DuckDB'\n}\n\nTable establishment_keys {\n  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']\n  name varchar [not null]\n  address varchar [not null]\n  city varchar [not null]\n  city_state_zip varchar\n  establishment_type varchar\n  source varchar [note: 'friend_slc | own_scrape']\n  slchd_lat double\n  slchd_lon double\n  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']\n\n  Note: 'SLCHD establishment list, one row per portal listing.'\n}\n\nTable category {\n  category_id integer [pk]\n  category varchar\n}\n\nTable establishments {\n  gmap_id varchar [pk]\n  name varchar\n  address varchar\n  description varchar\n  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']\n  avg_rating double\n  num_of_reviews integer\n  price varchar\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']\n\n  Note: 'One row per Google Local place \u2014 all restaurants, not just SLCHD-matched.'\n}\n\nTable establishment_attributes {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  attribute varchar [not null]\n\n  indexes { (gmap_id, attribute) [pk] }\n\n  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. \"Service options\") dropped.'\n}\n\nTable establishment_categories {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  category_id integer [ref: > category.category_id, not null]\n\n  indexes { (gmap_id, category_id) [pk] }\n}\n\nTable gmap_hours {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  day integer [not null, note: '0=Sun \u2026 6=Sat']\n  open_min bigint\n  open_max bigint\n\n  indexes { (gmap_id, day) [pk] }\n\n  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'\n}\n\nTable review {\n  user_id varchar\n  name varchar\n  time bigint\n  rating double\n  text varchar\n  resp varchar\n  gmap_id varchar [ref: > establishments.gmap_id]\n}\n\nTable inspection_types {\n  inspection_type_id integer [pk, note: 'parsed leading number, e.g. \"01 - Routine\" -> 1']\n  description varchar [note: 'e.g. \"Routine\"']\n}\n\nTable inspections {\n  inspection_id bigint [pk, increment]\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]\n  inspection_date date [not null]\n  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable \u2014 27 rows have no type']\n  inspection_score integer\n\n  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'\n}\n\nTable violation_codes {\n  violation_code_id integer [pk, increment]\n  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. \"4.5.18\"']\n  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']\n  critical boolean [not null]\n}\n\nTable violations {\n  violation_id bigint [pk, increment]\n  inspection_id bigint [ref: > inspections.inspection_id, not null]\n  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]\n  violation_description varchar [note: 'per-occurrence free text']\n  violation_occurrences integer\n  violation_cos boolean [note: 'corrected on site']\n  violation_phr varchar [note: 'public health rationale']\n\n  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'\n}\n",
+      "tool_call_id": "call_EAEkQQ2HDCQ0DHTIbeWN3OK8",
+      "name": "get_schema"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "WITH scored AS (\n  SELECT inspection_score\n  FROM inspections\n  WHERE inspection_score IS NOT NULL\n)\nSELECT\n  COUNT(*) AS scored_inspections,\n  MIN(inspection_score) AS min_score,\n  MAX(inspection_score) AS max_score,\n  ROUND(AVG(inspection_score), 2) AS mean_score,\n  MEDIAN(inspection_score) AS median_score,\n  ROUND(STDDEV_SAMP(inspection_score), 2) AS sd_score,\n  SUM(CASE WHEN inspection_score = 0 THEN 1 ELSE 0 END) AS zero_score_inspections,\n  ROUND(100.0 * SUM(CASE WHEN inspection_score = 0 THEN 1 ELSE 0 END) / COUNT(*), 1) AS zero_score_pct\nFROM scored;"
+          },
+          "id": "call_UFl7ogGThWBp0nxLn3fnxUW9",
+          "type": "tool_call"
+        },
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "SELECT\n  CASE\n    WHEN inspection_score = 0 THEN '0'\n    WHEN inspection_score BETWEEN 1 AND 4 THEN '1\u20134'\n    WHEN inspection_score BETWEEN 5 AND 9 THEN '5\u20139'\n    WHEN inspection_score BETWEEN 10 AND 19 THEN '10\u201319'\n    WHEN inspection_score BETWEEN 20 AND 29 THEN '20\u201329'\n    ELSE '30+'\n  END AS score_band,\n  CASE\n    WHEN inspection_score = 0 THEN 1\n    WHEN inspection_score BETWEEN 1 AND 4 THEN 2\n    WHEN inspection_score BETWEEN 5 AND 9 THEN 3\n    WHEN inspection_score BETWEEN 10 AND 19 THEN 4\n    WHEN inspection_score BETWEEN 20 AND 29 THEN 5\n    ELSE 6\n  END AS band_order,\n  COUNT(*) AS inspections,\n  ROUND(100.0 * COUNT(*) / SUM(COUNT(*)) OVER (), 1) AS pct_of_scored_inspections\nFROM inspections\nWHERE inspection_score IS NOT NULL\nGROUP BY 1, 2\nORDER BY band_order;"
+          },
+          "id": "call_pNwfwIBbupB4CeAKJSmBZufb",
+          "type": "tool_call"
+        },
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "SELECT\n  EXTRACT(YEAR FROM inspection_date)::INTEGER AS inspection_year,\n  COUNT(*) AS scored_inspections,\n  ROUND(AVG(inspection_score), 2) AS mean_score,\n  MEDIAN(inspection_score) AS median_score,\n  ROUND(100.0 * SUM(CASE WHEN inspection_score = 0 THEN 1 ELSE 0 END) / COUNT(*), 1) AS zero_score_pct\nFROM inspections\nWHERE inspection_score IS NOT NULL\nGROUP BY 1\nORDER BY inspection_year;"
+          },
+          "id": "call_q0BnUVnPThCJ660u66V4mZ5S",
+          "type": "tool_call"
+        },
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "SELECT\n  it.description AS inspection_type,\n  COUNT(*) AS scored_inspections,\n  ROUND(AVG(i.inspection_score), 2) AS mean_score,\n  MEDIAN(i.inspection_score) AS median_score,\n  ROUND(100.0 * SUM(CASE WHEN i.inspection_score = 0 THEN 1 ELSE 0 END) / COUNT(*), 1) AS zero_score_pct\nFROM inspections i\nLEFT JOIN inspection_types it ON i.inspection_type_id = it.inspection_type_id\nWHERE i.inspection_score IS NOT NULL\nGROUP BY 1\nHAVING COUNT(*) >= 20\nORDER BY scored_inspections DESC;"
+          },
+          "id": "call_4GEG5iNzwo6zsvJlhKELDDF7",
+          "type": "tool_call"
+        },
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "SELECT\n  COUNT(*) AS total_inspections,\n  SUM(CASE WHEN inspection_score IS NULL THEN 1 ELSE 0 END) AS missing_score_inspections,\n  ROUND(100.0 * SUM(CASE WHEN inspection_score IS NULL THEN 1 ELSE 0 END) / COUNT(*), 2) AS missing_score_pct,\n  COUNT(DISTINCT slchd_establishment_key) AS establishments_with_inspections,\n  COUNT(DISTINCT CASE WHEN inspection_score IS NOT NULL THEN slchd_establishment_key END) AS establishments_with_scored_inspections\nFROM inspections;"
+          },
+          "id": "call_ZJmJHYOVK8VDfHmCB46OSHhd",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 2686,
+        "output_tokens": 860,
+        "total_tokens": 3546,
+        "input_token_details": {
+          "audio": 0,
+          "cache_read": 1795,
+          "cache_creation": 888
+        },
+        "output_token_details": {
+          "audio": 0,
+          "reasoning": 0
+        }
+      },
+      "model_name": "gpt-5.6-terra"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 1, \"truncated\": false, \"rows\": [{\"scored_inspections\": 7798, \"min_score\": 0, \"max_score\": 297, \"mean_score\": 10.29, \"median_score\": 7.0, \"sd_score\": 12.07, \"zero_score_inspections\": 710.0, \"zero_score_pct\": 9.1}]}",
+      "tool_call_id": "call_UFl7ogGThWBp0nxLn3fnxUW9",
+      "name": "run_sql"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 6, \"truncated\": false, \"rows\": [{\"score_band\": \"0\", \"band_order\": 1, \"inspections\": 710, \"pct_of_scored_inspections\": 9.1}, {\"score_band\": \"1\\u20134\", \"band_order\": 2, \"inspections\": 2072, \"pct_of_scored_inspections\": 26.6}, {\"score_band\": \"5\\u20139\", \"band_order\": 3, \"inspections\": 1934, \"pct_of_scored_inspections\": 24.8}, {\"score_band\": \"10\\u201319\", \"band_order\": 4, \"inspections\": 1994, \"pct_of_scored_inspections\": 25.6}, {\"score_band\": \"20\\u201329\", \"band_order\": 5, \"inspections\": 672, \"pct_of_scored_inspections\": 8.6}, {\"score_band\": \"30+\", \"band_order\": 6, \"inspections\": 416, \"pct_of_scored_inspections\": 5.3}]}",
+      "tool_call_id": "call_pNwfwIBbupB4CeAKJSmBZufb",
+      "name": "run_sql"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 18, \"truncated\": false, \"rows\": [{\"inspection_year\": 2009, \"scored_inspections\": 3, \"mean_score\": 7.0, \"median_score\": 4.0, \"zero_score_pct\": 0.0}, {\"inspection_year\": 2010, \"scored_inspections\": 5, \"mean_score\": 4.8, \"median_score\": 3.0, \"zero_score_pct\": 20.0}, {\"inspection_year\": 2011, \"scored_inspections\": 7, \"mean_score\": 6.71, \"median_score\": 7.0, \"zero_score_pct\": 14.3}, {\"inspection_year\": 2012, \"scored_inspections\": 10, \"mean_score\": 6.0, \"median_score\": 5.5, \"zero_score_pct\": 0.0}, {\"inspection_year\": 2013, \"scored_inspections\": 22, \"mean_score\": 8.91, \"median_score\": 8.5, \"zero_score_pct\": 9.1}, {\"inspection_year\": 2014, \"scored_inspections\": 70, \"mean_score\": 8.73, \"median_score\": 6.0, \"zero_score_pct\": 10.0}, {\"inspection_year\": 2015, \"scored_inspections\": 77, \"mean_score\": 13.0, \"median_score\": 11.0, \"zero_score_pct\": 1.3}, {\"inspection_year\": 2016, \"scored_inspections\": 158, \"mean_score\": 12.25, \"median_score\": 8.0, \"zero_score_pct\": 3.8}, {\"inspection_year\": 2017, \"scored_inspections\": 239, \"mean_score\": 11.41, \"median_score\": 8.0, \"zero_score_pct\": 5.4}, {\"inspection_year\": 2018, \"scored_inspections\": 456, \"mean_score\": 11.09, \"median_score\": 9.0, \"zero_score_pct\": 5.9}, {\"inspection_year\": 2019, \"scored_inspections\": 601, \"mean_score\": 10.19, \"median_score\": 8.0, \"zero_score_pct\": 9.0}, {\"inspection_year\": 2020, \"scored_inspections\": 362, \"mean_score\": 9.8, \"median_score\": 7.0, \"zero_score_pct\": 9.1}, {\"inspection_year\": 2021, \"scored_inspections\": 605, \"mean_score\": 10.4, \"median_score\": 8.0, \"zero_score_pct\": 10.4}, {\"inspection_year\": 2022, \"scored_inspections\": 869, \"mean_score\": 12.08, \"median_score\": 9.0, \"zero_score_pct\": 8.1}, {\"inspection_year\": 2023, \"scored_inspections\": 879, \"mean_score\": 12.01, \"median_score\": 8.0, \"zero_score_pct\": 8.2}, {\"inspection_year\": 2024, \"scored_inspections\": 1227, \"mean_score\": 11.49, \"median_score\": 8.0, \"zero_score_pct\": 10.5}, {\"inspection_year\": 2025, \"scored_inspections\": 1343, \"mean_score\": 8.9, \"median_score\": 6.0, \"zero_score_pct\": 11.0}, {\"inspection_year\": 2026, \"scored_inspections\": 865, \"mean_score\": 6.33, \"median_score\": 5.0, \"zero_score_pct\": 9.6}]}",
+      "tool_call_id": "call_q0BnUVnPThCJ660u66V4mZ5S",
+      "name": "run_sql"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 3, \"truncated\": false, \"rows\": [{\"inspection_type\": \"Routine\", \"scored_inspections\": 7380, \"mean_score\": 10.45, \"median_score\": 8.0, \"zero_score_pct\": 7.9}, {\"inspection_type\": \"Followup\", \"scored_inspections\": 211, \"mean_score\": 6.19, \"median_score\": 3.0, \"zero_score_pct\": 30.3}, {\"inspection_type\": \"Critical Item\", \"scored_inspections\": 202, \"mean_score\": 9.02, \"median_score\": 3.0, \"zero_score_pct\": 28.7}]}",
+      "tool_call_id": "call_4GEG5iNzwo6zsvJlhKELDDF7",
+      "name": "run_sql"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 1, \"truncated\": false, \"rows\": [{\"total_inspections\": 8020, \"missing_score_inspections\": 222.0, \"missing_score_pct\": 2.77, \"establishments_with_inspections\": 1315, \"establishments_with_scored_inspections\": 1291}]}",
+      "tool_call_id": "call_ZJmJHYOVK8VDfHmCB46OSHhd",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "plot_chart",
+          "args": {
+            "chart_type": "histogram",
+            "query": "SELECT inspection_score FROM inspections WHERE inspection_score IS NOT NULL",
+            "x": "inspection_score",
+            "title": "Distribution of scored inspection visits across Salt Lake County establishments"
+          },
+          "id": "call_0CGRk6QON5TadlbUdHx9ZKUt",
+          "type": "tool_call"
+        },
+        {
+          "name": "plot_chart",
+          "args": {
+            "chart_type": "line",
+            "query": "SELECT EXTRACT(YEAR FROM inspection_date)::INTEGER AS inspection_year, ROUND(AVG(inspection_score), 2) AS mean_score, MEDIAN(inspection_score) AS median_score FROM inspections WHERE inspection_score IS NOT NULL GROUP BY 1 ORDER BY 1",
+            "x": "inspection_year",
+            "y": "mean_score",
+            "title": "Average inspection score by year"
+          },
+          "id": "call_jY5xXyRseYkr2nSYuiY4I9ft",
+          "type": "tool_call"
+        },
+        {
+          "name": "plot_chart",
+          "args": {
+            "chart_type": "bar",
+            "query": "SELECT CASE WHEN inspection_score = 0 THEN '0' WHEN inspection_score BETWEEN 1 AND 4 THEN '1\u20134' WHEN inspection_score BETWEEN 5 AND 9 THEN '5\u20139' WHEN inspection_score BETWEEN 10 AND 19 THEN '10\u201319' WHEN inspection_score BETWEEN 20 AND 29 THEN '20\u201329' ELSE '30+' END AS score_band, CASE WHEN inspection_score = 0 THEN 1 WHEN inspection_score BETWEEN 1 AND 4 THEN 2 WHEN inspection_score BETWEEN 5 AND 9 THEN 3 WHEN inspection_score BETWEEN 10 AND 19 THEN 4 WHEN inspection_score BETWEEN 20 AND 29 THEN 5 ELSE 6 END AS band_order, COUNT(*) AS inspections FROM inspections WHERE inspection_score IS NOT NULL GROUP BY 1,2 ORDER BY band_order",
+            "x": "score_band",
+            "y": "inspections",
+            "title": "Scored inspections by score band"
+          },
+          "id": "call_NkGyUsRFfaMS6j0oIAQqelIW",
+          "type": "tool_call"
+        },
+        {
+          "name": "plot_chart",
+          "args": {
+            "chart_type": "bar",
+            "query": "SELECT COALESCE(it.description, 'Unspecified') AS inspection_type, COUNT(*) AS scored_inspections, ROUND(AVG(i.inspection_score), 2) AS mean_score FROM inspections i LEFT JOIN inspection_types it ON i.inspection_type_id = it.inspection_type_id WHERE i.inspection_score IS NOT NULL GROUP BY 1 HAVING COUNT(*) >= 20 ORDER BY scored_inspections DESC",
+            "x": "inspection_type",
+            "y": "mean_score",
+            "title": "Average inspection score by inspection type (types with 20+ scored visits)"
+          },
+          "id": "call_56PzZRUXL6q9BA2sp7BEH8wr",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 4936,
+        "output_tokens": 489,
+        "total_tokens": 5425,
+        "input_token_details": {
+          "audio": 0,
+          "cache_read": 2683,
+          "cache_creation": 2250
+        },
+        "output_token_details": {
+          "audio": 0,
+          "reasoning": 0
+        }
+      },
+      "model_name": "gpt-5.6-terra"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "Chart created: 'Distribution of scored inspection visits across Salt Lake County establishments' (histogram, 7798 rows). It will be shown to the user below your answer.",
+      "tool_call_id": "call_0CGRk6QON5TadlbUdHx9ZKUt",
+      "name": "plot_chart"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "Chart created: 'Average inspection score by year' (line, 18 rows). It will be shown to the user below your answer.",
+      "tool_call_id": "call_jY5xXyRseYkr2nSYuiY4I9ft",
+      "name": "plot_chart"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "Chart created: 'Scored inspections by score band' (bar, 6 rows). It will be shown to the user below your answer.",
+      "tool_call_id": "call_NkGyUsRFfaMS6j0oIAQqelIW",
+      "name": "plot_chart"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "Chart created: 'Average inspection score by inspection type (types with 20+ scored visits)' (bar, 3 rows). It will be shown to the user below your answer.",
+      "tool_call_id": "call_56PzZRUXL6q9BA2sp7BEH8wr",
+      "name": "plot_chart"
+    },
+    {
+      "type": "AIMessage",
+      "content": "## Inspection-score overview\n\nThe analysis covers **7,798 scored inspection visits** across **1,291 establishments** with at least one recorded score. There are **8,020 total inspection records**; **222 (2.77%)** have no score recorded.\n\n- **Average score:** **10.29**\n- **Median score:** **7**\n- **Standard deviation:** **12.07**\n- **Range:** **0 to 297**\n- **Zero-score inspections:** **710 (9.1%)**\n\nThe mean being higher than the median, together with the maximum of 297, indicates a **right-skewed distribution**: most inspections cluster at relatively low scores, while a smaller number of high-score visits pull the average upward.\n\n## Score distribution\n\nThe largest groups were:\n\n| Score band | Inspections | Share |\n|---|---:|---:|\n| 0 | 710 | 9.1% |\n| 1\u20134 | 2,072 | 26.6% |\n| 5\u20139 | 1,934 | 24.8% |\n| 10\u201319 | 1,994 | 25.6% |\n| 20\u201329 | 672 | 8.6% |\n| 30+ | 416 | 5.3% |\n\nIn total, **4,716 inspections (60.5%)** scored below 10, while **1,088 (14.0%)** scored 20 or higher.\n\n## Change over time\n\nAnnual average scores varied over the available history:\n\n- The highest annual average in the more recent, higher-volume period was **12.08 in 2022** (869 scored inspections).\n- The average was **12.01 in 2023** (879 inspections) and **11.49 in 2024** (1,227 inspections).\n- It declined to **8.90 in 2025** (1,343 inspections) and **6.33 in 2026** (865 inspections).\n- The 2026 figure is partial-year data relative to the current date, so it should not be treated as a full-year comparison.\n\nThe annual median similarly moved from **9 in 2022** to **8 in 2023\u201324**, **6 in 2025**, and **5 in 2026**.\n\n## By inspection type\n\nAmong inspection types with at least 20 scored visits:\n\n| Inspection type | Scored visits | Mean score | Median score | Zero-score share |\n|---|---:|---:|---:|---:|\n| Routine | 7,380 | 10.45 | 8 | 7.9% |\n| Followup | 211 | 6.19 | 3 | 30.3% |\n| Critical Item | 202 | 9.02 | 3 | 28.7% |\n\nRoutine inspections account for the overwhelming majority of scored visits (**7,380 of 7,798; 94.6%**). Follow-up and Critical Item visits have lower average and median scores in this dataset, alongside substantially larger shares of zero-score visits.\n\nThe charts shown visualize the overall score distribution, score bands, annual average trend, and differences by inspection type.",
+      "tool_calls": [],
+      "usage_metadata": {
+        "input_tokens": 5572,
+        "output_tokens": 674,
+        "total_tokens": 6246,
+        "input_token_details": {
+          "audio": 0,
+          "cache_read": 4933,
+          "cache_creation": 636
+        },
+        "output_token_details": {
+          "audio": 0,
+          "reasoning": 0
+        }
+      },
+      "model_name": "gpt-5.6-terra"
+    }
+  ],
+  "charts": [
+    {
+      "data": [
+        {
+          "bingroup": "x",
+          "hovertemplate": "inspection_score=%{x}<br>count=%{y}<extra></extra>",
+          "legendgroup": "",
+          "marker": {
+            "color": "#000001",
+            "pattern": {
+              "shape": ""
+            }
+          },
+          "name": "",
+          "orientation": "v",
+          "showlegend": false,
+          "x": {
+            "dtype": "i4",
+            "bdata": "AAAAAAYAAAAHAAAAAAAAAA0AAAAPAAAACwAAABkAAAAGAAAACAAAAAYAAAAXAAAAIAAAABgAAAAAAAAAAQAAAAMAAAABAAAAAAAAAAEAAAAFAAAABAAAAAMAAAADAAAAEQAAAAMAAAAEAAAABwAAAAgAAAAIAAAAAQAAAAIAAAADAAAABwAAAAAAAAAAAAAAAwAAAAAAAAALAAAAGAAAAAgAAAAJAAAACwAAAAkAAAAHAAAADQAAAAkAAAAJAAAAJQAAAA0AAAAFAAAACAAAABgAAAARAAAAFgAAAA8AAAAPAAAAHAAAABAAAAAVAAAABgAAAAAAAAAEAAAADQAAAAcAAAABAAAADgAAAAoAAAASAAAABgAAAAUAAAACAAAAAgAAABEAAAAFAAAABwAAAAQAAAACAAAAAgAAABcAAAAVAAAACAAAAAoAAAAdAAAAJwAAABEAAAASAAAADwAAACAAAAAQAAAABwAAAAAAAAADAAAABgAAAAkAAAADAAAACAAAAAUAAAAHAAAAAwAAAAEAAAAFAAAABwAAAAAAAAAEAAAABgAAAAoAAAABAAAACQAAAA0AAAAKAAAADQAAAAgAAAAXAAAACAAAAAsAAAABAAAAFAAAABkAAAAbAAAANQAAAEUAAAAJAAAABgAAABEAAAAGAAAACAAAABMAAAAYAAAAEgAAAAcAAAAKAAAABQAAAAkAAAAQAAAAEAAAAAgAAAAJAAAAMAAAAAkAAAAbAAAAHQAAABAAAAAAAAAAAwAAAAMAAAABAAAAIAAAAAMAAAACAAAADwAAAAAAAAAYAAAAAwAAAAEAAAAGAAAAAAAAAAsAAAAXAAAACgAAABUAAAAWAAAAFAAAAAYAAAADAAAAGwAAAAcAAAAGAAAAFAAAAAQAAAAcAAAACgAAABUAAAATAAAAFAAAABAAAAAQAAAACQAAABYAAAAPAAAADAAAAB0AAAAGAAAABgAAAAYAAAAGAAAAAgAAAAoAAAAbAAAAAQAAAAcAAAAKAAAAGAAAAAwAAAAcAAAAEAAAAAEAAAAIAAAAEAAAAAkAAAALAAAACQAAAAsAAAAIAAAACwAAAA0AAAAKAAAAAwAAAAsAAAANAAAADwAAAAYAAAANAAAABAAAAAYAAAADAAAABwAAAAUAAAAFAAAAFAAAABMAAAAZAAAAAgAAABQAAAASAAAADwAAAA4AAAADAAAAAwAAAAkAAAAIAAAAFgAAAAEAAAAJAAAAAQAAAAEAAAAFAAAAAQAAAAAAAAACAAAABgAAAAIAAAALAAAADgAAAAoAAAAKAAAACAAAAAAAAAAAAAAAbQAAAA8AAAAAAAAADwAAAAkAAAATAAAAEgAAAAwAAAASAAAACQAAAAUAAAAMAAAAAAAAAAgAAAAGAAAAAgAAAAMAAAALAAAABwAAAAsAAAALAAAABQAAAAEAAAAPAAAADwAAAAcAAAAJAAAAAwAAAAgAAAAIAAAAAAAAAAgAAAALAAAACAAAAAoAAAAAAAAADAAAAAMAAAAVAAAABgAAAAEAAAACAAAACQAAACEAAAAMAAAAHAAAACMAAAAlAAAABwAAABMAAAAWAAAAGgAAAAEAAAAKAAAAFwAAAAQAAAAeAAAAAgAAAAUAAAAEAAAAAAAAAC0AAAAHAAAAAgAAAAIAAAAFAAAABwAAAAUAAAARAAAACQAAAAYAAAABAAAACAAAAAEAAAACAAAAAwAAAAsAAAAEAAAAAwAAAAMAAAALAAAAAQAAAA8AAAAHAAAACQAAABkAAAAJAAAABQAAAB8AAAAWAAAAEQAAAAgAAAATAAAAHwAAAA4AAAAPAAAAMgAAAAYAAAATAAAAEgAAAAMAAAATAAAAAQAAAAYAAAAFAAAAAQAAAAMAAAAAAAAACQAAAAwAAAATAAAADgAAAA8AAAAJAAAACAAAABsAAAAMAAAAEAAAAAMAAAAJAAAABwAAAAgAAAAAAAAAFAAAAAMAAAAEAAAAAwAAAA8AAAAaAAAADgAAAAcAAAAOAAAADAAAAAQAAAAFAAAADwAAAAQAAAAHAAAADQAAABAAAAAAAAAAAgAAAAkAAAAEAAAADwAAAAsAAAAAAAAADgAAAAgAAAADAAAADAAAAAUAAAABAAAABAAAAAQAAAAHAAAAEQAAAAQAAAADAAAACAAAAAkAAAAAAAAAAgAAAAUAAAADAAAAAgAAAAQAAAAQAAAACQAAAAEAAAAPAAAAAwAAAAUAAAAJAAAAAAAAAAEAAAAFAAAAAgAAAAkAAAADAAAACgAAAA0AAAAFAAAADQAAAAMAAAATAAAADQAAAAsAAAAHAAAAGAAAAAQAAAAAAAAAAAAAAAAAAAACAAAADgAAAAYAAAAIAAAAHwAAAAwAAAAOAAAAFQAAAAcAAAAFAAAABAAAAAkAAAAHAAAABgAAAAYAAAARAAAABQAAABAAAAAVAAAAFwAAAAgAAAADAAAABwAAAAIAAAABAAAACAAAABAAAAANAAAAHQAAABsAAAAhAAAABgAAAAEAAAAMAAAADAAAAAwAAAAGAAAAAwAAAAgAAAATAAAACwAAABQAAAANAAAAGAAAAA8AAAAYAAAAEQAAAA0AAAABAAAAAQAAAAQAAAAHAAAADAAAAA4AAAACAAAACwAAAAcAAAAEAAAAAAAAAAEAAAABAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAIAAAAhAAAALgAAABgAAAASAAAAKwAAABoAAAALAAAANQAAADcAAAAEAAAABwAAAAAAAAAEAAAACQAAABUAAAAIAAAADgAAAAwAAAAKAAAAAwAAAAgAAAAJAAAAFgAAAA4AAAAUAAAADwAAAA8AAAAVAAAAEQAAAAgAAAAJAAAACAAAAAkAAAACAAAAAQAAAAMAAAADAAAAAgAAAAIAAAACAAAAAQAAAAEAAAAAAAAAFwAAAAQAAAAEAAAACwAAAA0AAAABAAAAAAAAAAcAAAABAAAABQAAAAoAAAAXAAAADwAAAAsAAAAPAAAADQAAAAsAAAAbAAAACwAAAAcAAAALAAAAAwAAAAAAAAB2AAAAAgAAABgAAAAMAAAAEAAAABsAAAADAAAADgAAAA0AAAAKAAAAAAAAAH8AAAAHAAAAEQAAAAoAAAADAAAABwAAAA4AAAAKAAAAEQAAABwAAAAJAAAAEwAAACcAAAAJAAAAFQAAABQAAAALAAAAFAAAAAwAAAAcAAAAGgAAAAoAAAAOAAAAEgAAAA0AAAAJAAAADgAAAEgAAAAGAAAAMAAAABcAAAAbAAAADQAAACgAAAANAAAABgAAAAAAAAAQAAAADQAAAAIAAAAKAAAALAAAAAoAAAAbAAAAEAAAAAUAAAASAAAAJwAAABEAAAARAAAAGAAAAA0AAAAMAAAACQAAABgAAAADAAAAIwAAABwAAAAUAAAAKgAAAC8AAAA1AAAACwAAABEAAAAPAAAAFAAAACAAAAAcAAAAKAAAAAcAAAAaAAAAEQAAAAcAAAADAAAABgAAAAQAAAAKAAAABAAAAAYAAAAHAAAACQAAAAEAAAACAAAABgAAAAQAAAABAAAACAAAAAcAAAAGAAAABQAAAAkAAAAAAAAACAAAAAcAAAANAAAAAAAAAAkAAAAPAAAAEgAAABMAAAADAAAACQAAAAkAAAAIAAAAFAAAAAwAAAAHAAAADgAAAAkAAAAIAAAAEQAAAAsAAAAIAAAAFAAAAAQAAAAbAAAAEAAAAAIAAAABAAAAAgAAAAMAAAAhAAAABgAAAAYAAAAAAAAADAAAACcAAAAEAAAABAAAAAYAAAAKAAAACgAAAAEAAAAKAAAADQAAAAkAAAACAAAAAwAAAB0AAAAJAAAAAQAAAAEAAAAHAAAAEgAAAAMAAAAFAAAADAAAAAwAAAALAAAAGAAAAAYAAAAJAAAACQAAAAsAAAACAAAAAwAAAAAAAAALAAAACgAAAAIAAAANAAAAAwAAAAQAAAAEAAAAHQAAAAsAAAAKAAAAEwAAAAwAAAAmAAAABgAAAAEAAAAEAAAAAwAAAAsAAAAOAAAABgAAAAsAAAANAAAAAQAAAAwAAAARAAAAFQAAABYAAAAXAAAACAAAAAIAAAALAAAAIAAAAAUAAAALAAAADQAAAAcAAAACAAAACQAAABIAAAAQAAAAHwAAABYAAAAMAAAADAAAACYAAAATAAAAFQAAAAQAAAARAAAAFAAAAAYAAAAQAAAAGAAAACcAAAAbAAAACwAAABAAAAAMAAAAAwAAAAsAAAAEAAAABgAAABEAAAAMAAAACQAAABUAAAAEAAAAAAAAAAAAAAAJAAAADAAAAAwAAAAgAAAAGQAAABYAAAAOAAAAGQAAABUAAAAYAAAAAAAAAAAAAAAAAAAACAAAABAAAAAMAAAAEAAAAAoAAAANAAAAAAAAAAQAAAABAAAAAgAAAAMAAAADAAAABQAAAAUAAAACAAAAAQAAAAgAAAABAAAADgAAAAgAAAAKAAAACAAAAAAAAAACAAAABAAAAAcAAAAAAAAAAQAAAAoAAAAAAAAAAAAAAAAAAAAAAAAACgAAAAIAAAAAAAAAAAAAAAEAAAABAAAAAQAAAAwAAAABAAAAAwAAAAsAAAAOAAAADgAAAAUAAAANAAAADAAAABYAAAA7AAAABAAAAAoAAAAEAAAABgAAAAgAAAAaAAAAEgAAAAMAAAAAAAAAcQAAAAEAAAAHAAAAAwAAAAYAAAABAAAAAgAAAA0AAAAJAAAACAAAAAoAAAAaAAAAEAAAAAoAAAAEAAAACwAAACkAAAAPAAAAAwAAACMAAAAWAAAABQAAAA8AAAAJAAAABwAAAA0AAAAMAAAABAAAAAUAAAAYAAAAAQAAABIAAAAPAAAABQAAAAQAAAACAAAABAAAAAIAAAAIAAAAAQAAAAIAAAARAAAADgAAABIAAAABAAAAAQAAAAQAAAAVAAAADgAAAAwAAAALAAAABAAAAAQAAAAKAAAABQAAAAgAAAAKAAAACwAAAAoAAAADAAAADAAAAAkAAAABAAAAAAAAAAEAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAkAAAAFAAAAAAAAAAMAAAAJAAAAEAAAAAcAAAABAAAADQAAABMAAAALAAAACQAAAAMAAAAKAAAADAAAACkAAAA2AAAAJQAAABQAAAAgAAAACwAAAAcAAAAUAAAACwAAABQAAAAQAAAAEgAAABoAAAAiAAAAGAAAAAMAAAAFAAAAEwAAACMAAAAGAAAAIwAAABEAAAAaAAAAUgAAACMAAAAGAAAAAAAAAAIAAAABAAAACQAAAAAAAAAQAAAACQAAAA8AAAABAAAABwAAAAYAAAAAAAAAFQAAAAkAAAAQAAAABwAAAAAAAAACAAAADQAAAAEAAAAAAAAAAQAAAAQAAAABAAAAAQAAAAMAAAADAAAADAAAAAcAAAAAAAAACQAAAAAAAAAHAAAABAAAAAMAAAAEAAAADQAAAAIAAAAAAAAABgAAAAYAAAAGAAAAAQAAAAEAAAAAAAAACgAAAAgAAAADAAAAAAAAAAgAAAAKAAAABQAAABIAAAACAAAADgAAAAEAAAADAAAABwAAAAUAAAAJAAAABgAAAAgAAAABAAAAAwAAABIAAAAEAAAADAAAAAUAAAAJAAAAAgAAAAYAAAAJAAAADwAAAAEAAAAIAAAAAAAAABMAAAAKAAAACAAAAAcAAAAAAAAACgAAAAMAAAAIAAAABwAAAAkAAAABAAAAAAAAAAMAAAAEAAAAAQAAAAMAAAABAAAABAAAABIAAAANAAAAAQAAAAkAAAAHAAAABAAAAAQAAAAFAAAAFAAAABQAAAARAAAADAAAAAsAAAARAAAACAAAAAYAAAACAAAAAAAAAAgAAAABAAAABAAAAAEAAAADAAAADQAAAAEAAAALAAAAAQAAAAAAAAAMAAAAAAAAAAAAAAAFAAAAAwAAAAcAAAACAAAAAAAAAAkAAAALAAAAJgAAAAUAAAAHAAAACAAAAAMAAAAEAAAABgAAAAsAAAAPAAAABwAAAAcAAAAGAAAAAQAAAAEAAAABAAAAAgAAAAMAAAALAAAACgAAAAgAAAAHAAAABgAAAAcAAAAHAAAACQAAAAkAAAAOAAAACAAAAA4AAAAJAAAABAAAAAgAAAAbAAAAFgAAACkAAAADAAAAKwAAABcAAAAIAAAACAAAABgAAAARAAAAAgAAABMAAAAHAAAACgAAAAIAAAAQAAAABwAAAAgAAAAIAAAABwAAAAEAAAAIAAAADAAAAAcAAAABAAAABgAAAAcAAAAFAAAACAAAAAEAAAAAAAAAEwAAAAYAAAAGAAAABwAAAAcAAAAEAAAAAgAAAAgAAAACAAAACQAAAAIAAAACAAAAAgAAAAQAAAAEAAAAAwAAAAMAAAAAAAAAAAAAAAMAAAAGAAAAAgAAAAEAAAACAAAABwAAAAAAAAACAAAAAAAAAAEAAAAEAAAACQAAAA0AAAADAAAAAAAAAAAAAAAGAAAABQAAAAQAAAAHAAAAEAAAAAkAAAALAAAADgAAABUAAAANAAAACQAAAAYAAAAHAAAAPAAAABUAAAAQAAAAAQAAABEAAAACAAAABQAAAAYAAAAEAAAABgAAABIAAAABAAAABAAAAAIAAAABAAAADwAAAA0AAAAYAAAAHgAAAAsAAAAXAAAALwAAAAsAAAALAAAACAAAABUAAAAAAAAACQAAAAgAAAAAAAAAAwAAABUAAAAFAAAABQAAAAUAAAACAAAAAgAAAAEAAAAKAAAAEQAAAA8AAAASAAAAFwAAABIAAAAKAAAAAAAAAAkAAAAHAAAAFAAAAAYAAAAHAAAAFwAAAB4AAAAAAAAAAgAAAAoAAAALAAAAEQAAACUAAAA2AAAAEgAAAAsAAAAPAAAAFwAAAAAAAAAKAAAAGgAAAA0AAAAHAAAAEgAAAA4AAAABAAAACwAAADAAAAAAAAAAAwAAAAQAAAAAAAAACgAAAAIAAAAlAAAAHwAAAAYAAAAAAAAAAAAAAHMAAAABAAAAAwAAAHMAAAAAAAAAFQAAABEAAAAGAAAABAAAAAQAAAAJAAAACAAAAAkAAAALAAAAEAAAAAUAAAAbAAAAHwAAAD8AAAADAAAACQAAAAkAAAASAAAACwAAABMAAAAGAAAAPwAAABwAAAALAAAAJgAAABwAAAAKAAAAIAAAAAMAAAANAAAAEwAAAAgAAAAKAAAABAAAAA8AAAAGAAAADgAAADgAAAAHAAAABgAAAAIAAAAJAAAAAgAAAAIAAAAPAAAAEwAAAAgAAAANAAAAAgAAAAEAAAADAAAACQAAABwAAAAYAAAABgAAAAwAAAAKAAAAEAAAAAsAAAARAAAAFQAAAAoAAAAbAAAABgAAAA4AAAAeAAAACgAAAAoAAAABAAAAAgAAACMAAAAbAAAADwAAABIAAAAWAAAAAgAAABoAAAAHAAAABQAAAAsAAAARAAAAEAAAABIAAAAhAAAAAgAAAAoAAAAJAAAAFAAAAAQAAAAEAAAADgAAABkAAAAaAAAAFAAAABMAAAAOAAAAIQAAAAYAAAAGAAAACwAAAAcAAAAYAAAAEQAAABcAAAAgAAAABgAAAAoAAAAQAAAABQAAAAkAAAAHAAAAAgAAAAEAAAANAAAAFgAAAAMAAAAAAAAAAgAAAC8AAAAgAAAAKAAAAAYAAAApAAAAAwAAAB0AAAAFAAAACgAAAAkAAAADAAAACwAAAAYAAAADAAAADgAAAAAAAAAAAAAAAAAAAAEAAAAEAAAAAAAAAAAAAAAJAAAAHQAAAAkAAAAFAAAABQAAAAYAAAAJAAAACQAAAAcAAAAGAAAAAAAAAAYAAAAKAAAACAAAAAQAAAAIAAAAFwAAAAcAAAAYAAAAAAAAAAQAAAALAAAADwAAAAIAAAAMAAAAAAAAACAAAAABAAAAAQAAAAoAAAAIAAAABgAAAA4AAAAJAAAABwAAABIAAAABAAAACQAAAAIAAAAIAAAAAgAAAA8AAAAUAAAABAAAAAIAAAAKAAAAAgAAAAQAAAAKAAAACAAAAAMAAAALAAAABgAAAA0AAAALAAAAAwAAAAcAAAABAAAAJwAAAA0AAAAAAAAAFQAAABUAAAAIAAAABgAAAAYAAAAAAAAABwAAABAAAAAQAAAABAAAAAgAAAAGAAAADgAAAAkAAAAFAAAACwAAAAcAAAAAAAAABwAAACAAAAAkAAAADAAAAAMAAAAHAAAABAAAACcAAAAbAAAABwAAAAIAAAABAAAABwAAAAYAAAADAAAACwAAAAEAAAAaAAAAEgAAAAcAAAAEAAAACgAAAAkAAAAIAAAACgAAAAoAAAARAAAABQAAAAUAAAABAAAACwAAAAsAAAASAAAABwAAAAkAAAALAAAAAAAAAAgAAAAVAAAADgAAABAAAAAQAAAAFQAAAAkAAAAOAAAABwAAAAkAAAAQAAAAAwAAAAsAAAASAAAACAAAABEAAAAKAAAAMQAAAAkAAAATAAAACgAAAA8AAAAJAAAAJwAAAAsAAAAJAAAAAQAAAAAAAAADAAAAAgAAAB8AAAAFAAAAHAAAAA0AAAAMAAAAEwAAAAAAAAAMAAAADAAAAAwAAAANAAAAAQAAABAAAAATAAAAEQAAABEAAAAaAAAAAgAAAAQAAAAGAAAABQAAAAcAAAAAAAAABgAAAAkAAAAGAAAAFAAAAAMAAAABAAAAAAAAAAAAAAABAAAAAgAAAAQAAAAAAAAAAwAAAAAAAAACAAAABAAAAAQAAAAEAAAAAgAAAAkAAAAAAAAAAAAAAAQAAAAMAAAACwAAAAIAAAAJAAAADwAAAAQAAAAEAAAAAQAAAAMAAAAIAAAABgAAAAMAAAAAAAAAAwAAAAAAAAADAAAAFAAAAAgAAAACAAAABAAAAAoAAAALAAAAEAAAAAMAAAAEAAAAAQAAAB4AAAACAAAABwAAAAEAAAACAAAAAQAAAAYAAAAAAAAABAAAAAAAAAAAAAAAAQAAAAkAAAAIAAAADQAAAAEAAAAAAAAAAAAAAAMAAAADAAAAAAAAAAAAAAAGAAAABgAAAAYAAAABAAAAAgAAAAIAAAAGAAAAAQAAAAAAAAAAAAAABgAAAAAAAAAGAAAAAAAAAAAAAAAGAAAAAwAAACIAAAAkAAAABQAAADwAAAAOAAAAKwAAAAQAAAAHAAAACgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHAAAABgAAAAQAAAAJAAAAAwAAAAoAAAAKAAAAAwAAAA0AAAAIAAAADgAAAAEAAAABAAAACgAAAAMAAAALAAAAAwAAAAcAAAABAAAACAAAAAkAAAAUAAAACAAAAAUAAAADAAAABAAAAAYAAAAKAAAABgAAAAoAAAAEAAAABAAAAAMAAAAIAAAAAgAAAAMAAAABAAAACQAAAAkAAAAAAAAAEgAAAAgAAAADAAAAAAAAAAEAAAAKAAAADQAAAAcAAAAAAAAADQAAAA4AAAAEAAAAAgAAAAMAAAAIAAAAAQAAAAMAAAAEAAAABAAAAAoAAAATAAAADwAAAAAAAAACAAAAAwAAAAgAAAAQAAAAEAAAAAEAAAAMAAAACAAAAAwAAAAhAAAABQAAAAYAAAAHAAAADAAAAAMAAAAAAAAABAAAAAQAAAAOAAAABAAAAAAAAAAKAAAABQAAAAsAAAADAAAACAAAAAkAAAAPAAAAFgAAAAsAAAAGAAAAEgAAAA4AAAABAAAACgAAAAYAAAABAAAABwAAAA0AAAAZAAAADQAAAAsAAAAMAAAAAAAAAAEAAAAAAAAAAAAAAAMAAAADAAAACAAAAAwAAAAhAAAAGwAAAAgAAAACAAAAFgAAAAAAAAAAAAAADQAAAAcAAAAGAAAABwAAAAYAAAAAAAAACQAAAAAAAAADAAAAAQAAAAEAAAAAAAAAAgAAAAIAAAAIAAAACwAAAAoAAAAQAAAAJAAAAAgAAAALAAAADAAAABAAAAApAAAACwAAAAUAAAAMAAAAKQAAABgAAAAAAAAAAQAAAAwAAAADAAAAAgAAAAoAAAAGAAAACwAAAAAAAAAKAAAAAgAAAAYAAAAIAAAAAQAAAAcAAAALAAAAEQAAAAcAAAAAAAAAAAAAAAYAAAABAAAACAAAAAAAAAABAAAAAQAAAAEAAAAAAAAAAAAAAAAAAAAAAAAABwAAAAMAAAAKAAAAEgAAAAkAAAAIAAAAEAAAAAMAAAADAAAAAQAAAAAAAAAHAAAAAQAAAAEAAAADAAAADgAAAAIAAAABAAAAAAAAAAEAAAACAAAABwAAAAMAAAACAAAAAQAAAAUAAAANAAAABAAAAAsAAAAHAAAACQAAABQAAAAUAAAACgAAABQAAAAQAAAADwAAAA0AAAAUAAAAAgAAAAEAAAAEAAAAAAAAAAAAAAAFAAAADQAAAAEAAAATAAAAAgAAAAQAAAABAAAABQAAAAUAAAACAAAAEQAAAAkAAAAMAAAAEwAAABIAAAANAAAADAAAAAgAAAAgAAAAEwAAAB8AAAAbAAAADgAAAEUAAAAZAAAAGwAAACwAAAAFAAAAEQAAABYAAAASAAAAGAAAAAgAAAAMAAAADgAAAAMAAAAEAAAABgAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAIAAAAPAAAABgAAAAgAAAAVAAAABwAAAAAAAAAAAAAAAQAAAAAAAAABAAAADgAAAAMAAAACAAAAAwAAAAoAAAARAAAAEQAAABQAAAAQAAAABQAAAAMAAAANAAAADAAAABYAAAAGAAAAAwAAABEAAAAHAAAAHwAAAAAAAAABAAAAAAAAAAEAAAAQAAAAAQAAAAMAAAAJAAAABgAAAAcAAAAVAAAABAAAABIAAAARAAAADwAAAAAAAAAAAAAAAwAAAAAAAAAEAAAAAwAAAAQAAAANAAAACQAAAA0AAAAIAAAAAgAAAAYAAAAIAAAADwAAAAEAAAAOAAAACQAAAAAAAAAIAAAAEgAAAA8AAAAhAAAALwAAABkAAAAjAAAAJQAAABQAAAAAAAAABAAAAAoAAAAFAAAACAAAAAMAAAADAAAABwAAAA4AAAASAAAAAwAAAAIAAAABAAAABwAAABUAAAAJAAAACAAAAAIAAAACAAAACAAAAAoAAAAGAAAACQAAAAkAAAAGAAAABwAAABQAAAALAAAAIQAAAB8AAAASAAAADQAAACoAAAAJAAAACQAAAAoAAAAPAAAACwAAAAkAAAAGAAAAEAAAABsAAAAhAAAACQAAABAAAAAPAAAAEgAAAAkAAAAHAAAABAAAAAcAAAASAAAAEgAAAAwAAAAJAAAADgAAAAoAAAAAAAAAAAAAAAcAAAAJAAAAAAAAAAAAAAAAAAAAAgAAAAIAAAADAAAAEwAAAAYAAAANAAAAOwAAAAIAAAAAAAAABAAAAAoAAAABAAAACAAAABoAAAANAAAACwAAAAwAAAAdAAAAFQAAAAEAAAABAAAADwAAABIAAAABAAAAAwAAAAkAAAAJAAAABAAAABYAAAAdAAAAAgAAAA4AAAAjAAAAEgAAAA4AAAAFAAAAFwAAAAEAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAEAAAAFAAAADAAAAAMAAAAAAAAAAwAAAAYAAAABAAAAAQAAAAQAAAAOAAAACAAAAAAAAAAKAAAAAQAAAAAAAAAAAAAADQAAAAgAAAAIAAAABgAAAAQAAAAYAAAACgAAAAIAAAAYAAAAGQAAAAsAAAAQAAAAAAAAAAIAAAAOAAAABgAAAAAAAAAPAAAABgAAACQAAAAEAAAABgAAAAwAAAAdAAAAGgAAABMAAAAFAAAAAwAAABMAAAALAAAAAAAAAAAAAAASAAAAIgAAACIAAAAgAAAABAAAAAQAAAALAAAADgAAAAEAAAALAAAAAAAAAAMAAAAMAAAAEgAAABoAAAAIAAAAAgAAAAUAAAASAAAAGgAAAAgAAAADAAAABAAAAAkAAAAFAAAABQAAAAMAAAAKAAAAEAAAAAwAAAABAAAABQAAAAQAAAAMAAAABQAAAAoAAAAEAAAAAgAAAA4AAAARAAAABQAAAB0AAAADAAAAAwAAAAEAAAABAAAAAwAAAAYAAAABAAAABQAAAAEAAAAAAAAABwAAAAcAAAAOAAAAAgAAAAQAAAAgAAAAAwAAAAAAAAABAAAAAAAAAAEAAAAJAAAACgAAABYAAAAXAAAACQAAAAoAAAAHAAAADAAAAAYAAAAEAAAADgAAAA0AAAAHAAAADQAAAAAAAAAAAAAAAAAAAAEAAAACAAAAAAAAAAIAAAABAAAABgAAAAwAAAABAAAAAQAAAAAAAAABAAAAAQAAAAEAAAAIAAAAEgAAAAMAAAAKAAAAEwAAAAgAAAAYAAAAHgAAAA4AAAAQAAAABwAAAAIAAAAHAAAABwAAAAYAAAACAAAAAQAAAAIAAAACAAAABwAAAAYAAAAFAAAACgAAAAgAAAADAAAABwAAAAkAAAANAAAAAwAAAAIAAAAHAAAABAAAAAAAAAAJAAAAAAAAAAMAAAAAAAAAAQAAAAMAAAAKAAAAAQAAABIAAAATAAAAIgAAAAMAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAEAAAAAAAAAAQAAAAYAAAAEAAAABQAAAAcAAAAPAAAAIgAAABUAAAARAAAACAAAABIAAAAQAAAAFQAAAAMAAAAHAAAABQAAAA8AAAAPAAAAHgAAACIAAAARAAAAFgAAABUAAAANAAAADAAAAAwAAAASAAAAAAAAACIAAAAvAAAAGwAAABsAAAAGAAAAIwAAAA0AAAAHAAAACAAAAAsAAAAEAAAACAAAAAYAAAACAAAAAQAAAAIAAAAFAAAABQAAAAoAAAAJAAAAAAAAAAEAAAABAAAAAQAAAAQAAAAEAAAABQAAAAkAAAAJAAAACQAAABsAAAAOAAAACgAAABQAAAAMAAAACQAAAAgAAAAFAAAADgAAAAgAAAACAAAABQAAAAkAAAANAAAADAAAAAcAAAACAAAAAwAAAAcAAAABAAAAAQAAAAAAAAABAAAAAQAAAAAAAAAIAAAACAAAAAUAAAAHAAAAAgAAAAIAAAAEAAAAAwAAAAoAAAANAAAAAAAAAAUAAAAIAAAAAQAAAAAAAAAAAAAABQAAAAcAAAAFAAAAAAAAAAcAAAAEAAAAAgAAAAgAAAAHAAAABgAAAA4AAAABAAAAAQAAAAYAAAAAAAAAAAAAAAcAAAAJAAAABAAAAAAAAAAJAAAACwAAAA4AAAAOAAAAGAAAAAIAAAABAAAAAQAAAAMAAAACAAAABAAAAAYAAAACAAAAAAAAAAEAAAAJAAAACAAAAAkAAAALAAAACAAAABEAAAAOAAAAHAAAAAkAAAAKAAAABAAAAAMAAAABAAAAAgAAAAAAAAANAAAAEQAAAAwAAAAJAAAABwAAACQAAAAGAAAACgAAAAcAAAACAAAACAAAAAMAAAAHAAAACQAAAAcAAAACAAAACQAAAAMAAAABAAAABgAAAAAAAAAHAAAAAwAAAAgAAAABAAAABAAAABIAAAAWAAAADAAAAAcAAAALAAAAEAAAAAEAAAAIAAAABAAAABAAAAAHAAAADQAAAAEAAAANAAAADQAAAA4AAAAJAAAACQAAAAQAAAAKAAAABgAAAAYAAAAEAAAAAQAAAA4AAAABAAAACQAAAAMAAAAJAAAACgAAAAIAAAAEAAAACAAAAAUAAAAEAAAAAgAAAAUAAAABAAAADAAAAAQAAAAAAAAADgAAAAUAAAAHAAAAAAAAAAQAAAABAAAAAwAAAAMAAAAHAAAACAAAAAcAAAADAAAAFgAAABEAAAAMAAAAHAAAAAsAAAAcAAAAAAAAAAkAAAAXAAAAAwAAABwAAAASAAAAIAAAAAYAAAAqAAAAMwAAAAkAAAABAAAACgAAABcAAAAIAAAAAwAAAAsAAAAFAAAAAAAAAAsAAAARAAAACAAAAA4AAAAAAAAAAwAAAAoAAAABAAAAAwAAABkAAAADAAAACwAAAAMAAAAWAAAAAQAAAAIAAAAHAAAAAAAAAAgAAAAqAAAAFAAAABcAAAAJAAAAEAAAAAIAAAACAAAAEQAAAA0AAAAYAAAADwAAAAEAAAAEAAAACAAAAAcAAAABAAAAEAAAAAsAAAAKAAAACgAAAAUAAAACAAAABAAAAAMAAAAFAAAABQAAAAcAAAAIAAAAFAAAAA0AAAAHAAAADAAAAAQAAAAIAAAAAQAAAA0AAAAPAAAAHQAAACYAAAAlAAAAHQAAABsAAAAPAAAAHQAAABoAAAAJAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJAAAABgAAAAEAAAAAAAAAAQAAAAMAAAAcAAAACAAAAAcAAAAIAAAABwAAAAEAAAANAAAAEQAAAAoAAAAAAAAAkQAAAAYAAAAPAAAAGgAAAAYAAAAHAAAAAAAAAAAAAAAAAAAAAAAAAAsAAAAMAAAABwAAAA0AAAAQAAAACAAAAAUAAAAOAAAAAwAAAAsAAAAGAAAAEwAAABIAAAAMAAAACwAAAAwAAAAGAAAAEAAAAAoAAAASAAAACgAAAAMAAAASAAAAJQAAABYAAAAFAAAAAgAAAAwAAAAOAAAAFAAAAAAAAAABAAAAAAAAAAIAAAACAAAAEQAAADgAAAAIAAAABgAAAA4AAAACAAAABQAAABwAAAADAAAABQAAAAIAAAABAAAACwAAAA4AAAALAAAABwAAAAgAAAADAAAAAgAAAAcAAAAEAAAAAAAAAAcAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAYAAAAlAAAABAAAAAoAAAAHAAAABQAAAAQAAAAaAAAAAQAAAAcAAAAMAAAAAQAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAwAAAAAAAAAHAAAAAgAAAAYAAAAEAAAAAAAAAAYAAAAVAAAADAAAABoAAAANAAAAEgAAAAMAAAAZAAAAIwAAAAAAAAAGAAAACQAAAAgAAAAEAAAAEQAAAAsAAAALAAAAAAAAAAIAAAAHAAAAAgAAAAgAAAAMAAAADgAAAAcAAAAHAAAAAgAAAAcAAAABAAAACAAAAAgAAAAGAAAADQAAAA4AAAAHAAAAAgAAAAMAAAAAAAAACgAAAAEAAAAAAAAABAAAAAgAAAAIAAAACgAAABEAAAAkAAAADAAAAAYAAAAWAAAAFQAAACAAAAAOAAAADAAAAAgAAAAaAAAAEQAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAkAAAAEAAAAAQAAAAQAAAANAAAACgAAAAAAAAAFAAAAAQAAAAsAAAAMAAAAAgAAAAAAAAAAAAAAAAAAAAYAAAAEAAAABwAAAAIAAAAMAAAAFQAAAAcAAAADAAAABgAAAAMAAAAFAAAABgAAAAMAAAAFAAAADAAAAAQAAAAIAAAAAwAAAAAAAAAFAAAACAAAAAAAAAABAAAADQAAAAcAAAANAAAABwAAAAsAAAACAAAACAAAAAgAAAAAAAAABAAAABAAAAACAAAADwAAAA0AAAAMAAAAAwAAAAIAAAAsAAAAFQAAABAAAAANAAAACwAAABUAAAAGAAAAEgAAAA4AAAABAAAACQAAAAEAAAAGAAAADgAAABAAAAAMAAAAAgAAAAQAAAAGAAAACAAAAAUAAAADAAAACAAAAAkAAAACAAAADgAAABsAAAAFAAAABgAAAAQAAAAKAAAABAAAAAwAAAABAAAABQAAAAoAAAAeAAAADwAAABkAAAAIAAAADQAAABQAAAAVAAAAAQAAAAkAAAAHAAAABwAAAAYAAAAUAAAAEAAAABYAAAAJAAAACAAAAAYAAAADAAAACQAAAAoAAAAeAAAABwAAAAcAAAAOAAAACAAAAAUAAAAJAAAAFgAAACQAAAAAAAAAAwAAACQAAAAFAAAAEgAAAAkAAAADAAAAAwAAABAAAAASAAAAHAAAABoAAAARAAAABgAAACYAAAAlAAAAIQAAAAkAAAASAAAAEQAAAAoAAAAMAAAAEQAAAAcAAAAKAAAABwAAABMAAAAAAAAAAAAAAAkAAAAQAAAAAgAAAAMAAAAFAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAACAAAAAYAAAAAAAAACQAAAAAAAAAAAAAAAAAAAAAAAAACAAAABwAAAAsAAABCAAAAAAAAACIAAAAIAAAAFgAAABAAAAAeAAAAIAAAAAkAAAAAAAAAMQAAACgAAAABAAAADgAAAAEAAAAEAAAAFQAAAAgAAAAPAAAADgAAAAoAAAAIAAAADAAAAAoAAAAJAAAACQAAAAoAAAAPAAAAAwAAAAQAAAARAAAADAAAABAAAAAJAAAAAgAAAAIAAAAAAAAAAwAAAAUAAAAAAAAACQAAAAYAAAAMAAAAAwAAAB4AAAAhAAAAFQAAADgAAAA4AAAAFwAAACYAAAAXAAAAGQAAAAQAAAAHAAAAAAAAABoAAAALAAAACgAAABEAAAAOAAAAGAAAAA0AAAAJAAAAGwAAABAAAAALAAAACQAAAAIAAAAFAAAADAAAAA4AAAAbAAAABwAAABsAAAARAAAACgAAABUAAAAQAAAAHQAAAB0AAAALAAAABgAAAAoAAAAMAAAADAAAAA8AAAA0AAAAEQAAABIAAAARAAAAAwAAABIAAAAIAAAACwAAAAMAAAA1AAAANwAAAC4AAAA8AAAAGwAAAB0AAAAaAAAABAAAAAwAAAAMAAAAAAAAAAAAAAABAAAAAQAAAAgAAAAAAAAAAAAAAAMAAAAPAAAABwAAAAUAAAAAAAAACAAAABYAAAAYAAAACwAAACQAAAALAAAAAAAAAA8AAAAcAAAAAAAAAAMAAAAOAAAACgAAAAMAAAAkAAAACwAAAAAAAAALAAAAIAAAADQAAAAQAAAACwAAAAwAAAAHAAAAAwAAABUAAAAQAAAACgAAABYAAAAEAAAAEAAAAB0AAAAUAAAADwAAABUAAAADAAAADwAAABAAAAAQAAAABQAAAA4AAAADAAAAEQAAABQAAAABAAAAAwAAAAUAAAAAAAAABwAAAAAAAAABAAAAAgAAAAYAAAAQAAAADgAAAAUAAAADAAAAEwAAAAsAAAACAAAAAgAAAAkAAAAKAAAAAwAAAAcAAAAIAAAAAQAAAAcAAAAEAAAACwAAAAQAAAAMAAAACQAAAAAAAAAAAAAABgAAAA4AAAAGAAAACwAAAAMAAAADAAAACgAAAAMAAAAOAAAAEwAAAAcAAAAOAAAABwAAAAwAAAAPAAAAFwAAABMAAAAQAAAABgAAAA8AAAAFAAAAAgAAAAcAAAABAAAABAAAAA4AAAAIAAAACAAAAAsAAAAQAAAACQAAAAIAAAAJAAAACAAAAAYAAAAPAAAABwAAAAAAAAALAAAACgAAAAgAAAAGAAAADAAAABEAAAAIAAAACAAAAA8AAAAQAAAACAAAABsAAAAJAAAADAAAABEAAAAGAAAAAgAAAAwAAAAWAAAAAAAAAAoAAAAWAAAACQAAABMAAAABAAAADwAAAAIAAAADAAAAAQAAAAgAAAACAAAADAAAABkAAAAGAAAACQAAAAsAAAAAAAAAAwAAAAcAAAAGAAAABwAAAAMAAAATAAAABwAAAA0AAAAKAAAABgAAAAAAAAACAAAADwAAABQAAAAUAAAABwAAABUAAAACAAAACQAAAAMAAAADAAAAAgAAABMAAAAWAAAACAAAAAcAAAAQAAAADAAAAAcAAAAEAAAACwAAAAcAAAAdAAAACAAAAAoAAAAOAAAACwAAABQAAAAIAAAABgAAAAIAAAACAAAAAQAAABIAAAAIAAAAAQAAAAQAAAAPAAAABgAAAAAAAAACAAAACAAAAAYAAAAAAAAAAQAAAAgAAAAJAAAABAAAAAMAAAACAAAAAQAAAAIAAAANAAAABAAAAAQAAAAHAAAADAAAAAIAAAAQAAAACgAAAAgAAAAKAAAACAAAAAMAAAABAAAAEQAAAAoAAAAOAAAADwAAAAgAAAABAAAAAwAAAAgAAAAIAAAABQAAAAAAAAAGAAAACAAAAAkAAAABAAAAAgAAAAIAAAAMAAAACAAAAAIAAAAQAAAACQAAAAcAAAAGAAAAAQAAAAoAAAAbAAAACAAAABMAAAAJAAAAFAAAABMAAAAQAAAADAAAAAEAAAAJAAAABgAAAAcAAAABAAAABgAAABIAAAADAAAABAAAAAQAAAALAAAAEwAAAAQAAAAEAAAABgAAABUAAAALAAAACAAAAAkAAAACAAAACAAAAAUAAAACAAAACAAAAAAAAAAIAAAADQAAAAYAAAAfAAAACwAAAAMAAAADAAAADgAAAAIAAAAHAAAABAAAAAgAAAANAAAAAwAAAAYAAAACAAAACAAAABsAAAAGAAAAAAAAAAYAAAAJAAAAAwAAAAsAAAAHAAAAAQAAAAgAAAABAAAAAgAAAAkAAAAHAAAABgAAAA0AAAAxAAAAEgAAAAMAAAABAAAAAwAAAAYAAAABAAAACQAAAAkAAAAIAAAAEgAAAAAAAAADAAAAAgAAAAEAAAADAAAAFAAAAAYAAAANAAAACAAAAAcAAAASAAAAAQAAAAIAAAACAAAACAAAAAcAAAACAAAAAQAAAAIAAAAIAAAAAQAAAAEAAAApAAAABAAAABAAAAASAAAAHQAAABAAAAAUAAAAJAAAAA4AAAAGAAAACAAAAAMAAAALAAAABAAAABEAAAAEAAAAEwAAABEAAAAGAAAABwAAABYAAAAFAAAABQAAAAUAAAAaAAAACAAAAAkAAAAIAAAACwAAAAAAAAAAAAAAAwAAAAAAAAACAAAABgAAAAAAAAAAAAAAAwAAAAAAAAAAAAAABgAAAAQAAAAIAAAAAAAAAAAAAAARAAAAAQAAAAgAAAAAAAAABAAAAA0AAAAMAAAAGAAAABcAAAAGAAAABAAAAAAAAAAsAAAAEAAAAAYAAAAEAAAABwAAAA8AAAAHAAAABQAAAAUAAAAJAAAADQAAAAkAAAAYAAAAFQAAAAEAAAADAAAAAwAAAAYAAAAGAAAAAgAAAAIAAAACAAAADwAAACIAAAASAAAAAAAAAAkAAAAOAAAAKgAAACYAAAAJAAAAAwAAAAIAAAAOAAAAAAAAABUAAAAAAAAAAAAAAAMAAAAHAAAACAAAABQAAAANAAAACQAAAAYAAAAEAAAACwAAAA0AAAAjAAAAHwAAAAgAAAAbAAAABwAAABkAAAAIAAAADgAAABEAAAANAAAABwAAAAkAAAALAAAAAwAAAAoAAAAIAAAAAAAAAAkAAAALAAAAAQAAAAgAAAAEAAAACQAAAA4AAAABAAAAAAAAAAcAAAAIAAAAFgAAACwAAAAEAAAAEgAAABUAAAAPAAAAFAAAABsAAAAAAAAABQAAAAUAAAAGAAAAHgAAAA0AAAAFAAAADQAAAA4AAAARAAAABQAAAAAAAAAAAAAACAAAAAYAAAAQAAAADQAAAA4AAAAIAAAABAAAAAQAAAAHAAAACgAAAAUAAAAHAAAABAAAAAIAAAAAAAAAAQAAAAMAAAANAAAACQAAAAUAAAAKAAAAAAAAAAAAAAAIAAAABAAAAAkAAAANAAAABAAAAAcAAAAEAAAABAAAAAMAAAAEAAAADQAAAAUAAAAEAAAABgAAAAwAAAAKAAAADgAAAAoAAAANAAAAIQAAAAIAAAAAAAAAAAAAAAQAAAAAAAAACQAAAAkAAAAVAAAAAQAAAAYAAAAFAAAABAAAAAgAAAAAAAAAiQAAAAAAAAC6AAAAIQAAAAYAAAAgAAAAIAAAAAEAAAAMAAAABwAAAAMAAAABAAAAAQAAAAQAAAAAAAAAAQAAAAYAAAAAAAAAAAAAAAYAAAACAAAABAAAAAkAAAAPAAAAEwAAABgAAAAQAAAAKgAAACMAAAAFAAAAFgAAAAEAAAAKAAAACAAAABEAAAAFAAAAFQAAAA0AAAAOAAAAGQAAAA0AAAAFAAAABwAAAAcAAAADAAAACAAAAAQAAAAGAAAACgAAAAQAAAAIAAAACAAAAAwAAAALAAAACwAAAAgAAAAIAAAAFAAAAAMAAAALAAAAFAAAAAYAAAAKAAAAAQAAABQAAAAMAAAABQAAAAYAAAADAAAACwAAAAIAAAAIAAAADwAAABAAAAAPAAAAAAAAAAYAAAAHAAAAAQAAAAIAAAAJAAAAGwAAAAoAAAAPAAAADgAAABcAAAAqAAAADgAAAAkAAAACAAAAAAAAAA4AAAABAAAABAAAAAMAAAALAAAAFgAAAA4AAAAYAAAAAgAAAAcAAAADAAAAAAAAAAgAAAAEAAAAAgAAAAwAAAAPAAAAEwAAAAQAAAAFAAAAAAAAAAEAAAAGAAAAAwAAAAoAAAABAAAADAAAAEUAAAAVAAAAFAAAABEAAAANAAAADgAAAAAAAAAKAAAABQAAABQAAAAGAAAAAgAAAAsAAAAQAAAACQAAAAEAAAASAAAABgAAAAsAAAAgAAAADgAAABEAAAAaAAAAEAAAABgAAAAPAAAACwAAAAkAAAAOAAAADQAAAAcAAAAJAAAAJQAAABgAAAAYAAAAGAAAAAoAAAAAAAAAAAAAAAkAAAAIAAAAAwAAAAYAAAAGAAAABgAAABEAAAAGAAAAAQAAAAAAAAACAAAADAAAAAEAAAAKAAAAGQAAABoAAAATAAAAGgAAABgAAAApAAAAIgAAABsAAAAhAAAAAAAAAAoAAAAAAAAAAwAAAAIAAAADAAAAAwAAAAgAAAABAAAAAAAAAAQAAAADAAAABwAAAA4AAAAJAAAAAAAAAAEAAAAJAAAAAgAAAA4AAAALAAAACwAAAAgAAAAGAAAABAAAAAMAAAAJAAAABQAAABUAAAANAAAAAwAAAA0AAAAGAAAACAAAAAMAAAAGAAAACQAAAAkAAAALAAAAAAAAAAUAAAAAAAAACAAAAAEAAAALAAAAEAAAAAgAAAANAAAADQAAABQAAAAIAAAAAAAAAAsAAAATAAAAFwAAABcAAAACAAAAAgAAAAMAAAANAAAACwAAAAsAAAAJAAAABAAAAAcAAAAHAAAACgAAAA0AAAAHAAAADQAAAAsAAAANAAAABgAAAAwAAAADAAAAAgAAAAsAAAAMAAAAFAAAAAMAAAACAAAACAAAAAsAAAAIAAAADAAAAAcAAAAPAAAABQAAAA4AAAAIAAAABwAAAAgAAAAMAAAADAAAAAIAAAAJAAAACQAAAAIAAAAIAAAADQAAAAUAAAADAAAABQAAAAgAAAAIAAAAAgAAAAkAAAAPAAAACgAAAAIAAAAHAAAADQAAAAoAAAADAAAABAAAAAkAAAAEAAAACQAAAAEAAAAHAAAAEQAAAAsAAAAGAAAACQAAAAYAAAAJAAAABwAAAAMAAAAJAAAAAwAAAAgAAAAMAAAAAwAAAAEAAAAHAAAAGgAAAA4AAAAEAAAACAAAAAIAAAAEAAAABQAAAAcAAAADAAAAAQAAAAQAAAALAAAABgAAAAgAAAAUAAAABQAAAAsAAAADAAAABgAAAAIAAAADAAAAAwAAAAIAAAADAAAAAAAAAAgAAAAJAAAABQAAAAYAAAAOAAAADAAAAA0AAAAHAAAADQAAABkAAAAbAAAAEAAAABEAAAADAAAAEgAAABEAAAAPAAAACAAAAAYAAAAGAAAAAgAAABUAAAARAAAAGAAAAAUAAAAXAAAAFwAAAAQAAAAWAAAAFQAAAAkAAAAPAAAADwAAABsAAAAJAAAAGwAAABUAAAAiAAAAAQAAAAoAAAAEAAAAFQAAAAcAAAAFAAAAEAAAABYAAAAjAAAAFAAAAAYAAAAlAAAABwAAAAIAAAANAAAAHAAAAAwAAAADAAAAHgAAABcAAAAWAAAABgAAAAYAAAAcAAAADQAAABMAAAAfAAAAFwAAABAAAAAHAAAAcwAAABoAAAAFAAAAAQAAABIAAAADAAAAAQAAAAkAAAACAAAACQAAABIAAAAOAAAABQAAAAIAAAAJAAAAEQAAAA4AAAARAAAACwAAAA4AAAARAAAAFgAAACQAAAA2AAAAGAAAAAAAAAAeAAAALQAAAAMAAAAJAAAACwAAAAkAAAAHAAAABgAAAAQAAAAAAAAAAQAAAAQAAAABAAAAAgAAAAIAAAACAAAABwAAAAEAAAABAAAAAQAAAAIAAAAEAAAABQAAAAUAAAAEAAAAAQAAAAIAAAAHAAAACQAAABYAAAAKAAAABQAAAAEAAAABAAAABAAAAAUAAAADAAAACwAAAAQAAAAJAAAABgAAAAkAAAAEAAAACAAAAAkAAAAKAAAADAAAAAcAAAAEAAAACAAAAAAAAAAJAAAACAAAAAEAAAACAAAAAwAAAAAAAABtAAAAAgAAAAEAAAADAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAABQAAAAAAAAAMAAAACgAAABYAAAAMAAAAEQAAAAQAAAAFAAAALgAAAAEAAAARAAAACAAAAAIAAAABAAAAAQAAAAMAAAAAAAAABwAAAAQAAAABAAAAAwAAAAkAAAABAAAAGwAAAA8AAAAAAAAAJAAAAAUAAAAZAAAAEgAAAAMAAAAEAAAABAAAABEAAAADAAAABQAAABsAAAAAAAAAAAAAAAQAAAADAAAAAQAAAAAAAAAAAAAAAQAAAAAAAAAAAAAADQAAAAkAAAAOAAAACAAAAAMAAAAHAAAAFgAAABAAAAALAAAAEwAAAAYAAAAHAAAAAQAAAA4AAAABAAAACgAAAAoAAAAEAAAADAAAAAIAAAAGAAAAAAAAAAAAAAAAAAAAAQAAAAEAAAAAAAAACwAAAAMAAAAIAAAACQAAABYAAAAPAAAADQAAAAsAAAAHAAAACgAAABcAAAALAAAAEQAAAA8AAAAPAAAAEQAAAAkAAAAFAAAACgAAAAUAAAALAAAACQAAAAEAAAAHAAAAAAAAABgAAAAOAAAACQAAAAMAAAAFAAAAFwAAAAoAAAAJAAAACAAAAA0AAAAHAAAACwAAAA0AAAAEAAAADwAAAAgAAAADAAAACQAAABEAAAANAAAABgAAAAAAAAATAAAACAAAAAkAAAAQAAAAFAAAABkAAAATAAAAAQAAABEAAAANAAAADAAAAEsAAAAEAAAACgAAAAUAAAAAAAAAAAAAAAAAAAAGAAAACwAAABMAAAAFAAAAEAAAAA8AAAAKAAAABAAAABQAAAAYAAAAIAAAABUAAAAmAAAALwAAACoAAAAMAAAACAAAAAwAAAAHAAAADwAAACIAAAAaAAAAAgAAAAQAAAAJAAAABgAAAAoAAAAGAAAADAAAABQAAAAKAAAACQAAAAMAAAAAAAAAAAAAAAAAAAAHAAAACQAAAAoAAAADAAAABgAAAA0AAAAKAAAACAAAAAoAAAAEAAAABwAAAAcAAAABAAAACQAAAAgAAAAeAAAAIQAAACoAAAAKAAAADwAAAA4AAAAQAAAAGAAAAAEAAAAGAAAABwAAAAYAAAAVAAAADwAAAAUAAAANAAAAFgAAAAgAAAALAAAAAQAAAAMAAAAJAAAADAAAAAgAAAARAAAAGAAAAAkAAAAEAAAAAgAAAAEAAAAGAAAAAAAAAAUAAAAAAAAABAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMAAAAEAAAABgAAAAsAAAAKAAAABAAAAA8AAAAFAAAABgAAAAEAAAABAAAAAgAAAAcAAAAIAAAAAgAAAAMAAAACAAAABQAAABQAAAAcAAAAEAAAADAAAAAiAAAAIwAAAAAAAAApAAAAJAAAAAUAAAAbAAAAGQAAAAwAAAARAAAAEAAAAA8AAAAkAAAAJwAAAAwAAAADAAAAGwAAAA0AAAAeAAAAIQAAAA4AAAAeAAAANgAAABAAAAAWAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAQAAAAEAAAADAAAACwAAAAwAAAADAAAABgAAAAMAAAAIAAAABgAAAAEAAAAAAAAAAAAAAAcAAAABAAAAAAAAAAAAAAAAAAAAAQAAAAkAAAAAAAAAAAAAAAwAAAAGAAAAAwAAAAcAAAAEAAAAAwAAAAAAAAAAAAAABQAAAAgAAAAHAAAAAgAAAAUAAAAIAAAABQAAAAAAAAAEAAAADAAAAAIAAAAKAAAACQAAAAUAAAAGAAAAAwAAAAMAAAAPAAAAIgAAAAQAAAACAAAACQAAAAEAAAABAAAAAQAAAAEAAAAHAAAAAgAAAAAAAAABAAAAAAAAABIAAAAHAAAABQAAAAMAAAAEAAAABwAAAAwAAAAGAAAAAwAAAAAAAAALAAAAEgAAABAAAAAPAAAAFgAAAAEAAAAJAAAAIQAAAAgAAAAZAAAACwAAAAkAAAAFAAAABwAAAAQAAAAEAAAAAAAAAAYAAAAKAAAAAAAAAAIAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAUAAAAFAAAABAAAAAIAAAAMAAAAAwAAAAQAAAAXAAAAAwAAAAIAAAABAAAACQAAAAIAAAABAAAACAAAAAgAAAAAAAAAAAAAAAEAAAAAAAAAAQAAAAsAAAAKAAAADAAAABQAAAApAAAAAQAAAHIAAAAbAAAAMwAAACgAAAAQAAAADgAAABQAAAAUAAAAHQAAAAwAAAB3AAAAAQAAAAkAAAABAAAACwAAAAUAAAAVAAAACAAAABAAAAANAAAADwAAAAIAAAAPAAAABAAAAAkAAAAIAAAAAgAAAAIAAAAKAAAADAAAABAAAAANAAAAFQAAAAkAAAAPAAAACAAAABMAAAAVAAAADgAAABMAAAAJAAAAAQAAAAEAAAAHAAAAAwAAAAEAAAACAAAACAAAAAQAAAAAAAAACQAAAAMAAAADAAAABQAAAAcAAAAFAAAAAQAAAAQAAAABAAAAAQAAAAoAAAAAAAAAAAAAAAMAAAAAAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAMAAAAKAAAAAwAAAAAAAAABAAAAAQAAAAEAAAABAAAADgAAAAUAAAACAAAABAAAAAgAAAAPAAAABwAAAAEAAAABAAAAAwAAAAQAAAAMAAAACQAAAAkAAAABAAAABgAAAAYAAAANAAAABAAAAAQAAAAJAAAACAAAAAMAAAAFAAAADgAAAA8AAAAIAAAABgAAABEAAAABAAAABwAAACQAAAADAAAACgAAAAEAAAALAAAAAQAAAAAAAAAHAAAAOwAAAFMAAAAgAAAAQAAAACcAAAAGAAAAAwAAAAIAAAAHAAAAAAAAAAwAAAACAAAABgAAAAEAAAAAAAAAAQAAAAEAAAABAAAADAAAAAAAAAAAAAAAAAAAAAQAAAABAAAACgAAAAAAAAAAAAAAAQAAAAgAAAAEAAAABwAAAAUAAAAFAAAABAAAAAQAAAABAAAAAQAAAAEAAAAAAAAABwAAACsAAAAPAAAABAAAAA0AAAAIAAAAGQAAAAoAAAADAAAACQAAAAkAAAALAAAACAAAAAwAAAAJAAAACQAAAAIAAAAfAAAAAAAAAAYAAAANAAAACAAAAAgAAAAMAAAAIwAAAAoAAAAUAAAAIgAAABIAAAAYAAAAEQAAAA8AAAACAAAAAQAAAAkAAAAWAAAAIAAAABYAAAAAAAAAigAAAB4AAAAWAAAADAAAAAgAAAAJAAAAEQAAAAoAAAAPAAAAEAAAAAQAAAAGAAAAKAAAABYAAAALAAAADwAAABIAAAAPAAAACgAAAAQAAAAIAAAAAAAAAAEAAAABAAAAEwAAAAMAAAADAAAABgAAAAIAAAAVAAAAFwAAAA8AAAAPAAAAEQAAAAMAAAAHAAAADAAAAA8AAAACAAAAEAAAABQAAAANAAAAEgAAABEAAAAYAAAAHgAAABUAAAABAAAAAgAAAA4AAAAJAAAADwAAAAMAAAABAAAAAQAAAAYAAAANAAAAFAAAAAwAAAAMAAAABQAAAAwAAAAKAAAACQAAAAAAAAANAAAABQAAAA8AAAAcAAAAEgAAAAkAAAAGAAAADAAAABYAAAAHAAAADQAAAAMAAAAAAAAAAwAAACYAAAAXAAAAEQAAAAkAAAAJAAAABwAAABQAAAAVAAAAFQAAAAQAAAAKAAAACQAAABAAAAAIAAAACQAAAAUAAAAOAAAANAAAABAAAAAJAAAADwAAABcAAAADAAAAEQAAAAEAAAACAAAAAgAAAAIAAAAdAAAACAAAAAAAAAAIAAAAFQAAAAgAAAAFAAAABQAAAAkAAAAIAAAABgAAAA8AAAAHAAAAAwAAABMAAAAQAAAADQAAAAoAAAAMAAAABQAAABsAAAAHAAAAIwAAACYAAAAcAAAACQAAAAcAAAANAAAAEAAAAB4AAAABAAAAAwAAABgAAAAFAAAAGwAAAAUAAAADAAAAGgAAAAYAAAAGAAAAAgAAAAcAAAAIAAAADwAAAAAAAAAAAAAACAAAAAkAAAAFAAAAAAAAABkAAAAEAAAABQAAAIgAAAAOAAAACQAAAAoAAAACAAAAAQAAAAEAAAAGAAAABgAAAA4AAAAIAAAACAAAABMAAAARAAAAAgAAAAAAAAAFAAAACQAAAAMAAAAIAAAAEAAAAA4AAAABAAAAAAAAAAQAAAAKAAAABQAAAAYAAAACAAAADQAAABAAAAAKAAAACgAAAA8AAAAHAAAAAQAAAAoAAAANAAAACAAAAAsAAAAJAAAADgAAAA0AAAAmAAAACgAAACAAAAAdAAAABgAAAAwAAAAaAAAAKAAAABIAAAAJAAAAIQAAABsAAAAWAAAAHwAAAAQAAAAPAAAAEgAAAAAAAAAEAAAACQAAABsAAAACAAAAAQAAAAAAAAADAAAAAwAAAAoAAAABAAAAAAAAAAcAAAANAAAABgAAAAAAAAACAAAABAAAAAcAAAAMAAAAHgAAABkAAAAQAAAADgAAAAEAAAAIAAAAIwAAAA8AAAAJAAAAIwAAAAUAAAAEAAAAHwAAABgAAAAOAAAADgAAABMAAAAjAAAADQAAAAoAAAAAAAAAFQAAAAYAAAAHAAAAAgAAAAcAAAAJAAAACwAAAAAAAAAAAAAAAQAAAAUAAAAKAAAACQAAAAIAAAATAAAAAwAAAAwAAAAFAAAAAAAAAAsAAAAOAAAAAQAAAAAAAAAJAAAAAwAAAA8AAAACAAAAHQAAAAkAAAAOAAAAGgAAABcAAAAJAAAADwAAAAMAAAAIAAAACwAAABIAAAAEAAAADgAAABMAAAAFAAAAFAAAABEAAAAPAAAACAAAAAoAAAAVAAAACAAAAAoAAAAKAAAADQAAAAcAAAAFAAAAEwAAABQAAAAFAAAACAAAAAYAAAAJAAAAFQAAAAUAAAAKAAAABwAAAAcAAAAIAAAAFgAAAA8AAAALAAAABwAAAAkAAAAWAAAADgAAABQAAAAGAAAABwAAABAAAAAOAAAABAAAAA8AAAAKAAAABgAAAAkAAAADAAAABwAAAAIAAAABAAAAEAAAAAMAAAADAAAAAQAAAA0AAAAAAAAABwAAAAIAAAACAAAAAAAAAAQAAAACAAAACQAAAAMAAAADAAAAGAAAAA4AAAAJAAAAAQAAAAEAAAAJAAAAEgAAAA0AAAABAAAAAAAAAAAAAAAIAAAABAAAAAIAAAABAAAABAAAAAQAAAAPAAAAAgAAABEAAAAJAAAAAwAAAAUAAAAQAAAACwAAAAcAAAAMAAAACwAAAAEAAAASAAAAAQAAAB0AAAALAAAABgAAAAIAAAABAAAAAgAAAA4AAAANAAAAAwAAAAAAAAACAAAABQAAAAAAAAABAAAACQAAAAsAAAAKAAAABwAAAAIAAAAIAAAAAAAAAAEAAAANAAAAAwAAAAEAAAADAAAABgAAAAEAAAAFAAAAMwAAAAkAAAAjAAAAJgAAAA8AAAANAAAAIQAAAAYAAAAMAAAACgAAABUAAAAVAAAAAAAAAAMAAAAhAAAAIQAAABEAAAASAAAADwAAAAkAAAAAAAAACAAAAAAAAAACAAAAAAAAAAoAAAARAAAABAAAAAkAAAAHAAAAEgAAABcAAAAaAAAACAAAAAwAAAAWAAAAEwAAAAIAAAANAAAADwAAAAAAAAAKAAAADgAAAC0AAAAcAAAADQAAACUAAAAkAAAAGwAAAAsAAAAHAAAABAAAAAIAAAADAAAAAQAAAAcAAAAHAAAAAgAAAAAAAAAAAAAAAQAAAAQAAAAQAAAABAAAAAMAAAAFAAAAGQAAAAgAAAALAAAAAQAAAAAAAAAFAAAABgAAAAEAAAAZAAAAAQAAAAEAAAABAAAAAAAAAAsAAAAHAAAAJAAAAAYAAAADAAAABAAAAA8AAAAEAAAABwAAAAAAAAAHAAAAAgAAAAIAAAABAAAAAwAAAAQAAAAMAAAAAAAAACAAAAADAAAAAgAAAAIAAAAAAAAAAgAAAAYAAAAAAAAABgAAAAQAAAAHAAAABAAAABAAAAABAAAADQAAAAYAAAABAAAAAAAAABMAAAAHAAAABgAAAAAAAAAAAAAABAAAAAMAAAANAAAAAQAAAAQAAAACAAAACAAAAAcAAAACAAAAAAAAAH4AAAACAAAACQAAAAAAAAAzAAAALgAAAAsAAAAbAAAAEAAAACUAAAAIAAAAGgAAAAsAAAATAAAAEAAAAAUAAAAIAAAAAwAAAAAAAAACAAAAAAAAAAwAAAADAAAAAgAAAAQAAAAEAAAAAAAAAAIAAAAAAAAAAgAAABEAAAACAAAAAwAAAAIAAAAGAAAAAAAAAAMAAAAEAAAABQAAAAMAAAACAAAAAgAAAAcAAAAAAAAAAQAAAAQAAAAJAAAAAQAAAAkAAAAIAAAAAwAAAAMAAAABAAAAAAAAAAYAAAADAAAABwAAAAgAAAAAAAAAAgAAAAMAAAACAAAAAwAAAAEAAAAHAAAACwAAABAAAAAVAAAAAQAAAAYAAAAKAAAAAgAAAAIAAAAFAAAAAQAAAAEAAAAQAAAAAwAAAAEAAAAFAAAAAgAAAAcAAAARAAAAFAAAAAAAAAAKAAAACAAAAAQAAAAQAAAADwAAAAYAAAAJAAAAAwAAAAAAAAAHAAAACwAAAAsAAAADAAAACwAAAAIAAAAWAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFAAAABQAAAAkAAAADAAAACwAAAAQAAAACAAAABgAAAAIAAAABAAAAAgAAAAAAAAACAAAABgAAAAQAAAADAAAAAAAAAAcAAAACAAAAAgAAAAMAAAABAAAACQAAABIAAAARAAAACQAAAAMAAAABAAAABgAAAAEAAAAAAAAACQAAAAoAAAADAAAAAAAAAAAAAAAHAAAABAAAAAIAAAAKAAAAFwAAAAcAAAALAAAABQAAAAAAAAAFAAAAAgAAAAEAAAAMAAAAEAAAABMAAAAPAAAAAgAAAAIAAAACAAAABwAAAAEAAAAAAAAAAwAAAAcAAAATAAAACQAAAAEAAAAFAAAAAwAAAAEAAAADAAAAAAAAAAEAAAABAAAAAwAAAAIAAAAFAAAAAwAAAAIAAAAAAAAAAgAAAAcAAAADAAAABgAAAAQAAAACAAAABAAAAAoAAAAAAAAACgAAAAAAAAACAAAABgAAAAQAAAADAAAAAAAAAAEAAAAAAAAAAwAAAAAAAAANAAAABwAAAAEAAAABAAAAAAAAAAQAAAABAAAABAAAAAEAAAANAAAABAAAAAIAAAAFAAAAAwAAAAEAAAAAAAAAAgAAAAAAAAABAAAABwAAAAMAAAAEAAAAAQAAAAYAAAABAAAABAAAAAYAAAADAAAABwAAAAQAAAAAAAAAAQAAAAoAAAAGAAAABwAAAAUAAAAHAAAACgAAACQAAAAPAAAACAAAAAsAAAAKAAAACAAAAAAAAAABAAAABgAAAAAAAAABAAAAAAAAAAMAAAADAAAABwAAAAIAAAARAAAABQAAAAsAAAAHAAAAAAAAAAEAAAABAAAACQAAAAcAAAAGAAAAAAAAAAMAAAAXAAAACgAAABEAAAAIAAAABAAAAAIAAAAEAAAABwAAAAgAAAABAAAAAQAAAAgAAAAOAAAAAQAAAAwAAAAIAAAABAAAAAoAAAAFAAAAEQAAAAEAAAAHAAAABwAAAAAAAAAFAAAABwAAAAYAAAAHAAAAFAAAABsAAAACAAAAAQAAAAMAAAACAAAAAwAAAAMAAAAJAAAACwAAAAQAAAAKAAAACQAAAAQAAAABAAAABAAAAAsAAAAEAAAAAgAAAAUAAAAAAAAABgAAAAEAAAACAAAABgAAAAYAAAAAAAAABQAAAAsAAAAaAAAAEAAAAAYAAAAEAAAAAwAAAAYAAAAQAAAACgAAAAAAAAAAAAAAAgAAAAIAAAAJAAAABQAAAAEAAAADAAAACwAAAAoAAAACAAAADQAAAAYAAAADAAAABgAAAAoAAAAHAAAACAAAAAQAAAAIAAAABAAAABAAAAAAAAAABQAAABEAAAANAAAADQAAACEAAAAAAAAACwAAACMAAAAMAAAAEQAAAAoAAAAYAAAAFQAAADMAAAAwAAAAMgAAABcAAAANAAAAuQAAABcAAAACAAAAFgAAABAAAAAKAAAACwAAABUAAAAMAAAABwAAAA4AAAALAAAAAwAAAAcAAAAIAAAACQAAAAUAAAACAAAACgAAAA8AAAAFAAAADAAAAAEAAAADAAAAAwAAAAMAAAAGAAAADAAAAAwAAAAKAAAABwAAABYAAAAFAAAACgAAAAgAAAAIAAAAAQAAAAsAAAAEAAAAFAAAAAMAAAAOAAAAEwAAABIAAAAMAAAABQAAAAcAAAAJAAAAIwAAAAcAAAAHAAAACwAAAAwAAAADAAAAAgAAAA8AAAAFAAAADgAAABkAAAAIAAAADAAAABYAAAAQAAAAAwAAAAsAAAAWAAAABgAAABIAAAAAAAAAFwAAAAcAAAAJAAAADwAAAAoAAAACAAAAAgAAAAUAAAACAAAAEwAAAAoAAAAFAAAACgAAAAIAAAALAAAADQAAAAYAAAANAAAAFgAAAA0AAAABAAAABgAAAAoAAAAWAAAAEwAAAAQAAAAJAAAABAAAAAwAAAAOAAAAEgAAAAYAAAACAAAADQAAAAsAAAAUAAAAEwAAAA0AAAAPAAAACgAAAAgAAAAkAAAAAQAAAAYAAAAAAAAACAAAAAMAAAAAAAAAAAAAAAkAAAABAAAAAAAAAAAAAAAGAAAABAAAAA4AAAAPAAAABgAAAA4AAAAIAAAACgAAAAAAAAASAAAABwAAAA0AAAAIAAAAFQAAAAQAAAABAAAABgAAABUAAAACAAAABAAAAAAAAAACAAAABAAAAA0AAAAXAAAAFgAAAA0AAAAGAAAABAAAAAcAAAAGAAAABAAAAAcAAAAEAAAACAAAAAIAAAACAAAACQAAAAMAAAABAAAAAQAAAAQAAAAHAAAACQAAABIAAAAWAAAAFwAAAAYAAAAdAAAAIAAAAAgAAAAIAAAABAAAABAAAAAKAAAADgAAAAIAAAAIAAAABAAAAAkAAAACAAAABQAAAAoAAAAJAAAACgAAABMAAAARAAAAIgAAABMAAAAHAAAAAwAAAAgAAAAcAAAACQAAAAYAAAAEAAAABgAAABEAAAAFAAAACQAAAAgAAAAFAAAABAAAAAUAAAAHAAAACwAAAAoAAAAJAAAADwAAAAIAAAAIAAAAAwAAAAQAAAAGAAAACAAAAAMAAAACAAAABwAAAAQAAAAJAAAACAAAAAcAAAAIAAAAAwAAAAkAAAAYAAAABwAAAAMAAAAIAAAABgAAAAMAAAAHAAAABgAAAAQAAAAPAAAACQAAAAkAAAAIAAAAAwAAABAAAAAEAAAACwAAAAMAAAACAAAAAwAAAAgAAAADAAAACwAAAAMAAAAMAAAADgAAAAIAAAAAAAAADQAAAAYAAAAGAAAAAgAAAAEAAAAEAAAAAgAAAAMAAAACAAAABwAAABUAAAAcAAAABQAAAAEAAAAAAAAAgAAAAAAAAAAKAAAAGAAAACIAAAASAAAAGQAAABMAAAAFAAAADwAAABMAAAAQAAAABgAAABIAAAANAAAABAAAAAMAAAABAAAAAwAAAAEAAAASAAAAAgAAAAYAAAAFAAAABwAAABIAAAAIAAAAAwAAAAIAAAADAAAAFgAAAAcAAAAHAAAAFgAAAA8AAAARAAAAAwAAAAkAAAAAAAAACQAAAAEAAAAgAAAAAAAAAAIAAAAIAAAADAAAAAYAAAAQAAAAAAAAABgAAAAHAAAAFwAAAAIAAAACAAAAAgAAAAYAAAAOAAAACAAAAAAAAAAUAAAAAgAAAA8AAAABAAAAAAAAAAEAAAAHAAAAAAAAAAAAAAAIAAAAEQAAACkAAAAJAAAAAQAAAAMAAAACAAAABwAAAAEAAAAcAAAAEgAAAAMAAAANAAAABgAAAAAAAAAOAAAAAgAAAAEAAAAeAAAAAwAAAAIAAAAcAAAAGQAAAAMAAAAEAAAABgAAAAIAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACgAAAA0AAAAKAAAAHgAAABkAAAAFAAAAAAAAAAAAAAADAAAAAgAAAAUAAAAJAAAADwAAABUAAAAMAAAAAgAAAAYAAAAAAAAACgAAAAIAAAAAAAAAAgAAAAwAAAAAAAAAAwAAAAsAAAAJAAAACwAAAAEAAAAAAAAAAgAAAAkAAAAEAAAABAAAAAwAAAAEAAAADgAAAAUAAAAJAAAACAAAAA0AAAAKAAAAAAAAAA8AAAAGAAAABAAAAAAAAAAMAAAABgAAAAAAAAAAAAAABwAAABUAAAAIAAAAAgAAAAIAAAADAAAAAgAAAAYAAAADAAAABAAAAAkAAAABAAAACAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAbAAAAAQAAAAEAAAAIAAAADAAAAAkAAAAJAAAAAgAAAAMAAAAHAAAABQAAAAEAAAACAAAAAQAAAAIAAAABAAAAAwAAABkAAAATAAAABwAAAAAAAAAAAAAAAAAAAAEAAAADAAAAAwAAAAUAAAALAAAAGQAAACUAAAArAAAAOAAAAA4AAAAbAAAAEQAAAA0AAAAhAAAADgAAADIAAAAcAAAAIAAAAB8AAAAVAAAAJgAAABsAAAATAAAAEAAAAAwAAAAiAAAABQAAABkAAAASAAAABgAAACQAAAAsAAAALgAAABkAAAAeAAAAFAAAAAsAAAAjAAAABgAAAAUAAAACAAAACgAAAA0AAAAGAAAABAAAAAIAAAAHAAAAAwAAAAQAAAAAAAAACwAAAAcAAAALAAAACgAAABUAAAAUAAAACwAAAAsAAAAVAAAABwAAAAwAAAALAAAABgAAAAcAAAAOAAAADQAAAAoAAAACAAAADwAAAAIAAAABAAAABwAAAAwAAAAIAAAAEgAAAAkAAAASAAAAFgAAABwAAAAHAAAACQAAAAIAAAACAAAABAAAAAMAAAAIAAAAAQAAAAIAAAAEAAAADAAAACgAAAAVAAAAGQAAABMAAAAFAAAAEQAAABIAAAAHAAAAEgAAAB0AAAAfAAAABAAAABgAAAAcAAAACQAAABcAAAAcAAAAIwAAAA0AAAAQAAAACwAAAA4AAAAUAAAAKwAAABUAAAASAAAAGwAAACQAAAASAAAABgAAAAMAAAApAAAAAAAAAAUAAAAOAAAADAAAAB8AAAAKAAAAGAAAABAAAAAJAAAABgAAABEAAAAAAAAAFgAAAAgAAAADAAAAEAAAAAAAAAAQAAAAAgAAAAEAAACAAAAADwAAAAAAAABwAAAAAwAAABYAAAAAAAAAAAAAAAAAAAAFAAAACgAAAAMAAAACAAAAEAAAAB4AAAAEAAAAAwAAAAIAAAAJAAAAEgAAAA4AAAAKAAAADQAAABIAAAAKAAAACgAAAAIAAAABAAAAAAAAAAAAAAAFAAAAAAAAAAAAAAAEAAAACAAAAA8AAAACAAAAAwAAABQAAAAMAAAAAQAAAAEAAAAHAAAABgAAAAMAAAAAAAAAAQAAAAEAAAANAAAACQAAABcAAAABAAAAEwAAAAUAAAAHAAAAAAAAACcAAAAKAAAADQAAAA0AAAABAAAABwAAAAQAAAAHAAAADgAAAAAAAAAGAAAADwAAAA8AAAAQAAAADAAAAAgAAAAMAAAABAAAACgAAAADAAAAFgAAAAIAAAAHAAAAEgAAAAAAAAADAAAABwAAAAkAAAAbAAAABgAAAAwAAAABAAAAAAAAAA8AAAADAAAACAAAAAEAAAAJAAAAAgAAAAYAAAAeAAAAAAAAAAYAAAAsAAAABgAAAAMAAAAGAAAABgAAAAoAAAADAAAABgAAAAcAAAALAAAAEgAAAAAAAAANAAAABgAAAAkAAAAEAAAAAgAAAAMAAAAPAAAAAAAAAAIAAAAJAAAAAQAAAAEAAAACAAAADAAAAAEAAAAFAAAAAQAAAAcAAAAGAAAACQAAAAEAAAAUAAAABwAAABAAAAAFAAAABgAAAAUAAAAEAAAADwAAABgAAAADAAAAAwAAAAEAAAAEAAAACgAAAAAAAAAGAAAABwAAAAcAAAAPAAAACAAAAAwAAAAAAAAACAAAABIAAAATAAAABAAAAAMAAAAKAAAAFgAAAAwAAAATAAAAEQAAAAcAAAAAAAAAEAAAAAYAAAAEAAAACAAAAAAAAAAQAAAADQAAAC4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADgAAABEAAAAdAAAAFQAAABsAAAAeAAAADwAAABUAAAAJAAAAAwAAABIAAAALAAAAIAAAABMAAAADAAAACQAAACAAAAAIAAAAFQAAAAQAAAABAAAABQAAAAwAAAAAAAAABgAAAAAAAAAAAAAAAAAAAAMAAAAMAAAAAgAAAAgAAAATAAAADQAAABMAAAALAAAACgAAAAMAAAADAAAAAgAAAA0AAAAMAAAADAAAABEAAAAAAAAABAAAAAoAAAAEAAAABgAAAAQAAAACAAAACAAAAA0AAAAPAAAAAwAAAAAAAAABAAAAAAAAAAQAAAAHAAAACAAAAAUAAAAKAAAAAgAAAAMAAAAQAAAAAAAAAAwAAAAVAAAAEQAAAAYAAAAbAAAAAwAAAAgAAAAgAAAAAAAAAAIAAAAKAAAABAAAAAkAAAABAAAACQAAAAgAAAAHAAAAEwAAAA0AAAADAAAACgAAAAIAAAAHAAAAAAAAAAYAAAAAAAAABgAAAAAAAAAAAAAAAAAAAAAAAAAHAAAACAAAAAEAAAAEAAAACwAAAAEAAAAAAAAACQAAAAgAAAAJAAAADAAAAAMAAAAIAAAAAgAAAAMAAAAHAAAAAwAAABIAAAAAAAAADwAAAAwAAAAAAAAAAQAAAAAAAAAIAAAABAAAAAkAAAAiAAAAHgAAAAIAAAAOAAAACAAAAAUAAAABAAAABgAAAAUAAAAMAAAAHQAAAAwAAAAIAAAAAAAAAA0AAAAGAAAAMAAAABIAAAAoAAAAGwAAACYAAAANAAAAEgAAAB8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwAAAAhAAAACgAAABwAAAAQAAAAGQAAAAsAAAATAAAABwAAAAgAAAAiAAAAAwAAADgAAAAWAAAADAAAAAYAAAAAAAAADgAAABAAAABAAAAAFQAAACUAAAAaAAAAEAAAAAEAAAALAAAAEwAAAA4AAAAYAAAADwAAABQAAAAJAAAABwAAAAsAAAAEAAAAAgAAAAQAAAADAAAABwAAAAcAAAAcAAAABAAAAAgAAAAIAAAABgAAAAMAAAACAAAACAAAAAIAAAALAAAAAgAAAAcAAAADAAAACQAAAAQAAAABAAAAAAAAAAEAAAAAAAAACAAAAAcAAAABAAAAAwAAAA0AAAACAAAACgAAAAcAAAAEAAAAAQAAAA4AAAACAAAAAgAAAAQAAAADAAAABQAAAAkAAAAKAAAAAwAAABEAAAAMAAAACAAAAA8AAAAPAAAAFQAAABMAAAAIAAAACwAAABQAAAAFAAAAFAAAAAYAAAADAAAADAAAAAoAAAAGAAAABgAAAAMAAAAFAAAABAAAAAcAAAAJAAAACAAAAAsAAAAMAAAADgAAAAQAAAAJAAAAEAAAAAgAAAAIAAAAAAAAAAEAAAAAAAAAAAAAAAYAAAAAAAAABgAAAAcAAAAEAAAAAAAAAAMAAAAGAAAABgAAAAgAAAAFAAAAAAAAAAMAAAAAAAAABgAAAAMAAAADAAAACQAAAAcAAAANAAAAEQAAAAoAAAAMAAAABwAAAAMAAAAKAAAAIAAAAAUAAAADAAAABQAAAAEAAAADAAAAAQAAAAYAAAADAAAACQAAAAYAAAACAAAAGwAAABgAAAAMAAAAEQAAABYAAAACAAAADgAAAAMAAAABAAAAFgAAAAEAAAAAAAAACgAAAA0AAAAEAAAAAwAAAAgAAAABAAAAAAAAAAEAAAASAAAABgAAAAoAAAACAAAAAwAAAAoAAAAMAAAABgAAAAoAAAAIAAAAAwAAABIAAAAIAAAACAAAABYAAAAAAAAAFgAAAAkAAAADAAAACwAAAAcAAAABAAAAFQAAAA0AAAADAAAAAgAAABYAAAAGAAAADQAAAAYAAAAIAAAAAgAAAAIAAAAQAAAAAAAAAAwAAAAOAAAAFQAAAAcAAAAJAAAADAAAAAsAAAAGAAAABQAAAAYAAAAkAAAACgAAAAAAAAAJAAAAAQAAAA8AAAAGAAAABAAAAAMAAAAVAAAAAQAAAAYAAAADAAAAAQAAAAIAAAABAAAAFAAAAAUAAAAIAAAADgAAAAkAAAAcAAAADgAAACUAAAAMAAAAAQAAAAoAAAAGAAAAAwAAAAEAAAAHAAAAAwAAAAgAAAALAAAAAwAAAAMAAAAEAAAACwAAAAkAAAAhAAAAAQAAAAcAAAAMAAAAAgAAAAAAAAACAAAAAgAAAAQAAAAAAAAAAQAAAAIAAAALAAAAFAAAAAIAAAAEAAAAAAAAAAIAAAANAAAABAAAAAEAAAALAAAABQAAAA4AAAAFAAAAFwAAABIAAAAIAAAABAAAAB0AAAABAAAABAAAAA8AAAANAAAAAwAAAAkAAAARAAAAAAAAAAkAAAAIAAAAAwAAAAMAAAADAAAAAQAAAAEAAAABAAAABwAAAAEAAAADAAAAAQAAAAUAAAAEAAAAAwAAAAsAAAAHAAAADgAAAAwAAAASAAAAFQAAAAcAAAAEAAAABAAAAAcAAAATAAAAAQAAAAcAAAAJAAAACQAAAAAAAAAgAAAAFQAAAA8AAAAbAAAAIQAAABUAAAAYAAAAIgAAAB0AAAAKAAAABwAAAA0AAAAJAAAABwAAAAQAAAABAAAAEgAAAAYAAAAbAAAABgAAAAoAAAANAAAACgAAAAMAAAAIAAAACwAAAAkAAAADAAAAAwAAAAQAAAAMAAAAAQAAABAAAAAAAAAAAQAAAAAAAAABAAAABAAAAAQAAAAJAAAACwAAABQAAAAMAAAADwAAABAAAAADAAAABwAAAAIAAAAAAAAABAAAAAwAAAAOAAAABgAAAAMAAAALAAAAAAAAAAQAAAAQAAAACAAAABAAAAAFAAAACgAAAA4AAAAPAAAADAAAABAAAAAEAAAABAAAAAQAAAAAAAAAAAAAAAAAAAAGAAAABwAAAAcAAAABAAAAAwAAAAMAAAAJAAAAAQAAAAMAAAABAAAABwAAAAMAAAANAAAAAgAAAAIAAAAEAAAAAQAAAAsAAAAMAAAAAgAAAAkAAAAEAAAABQAAAAIAAAAHAAAAAwAAAAMAAAAHAAAADgAAAAcAAAAMAAAACAAAAAQAAAACAAAACwAAAAgAAAAOAAAADAAAABoAAAAMAAAABQAAAAAAAAAfAAAAAQAAAAgAAAAAAAAABwAAABAAAAAjAAAANQAAABEAAAAXAAAAHAAAAB4AAAAVAAAABgAAAAAAAAAAAAAADAAAABIAAABZAAAAUAAAABUAAAAjAAAAPQAAACMAAAAgAAAAOwAAAAUAAAAGAAAACQAAAAcAAAAAAAAAAAAAAAEAAAABAAAAAwAAAAIAAAAHAAAACgAAAAkAAAABAAAAJwAAAAYAAAAIAAAACwAAAB8AAAASAAAAGwAAACUAAAAUAAAADQAAAAUAAAAAAAAAAAAAAA8AAAADAAAAAQAAAAkAAAAIAAAABAAAAAkAAAAbAAAAFwAAABEAAAAaAAAACgAAAAcAAAAPAAAACQAAAAAAAAACAAAAAAAAAAQAAAABAAAAEAAAAA4AAAAMAAAADwAAABMAAAAWAAAAJgAAAAoAAAATAAAABwAAABUAAAARAAAABAAAAAMAAAAEAAAACgAAAAgAAAAAAAAADAAAAAwAAAAIAAAACAAAABMAAAAJAAAAFQAAAAwAAAAXAAAAAwAAABAAAAALAAAAAQAAAAYAAAAHAAAABwAAAAIAAAAKAAAABAAAAA4AAAADAAAALQAAABEAAAAAAAAAAgAAAAMAAAABAAAAAAAAAAAAAAAAAAAAAgAAAAIAAAABAAAAAgAAAAAAAAAGAAAACAAAAAIAAAARAAAADQAAAAYAAAARAAAABwAAAAMAAAAMAAAADQAAAAoAAAAOAAAAFAAAABYAAAAIAAAACgAAAB4AAAAHAAAADAAAAA8AAAAKAAAADQAAACIAAAAJAAAADgAAABEAAAAPAAAAEwAAAAkAAAARAAAAGAAAAAsAAAAVAAAABAAAAA4AAAAPAAAAEAAAABEAAAAXAAAAJQAAAAcAAAASAAAABgAAAEQAAAAGAAAAAgAAABYAAAAYAAAAAwAAAA8AAAAMAAAAKwAAAB4AAAA2AAAAFQAAACEAAAANAAAACwAAAAYAAAALAAAAAgAAAAAAAAALAAAABgAAAAMAAAAFAAAACQAAAAAAAAAEAAAAGQAAABQAAAAIAAAAAAAAAA0AAAACAAAADAAAAA0AAAABAAAACAAAABAAAAAoAAAABAAAABAAAAAdAAAABwAAABUAAAAGAAAACgAAABsAAAAQAAAAAgAAABAAAAADAAAABwAAABEAAAATAAAABgAAABcAAAAYAAAAFAAAAAcAAAAUAAAAFAAAAA8AAAAiAAAAAAAAAAEAAAAEAAAAAgAAAAQAAAAEAAAACQAAABUAAAAWAAAADQAAAAUAAAAAAAAAAQAAAEUAAAAJAAAALAAAAB0AAAAYAAAAGwAAABAAAAATAAAABQAAAAsAAAADAAAACgAAABYAAAAjAAAADgAAACEAAAAQAAAAFwAAABsAAAAdAAAAIQAAACoAAAApAAAAHgAAABIAAAAIAAAAEQAAABcAAAAhAAAAEAAAABUAAAALAAAAGAAAABkAAAAJAAAABAAAAAcAAAAEAAAAFgAAAAQAAAATAAAAGAAAAAoAAAAVAAAADwAAAAoAAAAdAAAACQAAAA0AAAALAAAADQAAABIAAAALAAAACwAAAAQAAAAMAAAAEAAAABkAAAAPAAAAEAAAAA4AAAAAAAAAFwAAABAAAAALAAAAEAAAABMAAAAPAAAACgAAAAsAAAAOAAAACAAAAAIAAAABAAAAAgAAAAIAAAADAAAABwAAAAQAAAALAAAADwAAAAYAAAAnAAAAEAAAAA4AAAAmAAAADwAAABEAAAAIAAAABgAAAAMAAAAOAAAADAAAABIAAAAPAAAAFAAAABkAAAACAAAABwAAAAoAAAAOAAAACAAAABQAAAAaAAAAEAAAAAwAAAAcAAAADwAAAAIAAAACAAAAEgAAABUAAAANAAAAGQAAAA8AAAAkAAAACwAAAA4AAAABAAAAEwAAABIAAAAHAAAADAAAABMAAAAIAAAAEgAAABEAAAAPAAAAFAAAAAsAAAAUAAAAGAAAAAkAAAAEAAAAFAAAAA4AAAATAAAAJQAAACoAAAAZAAAALQAAABMAAAAeAAAAHwAAABcAAAAlAAAAEAAAABQAAAAzAAAAJwAAACsAAAAZAAAAEwAAABsAAAAgAAAACAAAABAAAAAKAAAAKQAAABQAAAAdAAAADQAAADkAAAAPAAAAJAAAAAgAAAATAAAAEAAAABcAAAAgAAAAHgAAAC8AAAAZAAAADgAAAAEAAAAGAAAACgAAAAoAAAARAAAAFwAAABIAAAAOAAAAAwAAAAIAAAAGAAAABgAAAAMAAAAfAAAADQAAABUAAAAHAAAACwAAAA8AAAADAAAAEgAAAAcAAAAAAAAAEQAAABYAAAAQAAAAEAAAAAkAAAATAAAACQAAAAEAAAABAAAAAQAAAAIAAAAGAAAABAAAAAIAAAACAAAAAgAAAAMAAAADAAAAAwAAAAIAAAABAAAAAQAAAAQAAAABAAAAAgAAAAQAAAABAAAAEQAAAAEAAAAEAAAABwAAAAwAAAAOAAAAAAAAAAEAAAABAAAAAQAAAAEAAAADAAAAAgAAAAEAAAABAAAAAgAAAAEAAAADAAAAAAAAAAcAAAAAAAAADAAAAAAAAAABAAAAAAAAAA0AAAAIAAAABAAAAAQAAAACAAAABAAAAAEAAAABAAAAAAAAAAsAAAACAAAAAgAAAAIAAAADAAAABAAAAAMAAAADAAAAAgAAAAMAAAADAAAAAgAAAAIAAAADAAAABAAAAAQAAAAEAAAAAQAAAAEAAAABAAAAAwAAAAEAAAACAAAABAAAAAMAAAABAAAABAAAAAIAAAABAAAABAAAAAQAAAAJAAAAEAAAAAoAAAACAAAABgAAABgAAAAfAAAAAgAAAAMAAAABAAAAAQAAAAMAAAAeAAAAFQAAAA0AAAAXAAAADwAAABMAAAAQAAAABAAAAAYAAAAMAAAADQAAABUAAAACAAAAAwAAAAAAAAAJAAAAHwAAAA0AAAAWAAAAEQAAAAEAAAABAAAAAQAAAAEAAAABAAAAKQEAAAIAAAABAAAAAQAAAAEAAAADAAAAAQAAAAYAAAALAAAAAQAAAAEAAAABAAAAAgAAAAIAAAADAAAABAAAAAMAAAABAAAABAAAAAcAAAABAAAAAQAAAAIAAAAFAAAABAAAAAMAAAADAAAAAgAAAAIAAAAEAAAABQAAAAUAAAADAAAABQAAAAEAAAAEAAAADAAAAAEAAAABAAAABQAAAAIAAAABAAAAAQAAAAEAAAABAAAAAQAAAAMAAAABAAAABAAAAAYAAAADAAAAAQAAAAIAAAADAAAAAgAAAAEAAAABAAAAAgAAAA=="
+          },
+          "xaxis": "x",
+          "yaxis": "y",
+          "type": "histogram"
+        }
+      ],
+      "layout": {
+        "template": {
+          "data": {
+            "candlestick": [
+              {
+                "decreasing": {
+                  "line": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "line": {
+                    "color": "#000032"
+                  }
+                },
+                "type": "candlestick"
+              }
+            ],
+            "contourcarpet": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contourcarpet"
+              }
+            ],
+            "contour": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contour"
+              }
+            ],
+            "heatmap": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "heatmap"
+              }
+            ],
+            "histogram2d": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "histogram2d"
+              }
+            ],
+            "icicle": [
+              {
+                "textfont": {
+                  "color": "white"
+                },
+                "type": "icicle"
+              }
+            ],
+            "sankey": [
+              {
+                "textfont": {
+                  "color": "#000036"
+                },
+                "type": "sankey"
+              }
+            ],
+            "scatter": [
+              {
+                "marker": {
+                  "line": {
+                    "width": 0
+                  }
+                },
+                "type": "scatter"
+              }
+            ],
+            "table": [
+              {
+                "cells": {
+                  "fill": {
+                    "color": "#000038"
+                  },
+                  "font": {
+                    "color": "#000037"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "header": {
+                  "fill": {
+                    "color": "#000040"
+                  },
+                  "font": {
+                    "color": "#000036"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "type": "table"
+              }
+            ],
+            "waterfall": [
+              {
+                "connector": {
+                  "line": {
+                    "color": "#000036",
+                    "width": 2
+                  }
+                },
+                "decreasing": {
+                  "marker": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "marker": {
+                    "color": "#000032"
+                  }
+                },
+                "totals": {
+                  "marker": {
+                    "color": "#000034"
+                  }
+                },
+                "type": "waterfall"
+              }
+            ]
+          },
+          "layout": {
+            "coloraxis": {
+              "colorscale": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorscale": {
+              "diverging": [
+                [
+                  0.0,
+                  "#000021"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000022"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000023"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000024"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000025"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000026"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000027"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000028"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000029"
+                ],
+                [
+                  1.0,
+                  "#000030"
+                ]
+              ],
+              "sequential": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ],
+              "sequentialminus": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorway": [
+              "#000001",
+              "#000002",
+              "#000003",
+              "#000004",
+              "#000005",
+              "#000006",
+              "#000007",
+              "#000008",
+              "#000009",
+              "#000010"
+            ]
+          }
+        },
+        "xaxis": {
+          "anchor": "y",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "inspection_score"
+          }
+        },
+        "yaxis": {
+          "anchor": "x",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "count"
+          }
+        },
+        "legend": {
+          "tracegroupgap": 0
+        },
+        "title": {
+          "text": "Distribution of scored inspection visits across Salt Lake County establishments"
+        },
+        "barmode": "relative"
+      }
+    },
+    {
+      "data": [
+        {
+          "hovertemplate": "score_band=%{x}<br>inspections=%{y}<extra></extra>",
+          "legendgroup": "",
+          "marker": {
+            "color": "#000001",
+            "pattern": {
+              "shape": ""
+            }
+          },
+          "name": "",
+          "orientation": "v",
+          "showlegend": false,
+          "textposition": "auto",
+          "x": [
+            "0",
+            "1\u20134",
+            "5\u20139",
+            "10\u201319",
+            "20\u201329",
+            "30+"
+          ],
+          "xaxis": "x",
+          "y": {
+            "dtype": "i2",
+            "bdata": "xgIYCI4HygegAqAB"
+          },
+          "yaxis": "y",
+          "type": "bar"
+        }
+      ],
+      "layout": {
+        "template": {
+          "data": {
+            "candlestick": [
+              {
+                "decreasing": {
+                  "line": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "line": {
+                    "color": "#000032"
+                  }
+                },
+                "type": "candlestick"
+              }
+            ],
+            "contourcarpet": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contourcarpet"
+              }
+            ],
+            "contour": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contour"
+              }
+            ],
+            "heatmap": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "heatmap"
+              }
+            ],
+            "histogram2d": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "histogram2d"
+              }
+            ],
+            "icicle": [
+              {
+                "textfont": {
+                  "color": "white"
+                },
+                "type": "icicle"
+              }
+            ],
+            "sankey": [
+              {
+                "textfont": {
+                  "color": "#000036"
+                },
+                "type": "sankey"
+              }
+            ],
+            "scatter": [
+              {
+                "marker": {
+                  "line": {
+                    "width": 0
+                  }
+                },
+                "type": "scatter"
+              }
+            ],
+            "table": [
+              {
+                "cells": {
+                  "fill": {
+                    "color": "#000038"
+                  },
+                  "font": {
+                    "color": "#000037"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "header": {
+                  "fill": {
+                    "color": "#000040"
+                  },
+                  "font": {
+                    "color": "#000036"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "type": "table"
+              }
+            ],
+            "waterfall": [
+              {
+                "connector": {
+                  "line": {
+                    "color": "#000036",
+                    "width": 2
+                  }
+                },
+                "decreasing": {
+                  "marker": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "marker": {
+                    "color": "#000032"
+                  }
+                },
+                "totals": {
+                  "marker": {
+                    "color": "#000034"
+                  }
+                },
+                "type": "waterfall"
+              }
+            ]
+          },
+          "layout": {
+            "coloraxis": {
+              "colorscale": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorscale": {
+              "diverging": [
+                [
+                  0.0,
+                  "#000021"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000022"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000023"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000024"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000025"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000026"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000027"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000028"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000029"
+                ],
+                [
+                  1.0,
+                  "#000030"
+                ]
+              ],
+              "sequential": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ],
+              "sequentialminus": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorway": [
+              "#000001",
+              "#000002",
+              "#000003",
+              "#000004",
+              "#000005",
+              "#000006",
+              "#000007",
+              "#000008",
+              "#000009",
+              "#000010"
+            ]
+          }
+        },
+        "xaxis": {
+          "anchor": "y",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "score_band"
+          }
+        },
+        "yaxis": {
+          "anchor": "x",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "inspections"
+          }
+        },
+        "legend": {
+          "tracegroupgap": 0
+        },
+        "title": {
+          "text": "Scored inspections by score band"
+        },
+        "barmode": "relative"
+      }
+    },
+    {
+      "data": [
+        {
+          "hovertemplate": "inspection_year=%{x}<br>mean_score=%{y}<extra></extra>",
+          "legendgroup": "",
+          "line": {
+            "color": "#000001",
+            "dash": "solid"
+          },
+          "marker": {
+            "symbol": "circle"
+          },
+          "mode": "lines",
+          "name": "",
+          "orientation": "v",
+          "showlegend": false,
+          "x": {
+            "dtype": "i4",
+            "bdata": "2QcAANoHAADbBwAA3AcAAN0HAADeBwAA3wcAAOAHAADhBwAA4gcAAOMHAADkBwAA5QcAAOYHAADnBwAA6AcAAOkHAADqBwAA"
+          },
+          "xaxis": "x",
+          "y": {
+            "dtype": "f8",
+            "bdata": "AAAAAAAAHEAzMzMzMzMTQNejcD0K1xpAAAAAAAAAGEBSuB6F69EhQPYoXI/CdSFAAAAAAAAAKkAAAAAAAIAoQFK4HoXr0SZArkfhehQuJkDhehSuR2EkQJqZmZmZmSNAzczMzMzMJEApXI/C9SgoQIXrUbgeBShAexSuR+H6JkDNzMzMzMwhQFK4HoXrURlA"
+          },
+          "yaxis": "y",
+          "type": "scatter"
+        }
+      ],
+      "layout": {
+        "template": {
+          "data": {
+            "candlestick": [
+              {
+                "decreasing": {
+                  "line": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "line": {
+                    "color": "#000032"
+                  }
+                },
+                "type": "candlestick"
+              }
+            ],
+            "contourcarpet": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contourcarpet"
+              }
+            ],
+            "contour": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contour"
+              }
+            ],
+            "heatmap": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "heatmap"
+              }
+            ],
+            "histogram2d": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "histogram2d"
+              }
+            ],
+            "icicle": [
+              {
+                "textfont": {
+                  "color": "white"
+                },
+                "type": "icicle"
+              }
+            ],
+            "sankey": [
+              {
+                "textfont": {
+                  "color": "#000036"
+                },
+                "type": "sankey"
+              }
+            ],
+            "scatter": [
+              {
+                "marker": {
+                  "line": {
+                    "width": 0
+                  }
+                },
+                "type": "scatter"
+              }
+            ],
+            "table": [
+              {
+                "cells": {
+                  "fill": {
+                    "color": "#000038"
+                  },
+                  "font": {
+                    "color": "#000037"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "header": {
+                  "fill": {
+                    "color": "#000040"
+                  },
+                  "font": {
+                    "color": "#000036"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "type": "table"
+              }
+            ],
+            "waterfall": [
+              {
+                "connector": {
+                  "line": {
+                    "color": "#000036",
+                    "width": 2
+                  }
+                },
+                "decreasing": {
+                  "marker": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "marker": {
+                    "color": "#000032"
+                  }
+                },
+                "totals": {
+                  "marker": {
+                    "color": "#000034"
+                  }
+                },
+                "type": "waterfall"
+              }
+            ]
+          },
+          "layout": {
+            "coloraxis": {
+              "colorscale": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorscale": {
+              "diverging": [
+                [
+                  0.0,
+                  "#000021"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000022"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000023"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000024"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000025"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000026"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000027"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000028"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000029"
+                ],
+                [
+                  1.0,
+                  "#000030"
+                ]
+              ],
+              "sequential": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ],
+              "sequentialminus": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorway": [
+              "#000001",
+              "#000002",
+              "#000003",
+              "#000004",
+              "#000005",
+              "#000006",
+              "#000007",
+              "#000008",
+              "#000009",
+              "#000010"
+            ]
+          }
+        },
+        "xaxis": {
+          "anchor": "y",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "inspection_year"
+          }
+        },
+        "yaxis": {
+          "anchor": "x",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "mean_score"
+          }
+        },
+        "legend": {
+          "tracegroupgap": 0
+        },
+        "title": {
+          "text": "Average inspection score by year"
+        }
+      }
+    },
+    {
+      "data": [
+        {
+          "hovertemplate": "inspection_type=%{x}<br>mean_score=%{y}<extra></extra>",
+          "legendgroup": "",
+          "marker": {
+            "color": "#000001",
+            "pattern": {
+              "shape": ""
+            }
+          },
+          "name": "",
+          "orientation": "v",
+          "showlegend": false,
+          "textposition": "auto",
+          "x": [
+            "Routine",
+            "Followup",
+            "Critical Item"
+          ],
+          "xaxis": "x",
+          "y": {
+            "dtype": "f8",
+            "bdata": "ZmZmZmbmJEDD9Shcj8IYQArXo3A9CiJA"
+          },
+          "yaxis": "y",
+          "type": "bar"
+        }
+      ],
+      "layout": {
+        "template": {
+          "data": {
+            "candlestick": [
+              {
+                "decreasing": {
+                  "line": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "line": {
+                    "color": "#000032"
+                  }
+                },
+                "type": "candlestick"
+              }
+            ],
+            "contourcarpet": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contourcarpet"
+              }
+            ],
+            "contour": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contour"
+              }
+            ],
+            "heatmap": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "heatmap"
+              }
+            ],
+            "histogram2d": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "histogram2d"
+              }
+            ],
+            "icicle": [
+              {
+                "textfont": {
+                  "color": "white"
+                },
+                "type": "icicle"
+              }
+            ],
+            "sankey": [
+              {
+                "textfont": {
+                  "color": "#000036"
+                },
+                "type": "sankey"
+              }
+            ],
+            "scatter": [
+              {
+                "marker": {
+                  "line": {
+                    "width": 0
+                  }
+                },
+                "type": "scatter"
+              }
+            ],
+            "table": [
+              {
+                "cells": {
+                  "fill": {
+                    "color": "#000038"
+                  },
+                  "font": {
+                    "color": "#000037"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "header": {
+                  "fill": {
+                    "color": "#000040"
+                  },
+                  "font": {
+                    "color": "#000036"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "type": "table"
+              }
+            ],
+            "waterfall": [
+              {
+                "connector": {
+                  "line": {
+                    "color": "#000036",
+                    "width": 2
+                  }
+                },
+                "decreasing": {
+                  "marker": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "marker": {
+                    "color": "#000032"
+                  }
+                },
+                "totals": {
+                  "marker": {
+                    "color": "#000034"
+                  }
+                },
+                "type": "waterfall"
+              }
+            ]
+          },
+          "layout": {
+            "coloraxis": {
+              "colorscale": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorscale": {
+              "diverging": [
+                [
+                  0.0,
+                  "#000021"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000022"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000023"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000024"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000025"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000026"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000027"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000028"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000029"
+                ],
+                [
+                  1.0,
+                  "#000030"
+                ]
+              ],
+              "sequential": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ],
+              "sequentialminus": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorway": [
+              "#000001",
+              "#000002",
+              "#000003",
+              "#000004",
+              "#000005",
+              "#000006",
+              "#000007",
+              "#000008",
+              "#000009",
+              "#000010"
+            ]
+          }
+        },
+        "xaxis": {
+          "anchor": "y",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "inspection_type"
+          }
+        },
+        "yaxis": {
+          "anchor": "x",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "mean_score"
+          }
+        },
+        "legend": {
+          "tracegroupgap": 0
+        },
+        "title": {
+          "text": "Average inspection score by inspection type (types with 20+ scored visits)"
+        },
+        "barmode": "relative"
+      }
+    }
+  ],
+  "candidate_pool_raw": [],
+  "duration_seconds": 17.73,
+  "usage": {
+    "available": true,
+    "per_call": [
+      {
+        "input_tokens": 1798,
+        "output_tokens": 13,
+        "total_tokens": 1811
+      },
+      {
+        "input_tokens": 2686,
+        "output_tokens": 860,
+        "total_tokens": 3546
+      },
+      {
+        "input_tokens": 4936,
+        "output_tokens": 489,
+        "total_tokens": 5425
+      },
+      {
+        "input_tokens": 5572,
+        "output_tokens": 674,
+        "total_tokens": 6246
+      }
+    ],
+    "input_tokens": 14992,
+    "output_tokens": 2036,
+    "total_tokens": 17028
+  },
+  "tokens_per_minute": 57638.7,
+  "estimated_cost_usd": 0.054416,
+  "success": true,
+  "error": null,
+  "chart_image_files": [
+    "2026-08-15T10-07-26.207452+00-00_v1_memory_eb48dd0e_chart0.png",
+    "2026-08-15T10-07-26.207452+00-00_v1_memory_eb48dd0e_chart1.png",
+    "2026-08-15T10-07-26.207452+00-00_v1_memory_eb48dd0e_chart2.png",
+    "2026-08-15T10-07-26.207452+00-00_v1_memory_eb48dd0e_chart3.png"
+  ]
+}

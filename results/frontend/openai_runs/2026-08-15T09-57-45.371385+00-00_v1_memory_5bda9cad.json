@@ -1,0 +1,785 @@
+{
+  "source": "frontend",
+  "run_id": "5bda9cad",
+  "timestamp": "2026-08-15T09:57:45.371385+00:00",
+  "variant": "v1_memory",
+  "provider": "openai",
+  "model": "gpt-5.6-terra",
+  "question": "What's the difference between a critical and a non-critical violation, and how does each affect an inspection score?",
+  "output_text": "A **critical violation** is a citation whose violation code is flagged as `critical` in the SLCHD portal data. A **non-critical violation** is one flagged `critical = false`. The dataset does not provide a further narrative definition of the risk distinction or a published point schedule by violation type, so I can\u2019t responsibly claim a fixed number of score points per critical versus non-critical citation.\n\nFor scoring:\n\n- The **inspection score is total violation points** for that visit: **0 means clean, and higher scores are worse**.\n- Both critical and non-critical citations can contribute to the score, but the available data do **not** establish a universal \u201ccritical = X points / non-critical = Y points\u201d rule.\n- In the recorded inspections, critical citations appeared in **9,690 cited-violation rows** (**10,744 occurrences**), while non-critical citations appeared in **22,339 rows** (**25,862 occurrences**).\n- Inspections containing a critical citation had an average score of **21.6** (among citation rows), compared with **15.9** for inspections containing a non-critical citation. That association does not by itself prove the point value of either type, since inspections can contain multiple citations of both types.\n\nThe chart shows average inspection scores grouped by whether an inspection had critical citations, non-critical citations, both, or no cited violations.",
+  "structured_response": null,
+  "trace_text": "Action: get_schema({})\n\nObservation: Project food_health_viz {\n  database_type: 'DuckDB'\n}\n\nTable establishment_keys {\n  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']\n  name varchar [not null]\n  address varchar [not null]\n  city varchar [not null]\n  city_state_zip varchar\n  establishment_type varchar\n  source varchar [note: 'friend_slc | own_scrape']\n  slchd_lat double\n  slchd_lon double\n  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']\n\n  Note: 'SLCHD establishment list, one row per portal listing.'\n}\n\nTable category {\n  category_id integer [pk]\n  category varchar\n}\n\nTable establishments {\n  gmap_id varchar [pk]\n  name varchar\n  address varchar\n  description varchar\n  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']\n  avg_rating double\n  num_of_reviews integer\n  price varchar\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']\n\n  Note: 'One row per Google Local place \u2014 all restaurants, not just SLCHD-matched.'\n}\n\nTable establishment_attributes {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  attribute varchar [not null]\n\n  indexes { (gmap_id, attribute) [pk] }\n\n  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. \"Service options\") dropped.'\n}\n\nTable establishment_categories {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  category_id integer [ref: > category.category_id, not null]\n\n  indexes { (gmap_id, category_id) [pk] }\n}\n\nTable gmap_hours {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  day integer [not null, note: '0=Sun \u2026 6=Sat']\n  open_min bigint\n  open_max bigint\n\n  indexes { (gmap_id, day) [pk] }\n\n  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'\n}\n\nTable review {\n  user_id varchar\n  name varchar\n  time bigint\n  rating double\n  text varchar\n  resp varchar\n  gmap_id varchar [ref: > establishments.gmap_id]\n}\n\nTable inspection_types {\n  inspection_type_id integer [pk, note: 'parsed leading number, e.g. \"01 - Routine\" -> 1']\n  description varchar [note: 'e.g. \"Routine\"']\n}\n\nTable inspections {\n  inspection_id bigint [pk, increment]\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]\n  inspection_date date [not null]\n  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable \u2014 27 rows have no type']\n  inspection_score integer\n\n  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'\n}\n\nTable violation_codes {\n  violation_code_id integer [pk, increment]\n  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. \"4.5.18\"']\n  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']\n  critical boolean [not null]\n}\n\nTable violations {\n  violation_id bigint [pk, increment]\n  inspection_id bigint [ref: > inspections.inspection_id, not null]\n  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]\n  violation_description varchar [note: 'per-occurrence free text']\n  violation_occurrences integer\n  violation_cos boolean [note: 'corrected on site']\n  violation_phr varchar [note: 'public health rationale']\n\n  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'\n}\n\n\nAction: get_column_glossary({'table_dot_column': 'violation_codes.critical'})\n\nObservation: {\"description\": \"Whether citations of this code are critical. One fixed value per code \\u2014 verified across all citations, no code has mixed critical/non-critical citations. (3 codes were found inconsistently labeled in the raw source and were normalized to critical=true; see data/processed/clean_processed.ipynb, 'Fix inconsistent violation criticality'.)\", \"reference\": \"slchd_portal\"}\n\nAction: get_column_glossary({'table_dot_column': 'inspections.inspection_score'})\n\nAction: run_sql({'query': 'SELECT vc.critical, COUNT(*) AS cited_violation_rows, SUM(COALESCE(v.violation_occurrences, 1)) AS total_occurrences, MIN(i.inspection_score) AS min_score, MAX(i.inspection_score) AS max_score, AVG(i.inspection_score) AS avg_score FROM violations v JOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id JOIN inspections i ON v.inspection_id = i.inspection_id GROUP BY vc.critical ORDER BY vc.critical DESC'})\n\nAction: run_sql({'query': 'SELECT i.inspection_score, SUM(CASE WHEN vc.critical THEN COALESCE(v.violation_occurrences,1) ELSE 0 END) AS critical_occurrences, SUM(CASE WHEN NOT vc.critical THEN COALESCE(v.violation_occurrences,1) ELSE 0 END) AS noncritical_occurrences FROM inspections i LEFT JOIN violations v ON i.inspection_id=v.inspection_id LEFT JOIN violation_codes vc ON v.violation_code_id=vc.violation_code_id GROUP BY i.inspection_id, i.inspection_score ORDER BY i.inspection_score DESC LIMIT 10'})\n\nObservation: {\"description\": \"Total violation points for this inspection. 0 = clean. Higher = worse (confirmed: inspections with any cited violation average score 17.6 vs 1.7 for clean ones).\", \"reference\": \"slchd_portal\"}\n\nObservation: {\"row_count\": 2, \"truncated\": false, \"rows\": [{\"critical\": true, \"cited_violation_rows\": 9690, \"total_occurrences\": 10744.0, \"min_score\": 0, \"max_score\": 186, \"avg_score\": 21.615376676986585}, {\"critical\": false, \"cited_violation_rows\": 22339, \"total_occurrences\": 25862.0, \"min_score\": 0, \"max_score\": 186, \"avg_score\": 15.911947714758941}]}\n\nObservation: {\"row_count\": 10, \"truncated\": false, \"rows\": [{\"inspection_score\": 297, \"critical_occurrences\": 0.0, \"noncritical_occurrences\": 0.0}, {\"inspection_score\": 186, \"critical_occurrences\": 14.0, \"noncritical_occurrences\": 21.0}, {\"inspection_score\": 185, \"critical_occurrences\": 16.0, \"noncritical_occurrences\": 10.0}, {\"inspection_score\": 145, \"critical_occurrences\": 9.0, \"noncritical_occurrences\": 3.0}, {\"inspection_score\": 138, \"critical_occurrences\": 8.0, \"noncritical_occurrences\": 8.0}, {\"inspection_score\": 137, \"critical_occurrences\": 7.0, \"noncritical_occurrences\": 4.0}, {\"inspection_score\": 136, \"critical_occurrences\": 7.0, \"noncritical_occurrences\": 9.0}, {\"inspection_score\": 128, \"critical_occurrences\": 7.0, \"noncritical_occurrences\": 1.0}, {\"inspection_score\": 128, \"critical_occurrences\": 6.0, \"noncritical_occurrences\": 4.0}, {\"inspection_score\": 127, \"critical_occurrences\": 5.0, \"noncritical_occurrences\": 6.0}]}\n\nAction: plot_chart({'chart_type': 'bar', 'query': \"WITH per_inspection AS ( SELECT i.inspection_id, i.inspection_score, SUM(CASE WHEN vc.critical THEN COALESCE(v.violation_occurrences, 1) ELSE 0 END) AS critical_occurrences, SUM(CASE WHEN vc.critical = FALSE THEN COALESCE(v.violation_occurrences, 1) ELSE 0 END) AS noncritical_occurrences FROM inspections i LEFT JOIN violations v ON i.inspection_id = v.inspection_id LEFT JOIN violation_codes vc ON vc.violation_code_id = v.violation_code_id GROUP BY i.inspection_id, i.inspection_score ) SELECT CASE WHEN critical_occurrences > 0 AND noncritical_occurrences > 0 THEN 'Both types cited' WHEN critical_occurrences > 0 THEN 'Critical only' WHEN noncritical_occurrences > 0 THEN 'Non-critical only' ELSE 'No cited violations' END AS citation_group, ROUND(AVG(inspection_score), 1) AS average_inspection_score FROM per_inspection GROUP BY citation_group ORDER BY average_inspection_score DESC\", 'title': 'Average inspection score by cited violation type', 'x': 'citation_group', 'y': 'average_inspection_score'})\n\nObservation: Chart created: 'Average inspection score by cited violation type' (bar, 4 rows). It will be shown to the user below your answer.",
+  "timeline": [],
+  "messages": [
+    {
+      "type": "HumanMessage",
+      "content": "What's the difference between a critical and a non-critical violation, and how does each affect an inspection score?"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "get_schema",
+          "args": {},
+          "id": "call_uwNR2epnEJ6aQDZ5Ojs0Obrm",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 1805,
+        "output_tokens": 13,
+        "total_tokens": 1818,
+        "input_token_details": {
+          "audio": 0,
+          "cache_read": 1777,
+          "cache_creation": 25
+        },
+        "output_token_details": {
+          "audio": 0,
+          "reasoning": 0
+        }
+      },
+      "model_name": "gpt-5.6-terra"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "Project food_health_viz {\n  database_type: 'DuckDB'\n}\n\nTable establishment_keys {\n  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']\n  name varchar [not null]\n  address varchar [not null]\n  city varchar [not null]\n  city_state_zip varchar\n  establishment_type varchar\n  source varchar [note: 'friend_slc | own_scrape']\n  slchd_lat double\n  slchd_lon double\n  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']\n\n  Note: 'SLCHD establishment list, one row per portal listing.'\n}\n\nTable category {\n  category_id integer [pk]\n  category varchar\n}\n\nTable establishments {\n  gmap_id varchar [pk]\n  name varchar\n  address varchar\n  description varchar\n  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']\n  avg_rating double\n  num_of_reviews integer\n  price varchar\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']\n\n  Note: 'One row per Google Local place \u2014 all restaurants, not just SLCHD-matched.'\n}\n\nTable establishment_attributes {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  attribute varchar [not null]\n\n  indexes { (gmap_id, attribute) [pk] }\n\n  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. \"Service options\") dropped.'\n}\n\nTable establishment_categories {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  category_id integer [ref: > category.category_id, not null]\n\n  indexes { (gmap_id, category_id) [pk] }\n}\n\nTable gmap_hours {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  day integer [not null, note: '0=Sun \u2026 6=Sat']\n  open_min bigint\n  open_max bigint\n\n  indexes { (gmap_id, day) [pk] }\n\n  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'\n}\n\nTable review {\n  user_id varchar\n  name varchar\n  time bigint\n  rating double\n  text varchar\n  resp varchar\n  gmap_id varchar [ref: > establishments.gmap_id]\n}\n\nTable inspection_types {\n  inspection_type_id integer [pk, note: 'parsed leading number, e.g. \"01 - Routine\" -> 1']\n  description varchar [note: 'e.g. \"Routine\"']\n}\n\nTable inspections {\n  inspection_id bigint [pk, increment]\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]\n  inspection_date date [not null]\n  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable \u2014 27 rows have no type']\n  inspection_score integer\n\n  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'\n}\n\nTable violation_codes {\n  violation_code_id integer [pk, increment]\n  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. \"4.5.18\"']\n  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']\n  critical boolean [not null]\n}\n\nTable violations {\n  violation_id bigint [pk, increment]\n  inspection_id bigint [ref: > inspections.inspection_id, not null]\n  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]\n  violation_description varchar [note: 'per-occurrence free text']\n  violation_occurrences integer\n  violation_cos boolean [note: 'corrected on site']\n  violation_phr varchar [note: 'public health rationale']\n\n  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'\n}\n",
+      "tool_call_id": "call_uwNR2epnEJ6aQDZ5Ojs0Obrm",
+      "name": "get_schema"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "get_column_glossary",
+          "args": {
+            "table_dot_column": "violation_codes.critical"
+          },
+          "id": "call_Sc78Gp14cXRHy1OqX9EZcz6U",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 2693,
+        "output_tokens": 26,
+        "total_tokens": 2719,
+        "input_token_details": {
+          "audio": 0,
+          "cache_read": 1802,
+          "cache_creation": 888
+        },
+        "output_token_details": {
+          "audio": 0,
+          "reasoning": 0
+        }
+      },
+      "model_name": "gpt-5.6-terra"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"description\": \"Whether citations of this code are critical. One fixed value per code \\u2014 verified across all citations, no code has mixed critical/non-critical citations. (3 codes were found inconsistently labeled in the raw source and were normalized to critical=true; see data/processed/clean_processed.ipynb, 'Fix inconsistent violation criticality'.)\", \"reference\": \"slchd_portal\"}",
+      "tool_call_id": "call_Sc78Gp14cXRHy1OqX9EZcz6U",
+      "name": "get_column_glossary"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "get_column_glossary",
+          "args": {
+            "table_dot_column": "inspections.inspection_score"
+          },
+          "id": "call_nO7AcZDtQevD1LkPVhUDAB04",
+          "type": "tool_call"
+        },
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "SELECT vc.critical, COUNT(*) AS cited_violation_rows, SUM(COALESCE(v.violation_occurrences, 1)) AS total_occurrences, MIN(i.inspection_score) AS min_score, MAX(i.inspection_score) AS max_score, AVG(i.inspection_score) AS avg_score FROM violations v JOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id JOIN inspections i ON v.inspection_id = i.inspection_id GROUP BY vc.critical ORDER BY vc.critical DESC"
+          },
+          "id": "call_eHtaiw3rLOiK5bZZNoN9PM9U",
+          "type": "tool_call"
+        },
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "SELECT i.inspection_score, SUM(CASE WHEN vc.critical THEN COALESCE(v.violation_occurrences,1) ELSE 0 END) AS critical_occurrences, SUM(CASE WHEN NOT vc.critical THEN COALESCE(v.violation_occurrences,1) ELSE 0 END) AS noncritical_occurrences FROM inspections i LEFT JOIN violations v ON i.inspection_id=v.inspection_id LEFT JOIN violation_codes vc ON v.violation_code_id=vc.violation_code_id GROUP BY i.inspection_id, i.inspection_score ORDER BY i.inspection_score DESC LIMIT 10"
+          },
+          "id": "call_asncS1REkD9QqDhLOsoDW8RT",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 2816,
+        "output_tokens": 291,
+        "total_tokens": 3107,
+        "input_token_details": {
+          "audio": 0,
+          "cache_read": 2690,
+          "cache_creation": 123
+        },
+        "output_token_details": {
+          "audio": 0,
+          "reasoning": 0
+        }
+      },
+      "model_name": "gpt-5.6-terra"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"description\": \"Total violation points for this inspection. 0 = clean. Higher = worse (confirmed: inspections with any cited violation average score 17.6 vs 1.7 for clean ones).\", \"reference\": \"slchd_portal\"}",
+      "tool_call_id": "call_nO7AcZDtQevD1LkPVhUDAB04",
+      "name": "get_column_glossary"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 2, \"truncated\": false, \"rows\": [{\"critical\": true, \"cited_violation_rows\": 9690, \"total_occurrences\": 10744.0, \"min_score\": 0, \"max_score\": 186, \"avg_score\": 21.615376676986585}, {\"critical\": false, \"cited_violation_rows\": 22339, \"total_occurrences\": 25862.0, \"min_score\": 0, \"max_score\": 186, \"avg_score\": 15.911947714758941}]}",
+      "tool_call_id": "call_eHtaiw3rLOiK5bZZNoN9PM9U",
+      "name": "run_sql"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 10, \"truncated\": false, \"rows\": [{\"inspection_score\": 297, \"critical_occurrences\": 0.0, \"noncritical_occurrences\": 0.0}, {\"inspection_score\": 186, \"critical_occurrences\": 14.0, \"noncritical_occurrences\": 21.0}, {\"inspection_score\": 185, \"critical_occurrences\": 16.0, \"noncritical_occurrences\": 10.0}, {\"inspection_score\": 145, \"critical_occurrences\": 9.0, \"noncritical_occurrences\": 3.0}, {\"inspection_score\": 138, \"critical_occurrences\": 8.0, \"noncritical_occurrences\": 8.0}, {\"inspection_score\": 137, \"critical_occurrences\": 7.0, \"noncritical_occurrences\": 4.0}, {\"inspection_score\": 136, \"critical_occurrences\": 7.0, \"noncritical_occurrences\": 9.0}, {\"inspection_score\": 128, \"critical_occurrences\": 7.0, \"noncritical_occurrences\": 1.0}, {\"inspection_score\": 128, \"critical_occurrences\": 6.0, \"noncritical_occurrences\": 4.0}, {\"inspection_score\": 127, \"critical_occurrences\": 5.0, \"noncritical_occurrences\": 6.0}]}",
+      "tool_call_id": "call_asncS1REkD9QqDhLOsoDW8RT",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "plot_chart",
+          "args": {
+            "chart_type": "bar",
+            "query": "WITH per_inspection AS ( SELECT i.inspection_id, i.inspection_score, SUM(CASE WHEN vc.critical THEN COALESCE(v.violation_occurrences, 1) ELSE 0 END) AS critical_occurrences, SUM(CASE WHEN vc.critical = FALSE THEN COALESCE(v.violation_occurrences, 1) ELSE 0 END) AS noncritical_occurrences FROM inspections i LEFT JOIN violations v ON i.inspection_id = v.inspection_id LEFT JOIN violation_codes vc ON vc.violation_code_id = v.violation_code_id GROUP BY i.inspection_id, i.inspection_score ) SELECT CASE WHEN critical_occurrences > 0 AND noncritical_occurrences > 0 THEN 'Both types cited' WHEN critical_occurrences > 0 THEN 'Critical only' WHEN noncritical_occurrences > 0 THEN 'Non-critical only' ELSE 'No cited violations' END AS citation_group, ROUND(AVG(inspection_score), 1) AS average_inspection_score FROM per_inspection GROUP BY citation_group ORDER BY average_inspection_score DESC",
+            "title": "Average inspection score by cited violation type",
+            "x": "citation_group",
+            "y": "average_inspection_score"
+          },
+          "id": "call_S6iVdfAMZkb9oyyr9qx5R81l",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 3597,
+        "output_tokens": 258,
+        "total_tokens": 3855,
+        "input_token_details": {
+          "audio": 0,
+          "cache_read": 2813,
+          "cache_creation": 781
+        },
+        "output_token_details": {
+          "audio": 0,
+          "reasoning": 0
+        }
+      },
+      "model_name": "gpt-5.6-terra"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "Chart created: 'Average inspection score by cited violation type' (bar, 4 rows). It will be shown to the user below your answer.",
+      "tool_call_id": "call_S6iVdfAMZkb9oyyr9qx5R81l",
+      "name": "plot_chart"
+    },
+    {
+      "type": "AIMessage",
+      "content": "A **critical violation** is a citation whose violation code is flagged as `critical` in the SLCHD portal data. A **non-critical violation** is one flagged `critical = false`. The dataset does not provide a further narrative definition of the risk distinction or a published point schedule by violation type, so I can\u2019t responsibly claim a fixed number of score points per critical versus non-critical citation.\n\nFor scoring:\n\n- The **inspection score is total violation points** for that visit: **0 means clean, and higher scores are worse**.\n- Both critical and non-critical citations can contribute to the score, but the available data do **not** establish a universal \u201ccritical = X points / non-critical = Y points\u201d rule.\n- In the recorded inspections, critical citations appeared in **9,690 cited-violation rows** (**10,744 occurrences**), while non-critical citations appeared in **22,339 rows** (**25,862 occurrences**).\n- Inspections containing a critical citation had an average score of **21.6** (among citation rows), compared with **15.9** for inspections containing a non-critical citation. That association does not by itself prove the point value of either type, since inspections can contain multiple citations of both types.\n\nThe chart shows average inspection scores grouped by whether an inspection had critical citations, non-critical citations, both, or no cited violations.",
+      "tool_calls": [],
+      "usage_metadata": {
+        "input_tokens": 3896,
+        "output_tokens": 283,
+        "total_tokens": 4179,
+        "input_token_details": {
+          "audio": 0,
+          "cache_read": 3594,
+          "cache_creation": 299
+        },
+        "output_token_details": {
+          "audio": 0,
+          "reasoning": 0
+        }
+      },
+      "model_name": "gpt-5.6-terra"
+    }
+  ],
+  "charts": [
+    {
+      "data": [
+        {
+          "hovertemplate": "citation_group=%{x}<br>average_inspection_score=%{y}<extra></extra>",
+          "legendgroup": "",
+          "marker": {
+            "color": "#000001",
+            "pattern": {
+              "shape": ""
+            }
+          },
+          "name": "",
+          "orientation": "v",
+          "showlegend": false,
+          "textposition": "auto",
+          "x": [
+            "Both types cited",
+            "Critical only",
+            "Non-critical only",
+            "No cited violations"
+          ],
+          "xaxis": "x",
+          "y": {
+            "dtype": "f8",
+            "bdata": "ZmZmZmZmL0BmZmZmZmYiQM3MzMzMzAhAMzMzMzMz+z8="
+          },
+          "yaxis": "y",
+          "type": "bar"
+        }
+      ],
+      "layout": {
+        "template": {
+          "data": {
+            "candlestick": [
+              {
+                "decreasing": {
+                  "line": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "line": {
+                    "color": "#000032"
+                  }
+                },
+                "type": "candlestick"
+              }
+            ],
+            "contourcarpet": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contourcarpet"
+              }
+            ],
+            "contour": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contour"
+              }
+            ],
+            "heatmap": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "heatmap"
+              }
+            ],
+            "histogram2d": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "histogram2d"
+              }
+            ],
+            "icicle": [
+              {
+                "textfont": {
+                  "color": "white"
+                },
+                "type": "icicle"
+              }
+            ],
+            "sankey": [
+              {
+                "textfont": {
+                  "color": "#000036"
+                },
+                "type": "sankey"
+              }
+            ],
+            "scatter": [
+              {
+                "marker": {
+                  "line": {
+                    "width": 0
+                  }
+                },
+                "type": "scatter"
+              }
+            ],
+            "table": [
+              {
+                "cells": {
+                  "fill": {
+                    "color": "#000038"
+                  },
+                  "font": {
+                    "color": "#000037"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "header": {
+                  "fill": {
+                    "color": "#000040"
+                  },
+                  "font": {
+                    "color": "#000036"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "type": "table"
+              }
+            ],
+            "waterfall": [
+              {
+                "connector": {
+                  "line": {
+                    "color": "#000036",
+                    "width": 2
+                  }
+                },
+                "decreasing": {
+                  "marker": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "marker": {
+                    "color": "#000032"
+                  }
+                },
+                "totals": {
+                  "marker": {
+                    "color": "#000034"
+                  }
+                },
+                "type": "waterfall"
+              }
+            ]
+          },
+          "layout": {
+            "coloraxis": {
+              "colorscale": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorscale": {
+              "diverging": [
+                [
+                  0.0,
+                  "#000021"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000022"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000023"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000024"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000025"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000026"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000027"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000028"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000029"
+                ],
+                [
+                  1.0,
+                  "#000030"
+                ]
+              ],
+              "sequential": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ],
+              "sequentialminus": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorway": [
+              "#000001",
+              "#000002",
+              "#000003",
+              "#000004",
+              "#000005",
+              "#000006",
+              "#000007",
+              "#000008",
+              "#000009",
+              "#000010"
+            ]
+          }
+        },
+        "xaxis": {
+          "anchor": "y",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "citation_group"
+          }
+        },
+        "yaxis": {
+          "anchor": "x",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "average_inspection_score"
+          }
+        },
+        "legend": {
+          "tracegroupgap": 0
+        },
+        "title": {
+          "text": "Average inspection score by cited violation type"
+        },
+        "barmode": "relative"
+      }
+    }
+  ],
+  "candidate_pool_raw": [],
+  "duration_seconds": 12.09,
+  "usage": {
+    "available": true,
+    "per_call": [
+      {
+        "input_tokens": 1805,
+        "output_tokens": 13,
+        "total_tokens": 1818
+      },
+      {
+        "input_tokens": 2693,
+        "output_tokens": 26,
+        "total_tokens": 2719
+      },
+      {
+        "input_tokens": 2816,
+        "output_tokens": 291,
+        "total_tokens": 3107
+      },
+      {
+        "input_tokens": 3597,
+        "output_tokens": 258,
+        "total_tokens": 3855
+      },
+      {
+        "input_tokens": 3896,
+        "output_tokens": 283,
+        "total_tokens": 4179
+      }
+    ],
+    "input_tokens": 14807,
+    "output_tokens": 871,
+    "total_tokens": 15678
+  },
+  "tokens_per_minute": 77791.5,
+  "estimated_cost_usd": 0.040066,
+  "success": true,
+  "error": null,
+  "chart_image_files": [
+    "2026-08-15T09-57-45.371385+00-00_v1_memory_5bda9cad_chart0.png"
+  ]
+}

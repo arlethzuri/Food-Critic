@@ -1,0 +1,686 @@
+{
+  "source": "frontend",
+  "run_id": "0857e57e",
+  "timestamp": "2026-08-15T09:54:09.832679+00:00",
+  "variant": "v1_memory",
+  "provider": "openai",
+  "model": "gpt-5.6-terra",
+  "question": "Is there any correlation between ratings and violations among the restaurants?",
+  "output_text": "Among the **139 restaurants with both Google ratings and matched SLCHD inspection histories**, ratings show a **weak negative correlation** with violations:\n\n- **Rating vs. total violation occurrences:** **r = \u22120.249**\n- **Rating vs. critical violation occurrences:** **r = \u22120.105**\n- Average rating in this matched group: **4.24 / 5**\n- Average total cited violation occurrences: **44.79** per restaurant across its available inspection history.\n\nIn practical terms, higher-rated restaurants tend to have somewhat fewer recorded violations, but the relationship is weak\u2014ratings alone are not a reliable indicator of inspection performance. The association is especially minimal for **critical** violations.\n\nThe scatter plot shows the substantial overlap: restaurants at similar ratings can have very different violation totals.",
+  "structured_response": null,
+  "trace_text": "Action: get_schema({})\n\nObservation: Project food_health_viz {\n  database_type: 'DuckDB'\n}\n\nTable establishment_keys {\n  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']\n  name varchar [not null]\n  address varchar [not null]\n  city varchar [not null]\n  city_state_zip varchar\n  establishment_type varchar\n  source varchar [note: 'friend_slc | own_scrape']\n  slchd_lat double\n  slchd_lon double\n  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']\n\n  Note: 'SLCHD establishment list, one row per portal listing.'\n}\n\nTable category {\n  category_id integer [pk]\n  category varchar\n}\n\nTable establishments {\n  gmap_id varchar [pk]\n  name varchar\n  address varchar\n  description varchar\n  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']\n  avg_rating double\n  num_of_reviews integer\n  price varchar\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']\n\n  Note: 'One row per Google Local place \u2014 all restaurants, not just SLCHD-matched.'\n}\n\nTable establishment_attributes {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  attribute varchar [not null]\n\n  indexes { (gmap_id, attribute) [pk] }\n\n  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. \"Service options\") dropped.'\n}\n\nTable establishment_categories {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  category_id integer [ref: > category.category_id, not null]\n\n  indexes { (gmap_id, category_id) [pk] }\n}\n\nTable gmap_hours {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  day integer [not null, note: '0=Sun \u2026 6=Sat']\n  open_min bigint\n  open_max bigint\n\n  indexes { (gmap_id, day) [pk] }\n\n  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'\n}\n\nTable review {\n  user_id varchar\n  name varchar\n  time bigint\n  rating double\n  text varchar\n  resp varchar\n  gmap_id varchar [ref: > establishments.gmap_id]\n}\n\nTable inspection_types {\n  inspection_type_id integer [pk, note: 'parsed leading number, e.g. \"01 - Routine\" -> 1']\n  description varchar [note: 'e.g. \"Routine\"']\n}\n\nTable inspections {\n  inspection_id bigint [pk, increment]\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]\n  inspection_date date [not null]\n  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable \u2014 27 rows have no type']\n  inspection_score integer\n\n  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'\n}\n\nTable violation_codes {\n  violation_code_id integer [pk, increment]\n  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. \"4.5.18\"']\n  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']\n  critical boolean [not null]\n}\n\nTable violations {\n  violation_id bigint [pk, increment]\n  inspection_id bigint [ref: > inspections.inspection_id, not null]\n  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]\n  violation_description varchar [note: 'per-occurrence free text']\n  violation_occurrences integer\n  violation_cos boolean [note: 'corrected on site']\n  violation_phr varchar [note: 'public health rationale']\n\n  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'\n}\n\n\nAction: run_sql({'query': 'WITH matched AS (\\n  SELECT e.gmap_id, e.avg_rating, e.slchd_establishment_key,\\n         COUNT(v.violation_id) AS cited_violation_rows,\\n         COALESCE(SUM(CASE WHEN vc.critical THEN v.violation_occurrences ELSE 0 END), 0) AS critical_violation_occurrences,\\n         COALESCE(SUM(v.violation_occurrences), 0) AS total_violation_occurrences\\n  FROM establishments e\\n  JOIN inspections i ON e.slchd_establishment_key = i.slchd_establishment_key\\n  LEFT JOIN violations v ON i.inspection_id = v.inspection_id\\n  LEFT JOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\\n  WHERE e.avg_rating IS NOT NULL\\n  GROUP BY e.gmap_id, e.avg_rating, e.slchd_establishment_key\\n), stats AS (\\n  SELECT *,\\n    corr(avg_rating, total_violation_occurrences) OVER () AS rating_total_violation_corr,\\n    corr(avg_rating, critical_violation_occurrences) OVER () AS rating_critical_violation_corr,\\n    corr(avg_rating, cited_violation_rows) OVER () AS rating_cited_row_corr\\n  FROM matched\\n)\\nSELECT COUNT(*) AS matched_restaurants_with_ratings,\\n       ROUND(AVG(avg_rating), 2) AS mean_rating,\\n       ROUND(AVG(total_violation_occurrences), 2) AS mean_total_violation_occurrences,\\n       ROUND(MAX(rating_total_violation_corr), 3) AS corr_rating_total_violation_occurrences,\\n       ROUND(MAX(rating_critical_violation_corr), 3) AS corr_rating_critical_violation_occurrences,\\n       ROUND(MAX(rating_cited_row_corr), 3) AS corr_rating_cited_violation_rows\\nFROM stats;'})\n\nAction: plot_chart({'chart_type': 'scatter', 'query': 'WITH restaurant_totals AS (\\n  SELECT e.gmap_id, e.name, e.avg_rating,\\n         COALESCE(SUM(v.violation_occurrences), 0) AS total_violation_occurrences\\n  FROM establishments e\\n  JOIN inspections i ON e.slchd_establishment_key = i.slchd_establishment_key\\n  LEFT JOIN violations v ON i.inspection_id = v.inspection_id\\n  WHERE e.avg_rating IS NOT NULL\\n  GROUP BY e.gmap_id, e.name, e.avg_rating\\n)\\nSELECT avg_rating, total_violation_occurrences\\nFROM restaurant_totals', 'title': 'Google rating vs. total cited violation occurrences (matched restaurants)', 'x': 'avg_rating', 'y': 'total_violation_occurrences'})\n\nObservation: {\"row_count\": 1, \"truncated\": false, \"rows\": [{\"matched_restaurants_with_ratings\": 139, \"mean_rating\": 4.24, \"mean_total_violation_occurrences\": 44.79, \"corr_rating_total_violation_occurrences\": -0.249, \"corr_rating_critical_violation_occurrences\": -0.105, \"corr_rating_cited_violation_rows\": -0.246}]}\n\nObservation: Chart created: 'Google rating vs. total cited violation occurrences (matched restaurants)' (scatter, 139 rows). It will be shown to the user below your answer.",
+  "timeline": [],
+  "messages": [
+    {
+      "type": "HumanMessage",
+      "content": "Is there any correlation between ratings and violations among the restaurants?"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "get_schema",
+          "args": {},
+          "id": "call_9YedVPMpDV0RymbKtOzbRfGs",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 1796,
+        "output_tokens": 13,
+        "total_tokens": 1809,
+        "input_token_details": {
+          "audio": 0,
+          "cache_read": 1777,
+          "cache_creation": 16
+        },
+        "output_token_details": {
+          "audio": 0,
+          "reasoning": 0
+        }
+      },
+      "model_name": "gpt-5.6-terra"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "Project food_health_viz {\n  database_type: 'DuckDB'\n}\n\nTable establishment_keys {\n  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']\n  name varchar [not null]\n  address varchar [not null]\n  city varchar [not null]\n  city_state_zip varchar\n  establishment_type varchar\n  source varchar [note: 'friend_slc | own_scrape']\n  slchd_lat double\n  slchd_lon double\n  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']\n\n  Note: 'SLCHD establishment list, one row per portal listing.'\n}\n\nTable category {\n  category_id integer [pk]\n  category varchar\n}\n\nTable establishments {\n  gmap_id varchar [pk]\n  name varchar\n  address varchar\n  description varchar\n  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']\n  avg_rating double\n  num_of_reviews integer\n  price varchar\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']\n\n  Note: 'One row per Google Local place \u2014 all restaurants, not just SLCHD-matched.'\n}\n\nTable establishment_attributes {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  attribute varchar [not null]\n\n  indexes { (gmap_id, attribute) [pk] }\n\n  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. \"Service options\") dropped.'\n}\n\nTable establishment_categories {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  category_id integer [ref: > category.category_id, not null]\n\n  indexes { (gmap_id, category_id) [pk] }\n}\n\nTable gmap_hours {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  day integer [not null, note: '0=Sun \u2026 6=Sat']\n  open_min bigint\n  open_max bigint\n\n  indexes { (gmap_id, day) [pk] }\n\n  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'\n}\n\nTable review {\n  user_id varchar\n  name varchar\n  time bigint\n  rating double\n  text varchar\n  resp varchar\n  gmap_id varchar [ref: > establishments.gmap_id]\n}\n\nTable inspection_types {\n  inspection_type_id integer [pk, note: 'parsed leading number, e.g. \"01 - Routine\" -> 1']\n  description varchar [note: 'e.g. \"Routine\"']\n}\n\nTable inspections {\n  inspection_id bigint [pk, increment]\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]\n  inspection_date date [not null]\n  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable \u2014 27 rows have no type']\n  inspection_score integer\n\n  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'\n}\n\nTable violation_codes {\n  violation_code_id integer [pk, increment]\n  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. \"4.5.18\"']\n  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']\n  critical boolean [not null]\n}\n\nTable violations {\n  violation_id bigint [pk, increment]\n  inspection_id bigint [ref: > inspections.inspection_id, not null]\n  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]\n  violation_description varchar [note: 'per-occurrence free text']\n  violation_occurrences integer\n  violation_cos boolean [note: 'corrected on site']\n  violation_phr varchar [note: 'public health rationale']\n\n  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'\n}\n",
+      "tool_call_id": "call_9YedVPMpDV0RymbKtOzbRfGs",
+      "name": "get_schema"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "WITH matched AS (\n  SELECT e.gmap_id, e.avg_rating, e.slchd_establishment_key,\n         COUNT(v.violation_id) AS cited_violation_rows,\n         COALESCE(SUM(CASE WHEN vc.critical THEN v.violation_occurrences ELSE 0 END), 0) AS critical_violation_occurrences,\n         COALESCE(SUM(v.violation_occurrences), 0) AS total_violation_occurrences\n  FROM establishments e\n  JOIN inspections i ON e.slchd_establishment_key = i.slchd_establishment_key\n  LEFT JOIN violations v ON i.inspection_id = v.inspection_id\n  LEFT JOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\n  WHERE e.avg_rating IS NOT NULL\n  GROUP BY e.gmap_id, e.avg_rating, e.slchd_establishment_key\n), stats AS (\n  SELECT *,\n    corr(avg_rating, total_violation_occurrences) OVER () AS rating_total_violation_corr,\n    corr(avg_rating, critical_violation_occurrences) OVER () AS rating_critical_violation_corr,\n    corr(avg_rating, cited_violation_rows) OVER () AS rating_cited_row_corr\n  FROM matched\n)\nSELECT COUNT(*) AS matched_restaurants_with_ratings,\n       ROUND(AVG(avg_rating), 2) AS mean_rating,\n       ROUND(AVG(total_violation_occurrences), 2) AS mean_total_violation_occurrences,\n       ROUND(MAX(rating_total_violation_corr), 3) AS corr_rating_total_violation_occurrences,\n       ROUND(MAX(rating_critical_violation_corr), 3) AS corr_rating_critical_violation_occurrences,\n       ROUND(MAX(rating_cited_row_corr), 3) AS corr_rating_cited_violation_rows\nFROM stats;"
+          },
+          "id": "call_TGupoBC90YiiOSH79T9ZQGwe",
+          "type": "tool_call"
+        },
+        {
+          "name": "plot_chart",
+          "args": {
+            "chart_type": "scatter",
+            "query": "WITH restaurant_totals AS (\n  SELECT e.gmap_id, e.name, e.avg_rating,\n         COALESCE(SUM(v.violation_occurrences), 0) AS total_violation_occurrences\n  FROM establishments e\n  JOIN inspections i ON e.slchd_establishment_key = i.slchd_establishment_key\n  LEFT JOIN violations v ON i.inspection_id = v.inspection_id\n  WHERE e.avg_rating IS NOT NULL\n  GROUP BY e.gmap_id, e.name, e.avg_rating\n)\nSELECT avg_rating, total_violation_occurrences\nFROM restaurant_totals",
+            "title": "Google rating vs. total cited violation occurrences (matched restaurants)",
+            "x": "avg_rating",
+            "y": "total_violation_occurrences"
+          },
+          "id": "call_8PLSu4z1pPrhVryPZ1ItgbLF",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 2684,
+        "output_tokens": 589,
+        "total_tokens": 3273,
+        "input_token_details": {
+          "audio": 0,
+          "cache_read": 1793,
+          "cache_creation": 888
+        },
+        "output_token_details": {
+          "audio": 0,
+          "reasoning": 0
+        }
+      },
+      "model_name": "gpt-5.6-terra"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 1, \"truncated\": false, \"rows\": [{\"matched_restaurants_with_ratings\": 139, \"mean_rating\": 4.24, \"mean_total_violation_occurrences\": 44.79, \"corr_rating_total_violation_occurrences\": -0.249, \"corr_rating_critical_violation_occurrences\": -0.105, \"corr_rating_cited_violation_rows\": -0.246}]}",
+      "tool_call_id": "call_TGupoBC90YiiOSH79T9ZQGwe",
+      "name": "run_sql"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "Chart created: 'Google rating vs. total cited violation occurrences (matched restaurants)' (scatter, 139 rows). It will be shown to the user below your answer.",
+      "tool_call_id": "call_8PLSu4z1pPrhVryPZ1ItgbLF",
+      "name": "plot_chart"
+    },
+    {
+      "type": "AIMessage",
+      "content": "Among the **139 restaurants with both Google ratings and matched SLCHD inspection histories**, ratings show a **weak negative correlation** with violations:\n\n- **Rating vs. total violation occurrences:** **r = \u22120.249**\n- **Rating vs. critical violation occurrences:** **r = \u22120.105**\n- Average rating in this matched group: **4.24 / 5**\n- Average total cited violation occurrences: **44.79** per restaurant across its available inspection history.\n\nIn practical terms, higher-rated restaurants tend to have somewhat fewer recorded violations, but the relationship is weak\u2014ratings alone are not a reliable indicator of inspection performance. The association is especially minimal for **critical** violations.\n\nThe scatter plot shows the substantial overlap: restaurants at similar ratings can have very different violation totals.",
+      "tool_calls": [],
+      "usage_metadata": {
+        "input_tokens": 3416,
+        "output_tokens": 163,
+        "total_tokens": 3579,
+        "input_token_details": {
+          "audio": 0,
+          "cache_read": 2681,
+          "cache_creation": 732
+        },
+        "output_token_details": {
+          "audio": 0,
+          "reasoning": 0
+        }
+      },
+      "model_name": "gpt-5.6-terra"
+    }
+  ],
+  "charts": [
+    {
+      "data": [
+        {
+          "hovertemplate": "avg_rating=%{x}<br>total_violation_occurrences=%{y}<extra></extra>",
+          "legendgroup": "",
+          "marker": {
+            "color": "#000001",
+            "symbol": "circle"
+          },
+          "mode": "markers",
+          "name": "",
+          "orientation": "v",
+          "showlegend": false,
+          "x": {
+            "dtype": "f8",
+            "bdata": "mpmZmZmZEUBmZmZmZmYSQGZmZmZmZg5AzczMzMzMDEAAAAAAAAASQDMzMzMzMw9AMzMzMzMzEUBmZmZmZmYSQDMzMzMzMw9AAAAAAAAAEkDNzMzMzMwSQGZmZmZmZhBAmpmZmZmZDUAAAAAAAAAUQAAAAAAAABJAmpmZmZmZEUDNzMzMzMwQQAAAAAAAABJAzczMzMzMEkAAAAAAAAASQAAAAAAAABRAMzMzMzMzEUAAAAAAAAASQJqZmZmZmRFAmpmZmZmZDUBmZmZmZmYSQJqZmZmZmRNAmpmZmZmZEUAzMzMzMzMRQDMzMzMzMxNAmpmZmZmZDUAzMzMzMzMRQJqZmZmZmRFAMzMzMzMzD0CamZmZmZkNQM3MzMzMzBBAzczMzMzMEECamZmZmZkRQM3MzMzMzBBAmpmZmZmZEUAAAAAAAAASQM3MzMzMzBJAZmZmZmZmEkBmZmZmZmYKQAAAAAAAABJAmpmZmZmZDUAzMzMzMzMLQGZmZmZmZhJAZmZmZmZmEEAzMzMzMzMPQM3MzMzMzBJAAAAAAAAAEkAAAAAAAAASQAAAAAAAABJAmpmZmZmZEUAzMzMzMzMTQDMzMzMzMxFAAAAAAAAAEkAAAAAAAAAQQM3MzMzMzBBAZmZmZmZmEECamZmZmZkJQDMzMzMzMxFAzczMzMzMEEBmZmZmZmYOQDMzMzMzMw9AmpmZmZmZEUAzMzMzMzMRQAAAAAAAABJAAAAAAAAAEkAAAAAAAAASQGZmZmZmZhJAAAAAAAAADEAzMzMzMzMPQM3MzMzMzBBAAAAAAAAAEECamZmZmZkRQDMzMzMzMxNAZmZmZmZmEEBmZmZmZmYSQDMzMzMzMw9AAAAAAAAADEAzMzMzMzMTQJqZmZmZmRFAmpmZmZmZE0AzMzMzMzMPQDMzMzMzMxFAMzMzMzMzEUDNzMzMzMwSQAAAAAAAABJAmpmZmZmZDUDNzMzMzMwQQM3MzMzMzBBAZmZmZmZmEEAAAAAAAAASQGZmZmZmZhJAAAAAAAAAEEBmZmZmZmYOQDMzMzMzMxFAAAAAAAAAEkAzMzMzMzMPQM3MzMzMzBJAmpmZmZmZEUBmZmZmZmYQQDMzMzMzMw9AAAAAAAAAEEDNzMzMzMwSQJqZmZmZmQ1AMzMzMzMzC0DNzMzMzMwQQM3MzMzMzBBAAAAAAAAAEkAzMzMzMzMTQAAAAAAAABJAzczMzMzMDECamZmZmZkRQAAAAAAAAAxAzczMzMzMDEBmZmZmZmYSQDMzMzMzMw9AmpmZmZmZEUAAAAAAAAAQQJqZmZmZmQ1AMzMzMzMzEUCamZmZmZkRQJqZmZmZmQlAMzMzMzMzD0DNzMzMzMwSQGZmZmZmZhJAZmZmZmZmEkDNzMzMzMwQQAAAAAAAABJAZmZmZmZmEkAAAAAAAAAUQGZmZmZmZg5AAAAAAAAAEEDNzMzMzMwMQM3MzMzMzBBAMzMzMzMzEUA="
+          },
+          "xaxis": "x",
+          "y": {
+            "dtype": "f8",
+            "bdata": "AAAAAACARkAAAAAAAEBQQAAAAAAAgE9AAAAAAACASUAAAAAAAMBYQAAAAAAAgEFAAAAAAAAASkAAAAAAAABUQAAAAAAAgEJAAAAAAACAT0AAAAAAAIBAQAAAAAAAAERAAAAAAAAAR0AAAAAAAAAoQAAAAAAAgEdAAAAAAADAYEAAAAAAAABFQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABxAAAAAAAAACEAAAAAAAAA9QAAAAAAAgFBAAAAAAACAQUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMBXQAAAAAAAQFFAAAAAAAAAJEAAAAAAAEBbQAAAAAAAAAhAAAAAAACASUAAAAAAAIBAQAAAAAAAAABAAAAAAADAV0AAAAAAAIBQQAAAAAAAAABAAAAAAAAAUEAAAAAAAAAAAAAAAAAAADJAAAAAAAAAQ0AAAAAAAEBQQAAAAAAAADNAAAAAAAAATEAAAAAAAIBBQAAAAAAAADhAAAAAAACAUEAAAAAAACBhQAAAAAAAAAAAAAAAAAAASkAAAAAAAIBKQAAAAAAAgEpAAAAAAACASUAAAAAAAADwPwAAAAAAADpAAAAAAADAY0AAAAAAAEBTQAAAAAAAAD1AAAAAAAAAVUAAAAAAAEBgQAAAAAAAACRAAAAAAABAVEAAAAAAAIBFQAAAAAAAgEdAAAAAAAAAMUAAAAAAAAAAAAAAAAAAAFFAAAAAAAAAQEAAAAAAAAA1QAAAAAAAgElAAAAAAADAU0AAAAAAAABGQAAAAAAAADNAAAAAAADAW0AAAAAAAAAAAAAAAAAAgEVAAAAAAAAASEAAAAAAAAAwQAAAAAAAAFFAAAAAAAAARkAAAAAAAABJQAAAAAAAgEpAAAAAAAAAMEAAAAAAAAA0QAAAAAAAwF1AAAAAAAAA8D8AAAAAAAAiQAAAAAAAwFpAAAAAAACASEAAAAAAAABVQAAAAAAAAE9AAAAAAAAAM0AAAAAAAABEQAAAAAAAAEBAAAAAAACAT0AAAAAAAABCQAAAAAAAADBAAAAAAAAAOkAAAAAAAIBUQAAAAAAAAAAAAAAAAAAATUAAAAAAAABZQAAAAAAAgFBAAAAAAABAUEAAAAAAAABXQAAAAAAAAEVAAAAAAAAAUUAAAAAAAAA6QAAAAAAAgEFAAAAAAAAAREAAAAAAAAAYQAAAAAAAACxAAAAAAAAAN0AAAAAAAAAgQAAAAAAAAD5AAAAAAACAREAAAAAAAIBMQAAAAAAAwFZAAAAAAAAA8D8AAAAAAIBPQAAAAAAAAD9AAAAAAADAU0AAAAAAAAAQQAAAAAAAADxAAAAAAAAAOkAAAAAAAABSQAAAAAAAAE9AAAAAAAAAS0AAAAAAAAAiQAAAAAAAAElAAAAAAAAACEAAAAAAAIBDQAAAAAAAAExAAAAAAAAAVEAAAAAAAEBeQAAAAAAAABRAAAAAAAAAAAA="
+          },
+          "yaxis": "y",
+          "type": "scatter"
+        }
+      ],
+      "layout": {
+        "template": {
+          "data": {
+            "candlestick": [
+              {
+                "decreasing": {
+                  "line": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "line": {
+                    "color": "#000032"
+                  }
+                },
+                "type": "candlestick"
+              }
+            ],
+            "contourcarpet": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contourcarpet"
+              }
+            ],
+            "contour": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contour"
+              }
+            ],
+            "heatmap": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "heatmap"
+              }
+            ],
+            "histogram2d": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "histogram2d"
+              }
+            ],
+            "icicle": [
+              {
+                "textfont": {
+                  "color": "white"
+                },
+                "type": "icicle"
+              }
+            ],
+            "sankey": [
+              {
+                "textfont": {
+                  "color": "#000036"
+                },
+                "type": "sankey"
+              }
+            ],
+            "scatter": [
+              {
+                "marker": {
+                  "line": {
+                    "width": 0
+                  }
+                },
+                "type": "scatter"
+              }
+            ],
+            "table": [
+              {
+                "cells": {
+                  "fill": {
+                    "color": "#000038"
+                  },
+                  "font": {
+                    "color": "#000037"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "header": {
+                  "fill": {
+                    "color": "#000040"
+                  },
+                  "font": {
+                    "color": "#000036"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "type": "table"
+              }
+            ],
+            "waterfall": [
+              {
+                "connector": {
+                  "line": {
+                    "color": "#000036",
+                    "width": 2
+                  }
+                },
+                "decreasing": {
+                  "marker": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "marker": {
+                    "color": "#000032"
+                  }
+                },
+                "totals": {
+                  "marker": {
+                    "color": "#000034"
+                  }
+                },
+                "type": "waterfall"
+              }
+            ]
+          },
+          "layout": {
+            "coloraxis": {
+              "colorscale": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorscale": {
+              "diverging": [
+                [
+                  0.0,
+                  "#000021"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000022"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000023"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000024"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000025"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000026"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000027"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000028"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000029"
+                ],
+                [
+                  1.0,
+                  "#000030"
+                ]
+              ],
+              "sequential": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ],
+              "sequentialminus": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorway": [
+              "#000001",
+              "#000002",
+              "#000003",
+              "#000004",
+              "#000005",
+              "#000006",
+              "#000007",
+              "#000008",
+              "#000009",
+              "#000010"
+            ]
+          }
+        },
+        "xaxis": {
+          "anchor": "y",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "avg_rating"
+          }
+        },
+        "yaxis": {
+          "anchor": "x",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "total_violation_occurrences"
+          }
+        },
+        "legend": {
+          "tracegroupgap": 0
+        },
+        "title": {
+          "text": "Google rating vs. total cited violation occurrences (matched restaurants)"
+        }
+      }
+    }
+  ],
+  "candidate_pool_raw": [],
+  "duration_seconds": 8.26,
+  "usage": {
+    "available": true,
+    "per_call": [
+      {
+        "input_tokens": 1796,
+        "output_tokens": 13,
+        "total_tokens": 1809
+      },
+      {
+        "input_tokens": 2684,
+        "output_tokens": 589,
+        "total_tokens": 3273
+      },
+      {
+        "input_tokens": 3416,
+        "output_tokens": 163,
+        "total_tokens": 3579
+      }
+    ],
+    "input_tokens": 7896,
+    "output_tokens": 765,
+    "total_tokens": 8661
+  },
+  "tokens_per_minute": 62934.9,
+  "estimated_cost_usd": 0.024972,
+  "success": true,
+  "error": null,
+  "chart_image_files": [
+    "2026-08-15T09-54-09.832679+00-00_v1_memory_0857e57e_chart0.png"
+  ]
+}

@@ -1,0 +1,208 @@
+Question: Show me detailed visual analytics and statistics of inspection scores across all establishments.
+
+Variant: v1_memory | Provider: openai | Model: gpt-5.6-terra
+Timestamp: 2026-08-15T10:07:26.207452+00:00 | Duration: 17.73s
+
+--- Answer ---
+## Inspection-score overview
+
+The analysis covers **7,798 scored inspection visits** across **1,291 establishments** with at least one recorded score. There are **8,020 total inspection records**; **222 (2.77%)** have no score recorded.
+
+- **Average score:** **10.29**
+- **Median score:** **7**
+- **Standard deviation:** **12.07**
+- **Range:** **0 to 297**
+- **Zero-score inspections:** **710 (9.1%)**
+
+The mean being higher than the median, together with the maximum of 297, indicates a **right-skewed distribution**: most inspections cluster at relatively low scores, while a smaller number of high-score visits pull the average upward.
+
+## Score distribution
+
+The largest groups were:
+
+| Score band | Inspections | Share |
+|---|---:|---:|
+| 0 | 710 | 9.1% |
+| 1–4 | 2,072 | 26.6% |
+| 5–9 | 1,934 | 24.8% |
+| 10–19 | 1,994 | 25.6% |
+| 20–29 | 672 | 8.6% |
+| 30+ | 416 | 5.3% |
+
+In total, **4,716 inspections (60.5%)** scored below 10, while **1,088 (14.0%)** scored 20 or higher.
+
+## Change over time
+
+Annual average scores varied over the available history:
+
+- The highest annual average in the more recent, higher-volume period was **12.08 in 2022** (869 scored inspections).
+- The average was **12.01 in 2023** (879 inspections) and **11.49 in 2024** (1,227 inspections).
+- It declined to **8.90 in 2025** (1,343 inspections) and **6.33 in 2026** (865 inspections).
+- The 2026 figure is partial-year data relative to the current date, so it should not be treated as a full-year comparison.
+
+The annual median similarly moved from **9 in 2022** to **8 in 2023–24**, **6 in 2025**, and **5 in 2026**.
+
+## By inspection type
+
+Among inspection types with at least 20 scored visits:
+
+| Inspection type | Scored visits | Mean score | Median score | Zero-score share |
+|---|---:|---:|---:|---:|
+| Routine | 7,380 | 10.45 | 8 | 7.9% |
+| Followup | 211 | 6.19 | 3 | 30.3% |
+| Critical Item | 202 | 9.02 | 3 | 28.7% |
+
+Routine inspections account for the overwhelming majority of scored visits (**7,380 of 7,798; 94.6%**). Follow-up and Critical Item visits have lower average and median scores in this dataset, alongside substantially larger shares of zero-score visits.
+
+The charts shown visualize the overall score distribution, score bands, annual average trend, and differences by inspection type.
+
+--- Reasoning trace ---
+Action: get_schema({})
+
+Observation: Project food_health_viz {
+  database_type: 'DuckDB'
+}
+
+Table establishment_keys {
+  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']
+  name varchar [not null]
+  address varchar [not null]
+  city varchar [not null]
+  city_state_zip varchar
+  establishment_type varchar
+  source varchar [note: 'friend_slc | own_scrape']
+  slchd_lat double
+  slchd_lon double
+  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']
+
+  Note: 'SLCHD establishment list, one row per portal listing.'
+}
+
+Table category {
+  category_id integer [pk]
+  category varchar
+}
+
+Table establishments {
+  gmap_id varchar [pk]
+  name varchar
+  address varchar
+  description varchar
+  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']
+  avg_rating double
+  num_of_reviews integer
+  price varchar
+  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']
+
+  Note: 'One row per Google Local place — all restaurants, not just SLCHD-matched.'
+}
+
+Table establishment_attributes {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  attribute varchar [not null]
+
+  indexes { (gmap_id, attribute) [pk] }
+
+  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. "Service options") dropped.'
+}
+
+Table establishment_categories {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  category_id integer [ref: > category.category_id, not null]
+
+  indexes { (gmap_id, category_id) [pk] }
+}
+
+Table gmap_hours {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  day integer [not null, note: '0=Sun … 6=Sat']
+  open_min bigint
+  open_max bigint
+
+  indexes { (gmap_id, day) [pk] }
+
+  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'
+}
+
+Table review {
+  user_id varchar
+  name varchar
+  time bigint
+  rating double
+  text varchar
+  resp varchar
+  gmap_id varchar [ref: > establishments.gmap_id]
+}
+
+Table inspection_types {
+  inspection_type_id integer [pk, note: 'parsed leading number, e.g. "01 - Routine" -> 1']
+  description varchar [note: 'e.g. "Routine"']
+}
+
+Table inspections {
+  inspection_id bigint [pk, increment]
+  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]
+  inspection_date date [not null]
+  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable — 27 rows have no type']
+  inspection_score integer
+
+  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'
+}
+
+Table violation_codes {
+  violation_code_id integer [pk, increment]
+  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. "4.5.18"']
+  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']
+  critical boolean [not null]
+}
+
+Table violations {
+  violation_id bigint [pk, increment]
+  inspection_id bigint [ref: > inspections.inspection_id, not null]
+  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]
+  violation_description varchar [note: 'per-occurrence free text']
+  violation_occurrences integer
+  violation_cos boolean [note: 'corrected on site']
+  violation_phr varchar [note: 'public health rationale']
+
+  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'
+}
+
+
+Action: run_sql({'query': 'WITH scored AS (\n  SELECT inspection_score\n  FROM inspections\n  WHERE inspection_score IS NOT NULL\n)\nSELECT\n  COUNT(*) AS scored_inspections,\n  MIN(inspection_score) AS min_score,\n  MAX(inspection_score) AS max_score,\n  ROUND(AVG(inspection_score), 2) AS mean_score,\n  MEDIAN(inspection_score) AS median_score,\n  ROUND(STDDEV_SAMP(inspection_score), 2) AS sd_score,\n  SUM(CASE WHEN inspection_score = 0 THEN 1 ELSE 0 END) AS zero_score_inspections,\n  ROUND(100.0 * SUM(CASE WHEN inspection_score = 0 THEN 1 ELSE 0 END) / COUNT(*), 1) AS zero_score_pct\nFROM scored;'})
+
+Action: run_sql({'query': "SELECT\n  CASE\n    WHEN inspection_score = 0 THEN '0'\n    WHEN inspection_score BETWEEN 1 AND 4 THEN '1–4'\n    WHEN inspection_score BETWEEN 5 AND 9 THEN '5–9'\n    WHEN inspection_score BETWEEN 10 AND 19 THEN '10–19'\n    WHEN inspection_score BETWEEN 20 AND 29 THEN '20–29'\n    ELSE '30+'\n  END AS score_band,\n  CASE\n    WHEN inspection_score = 0 THEN 1\n    WHEN inspection_score BETWEEN 1 AND 4 THEN 2\n    WHEN inspection_score BETWEEN 5 AND 9 THEN 3\n    WHEN inspection_score BETWEEN 10 AND 19 THEN 4\n    WHEN inspection_score BETWEEN 20 AND 29 THEN 5\n    ELSE 6\n  END AS band_order,\n  COUNT(*) AS inspections,\n  ROUND(100.0 * COUNT(*) / SUM(COUNT(*)) OVER (), 1) AS pct_of_scored_inspections\nFROM inspections\nWHERE inspection_score IS NOT NULL\nGROUP BY 1, 2\nORDER BY band_order;"})
+
+Action: run_sql({'query': 'SELECT\n  EXTRACT(YEAR FROM inspection_date)::INTEGER AS inspection_year,\n  COUNT(*) AS scored_inspections,\n  ROUND(AVG(inspection_score), 2) AS mean_score,\n  MEDIAN(inspection_score) AS median_score,\n  ROUND(100.0 * SUM(CASE WHEN inspection_score = 0 THEN 1 ELSE 0 END) / COUNT(*), 1) AS zero_score_pct\nFROM inspections\nWHERE inspection_score IS NOT NULL\nGROUP BY 1\nORDER BY inspection_year;'})
+
+Action: run_sql({'query': 'SELECT\n  it.description AS inspection_type,\n  COUNT(*) AS scored_inspections,\n  ROUND(AVG(i.inspection_score), 2) AS mean_score,\n  MEDIAN(i.inspection_score) AS median_score,\n  ROUND(100.0 * SUM(CASE WHEN i.inspection_score = 0 THEN 1 ELSE 0 END) / COUNT(*), 1) AS zero_score_pct\nFROM inspections i\nLEFT JOIN inspection_types it ON i.inspection_type_id = it.inspection_type_id\nWHERE i.inspection_score IS NOT NULL\nGROUP BY 1\nHAVING COUNT(*) >= 20\nORDER BY scored_inspections DESC;'})
+
+Action: run_sql({'query': 'SELECT\n  COUNT(*) AS total_inspections,\n  SUM(CASE WHEN inspection_score IS NULL THEN 1 ELSE 0 END) AS missing_score_inspections,\n  ROUND(100.0 * SUM(CASE WHEN inspection_score IS NULL THEN 1 ELSE 0 END) / COUNT(*), 2) AS missing_score_pct,\n  COUNT(DISTINCT slchd_establishment_key) AS establishments_with_inspections,\n  COUNT(DISTINCT CASE WHEN inspection_score IS NOT NULL THEN slchd_establishment_key END) AS establishments_with_scored_inspections\nFROM inspections;'})
+
+Observation: {"row_count": 1, "truncated": false, "rows": [{"scored_inspections": 7798, "min_score": 0, "max_score": 297, "mean_score": 10.29, "median_score": 7.0, "sd_score": 12.07, "zero_score_inspections": 710.0, "zero_score_pct": 9.1}]}
+
+Observation: {"row_count": 6, "truncated": false, "rows": [{"score_band": "0", "band_order": 1, "inspections": 710, "pct_of_scored_inspections": 9.1}, {"score_band": "1\u20134", "band_order": 2, "inspections": 2072, "pct_of_scored_inspections": 26.6}, {"score_band": "5\u20139", "band_order": 3, "inspections": 1934, "pct_of_scored_inspections": 24.8}, {"score_band": "10\u201319", "band_order": 4, "inspections": 1994, "pct_of_scored_inspections": 25.6}, {"score_band": "20\u201329", "band_order": 5, "inspections": 672, "pct_of_scored_inspections": 8.6}, {"score_band": "30+", "band_order": 6, "inspections": 416, "pct_of_scored_inspections": 5.3}]}
+
+Observation: {"row_count": 18, "truncated": false, "rows": [{"inspection_year": 2009, "scored_inspections": 3, "mean_score": 7.0, "median_score": 4.0, "zero_score_pct": 0.0}, {"inspection_year": 2010, "scored_inspections": 5, "mean_score": 4.8, "median_score": 3.0, "zero_score_pct": 20.0}, {"inspection_year": 2011, "scored_inspections": 7, "mean_score": 6.71, "median_score": 7.0, "zero_score_pct": 14.3}, {"inspection_year": 2012, "scored_inspections": 10, "mean_score": 6.0, "median_score": 5.5, "zero_score_pct": 0.0}, {"inspection_year": 2013, "scored_inspections": 22, "mean_score": 8.91, "median_score": 8.5, "zero_score_pct": 9.1}, {"inspection_year": 2014, "scored_inspections": 70, "mean_score": 8.73, "median_score": 6.0, "zero_score_pct": 10.0}, {"inspection_year": 2015, "scored_inspections": 77, "mean_score": 13.0, "median_score": 11.0, "zero_score_pct": 1.3}, {"inspection_year": 2016, "scored_inspections": 158, "mean_score": 12.25, "median_score": 8.0, "zero_score_pct": 3.8}, {"inspection_year": 2017, "scored_inspections": 239, "mean_score": 11.41, "median_score": 8.0, "zero_score_pct": 5.4}, {"inspection_year": 2018, "scored_inspections": 456, "mean_score": 11.09, "median_score": 9.0, "zero_score_pct": 5.9}, {"inspection_year": 2019, "scored_inspections": 601, "mean_score": 10.19, "median_score": 8.0, "zero_score_pct": 9.0}, {"inspection_year": 2020, "scored_inspections": 362, "mean_score": 9.8, "median_score": 7.0, "zero_score_pct": 9.1}, {"inspection_year": 2021, "scored_inspections": 605, "mean_score": 10.4, "median_score": 8.0, "zero_score_pct": 10.4}, {"inspection_year": 2022, "scored_inspections": 869, "mean_score": 12.08, "median_score": 9.0, "zero_score_pct": 8.1}, {"inspection_year": 2023, "scored_inspections": 879, "mean_score": 12.01, "median_score": 8.0, "zero_score_pct": 8.2}, {"inspection_year": 2024, "scored_inspections": 1227, "mean_score": 11.49, "median_score": 8.0, "zero_score_pct": 10.5}, {"inspection_year": 2025, "scored_inspections": 1343, "mean_score": 8.9, "median_score": 6.0, "zero_score_pct": 11.0}, {"inspection_year": 2026, "scored_inspections": 865, "mean_score": 6.33, "median_score": 5.0, "zero_score_pct": 9.6}]}
+
+Observation: {"row_count": 3, "truncated": false, "rows": [{"inspection_type": "Routine", "scored_inspections": 7380, "mean_score": 10.45, "median_score": 8.0, "zero_score_pct": 7.9}, {"inspection_type": "Followup", "scored_inspections": 211, "mean_score": 6.19, "median_score": 3.0, "zero_score_pct": 30.3}, {"inspection_type": "Critical Item", "scored_inspections": 202, "mean_score": 9.02, "median_score": 3.0, "zero_score_pct": 28.7}]}
+
+Observation: {"row_count": 1, "truncated": false, "rows": [{"total_inspections": 8020, "missing_score_inspections": 222.0, "missing_score_pct": 2.77, "establishments_with_inspections": 1315, "establishments_with_scored_inspections": 1291}]}
+
+Action: plot_chart({'chart_type': 'histogram', 'query': 'SELECT inspection_score FROM inspections WHERE inspection_score IS NOT NULL', 'x': 'inspection_score', 'title': 'Distribution of scored inspection visits across Salt Lake County establishments'})
+
+Action: plot_chart({'chart_type': 'line', 'query': 'SELECT EXTRACT(YEAR FROM inspection_date)::INTEGER AS inspection_year, ROUND(AVG(inspection_score), 2) AS mean_score, MEDIAN(inspection_score) AS median_score FROM inspections WHERE inspection_score IS NOT NULL GROUP BY 1 ORDER BY 1', 'x': 'inspection_year', 'y': 'mean_score', 'title': 'Average inspection score by year'})
+
+Action: plot_chart({'chart_type': 'bar', 'query': "SELECT CASE WHEN inspection_score = 0 THEN '0' WHEN inspection_score BETWEEN 1 AND 4 THEN '1–4' WHEN inspection_score BETWEEN 5 AND 9 THEN '5–9' WHEN inspection_score BETWEEN 10 AND 19 THEN '10–19' WHEN inspection_score BETWEEN 20 AND 29 THEN '20–29' ELSE '30+' END AS score_band, CASE WHEN inspection_score = 0 THEN 1 WHEN inspection_score BETWEEN 1 AND 4 THEN 2 WHEN inspection_score BETWEEN 5 AND 9 THEN 3 WHEN inspection_score BETWEEN 10 AND 19 THEN 4 WHEN inspection_score BETWEEN 20 AND 29 THEN 5 ELSE 6 END AS band_order, COUNT(*) AS inspections FROM inspections WHERE inspection_score IS NOT NULL GROUP BY 1,2 ORDER BY band_order", 'x': 'score_band', 'y': 'inspections', 'title': 'Scored inspections by score band'})
+
+Action: plot_chart({'chart_type': 'bar', 'query': "SELECT COALESCE(it.description, 'Unspecified') AS inspection_type, COUNT(*) AS scored_inspections, ROUND(AVG(i.inspection_score), 2) AS mean_score FROM inspections i LEFT JOIN inspection_types it ON i.inspection_type_id = it.inspection_type_id WHERE i.inspection_score IS NOT NULL GROUP BY 1 HAVING COUNT(*) >= 20 ORDER BY scored_inspections DESC", 'x': 'inspection_type', 'y': 'mean_score', 'title': 'Average inspection score by inspection type (types with 20+ scored visits)'})
+
+Observation: Chart created: 'Distribution of scored inspection visits across Salt Lake County establishments' (histogram, 7798 rows). It will be shown to the user below your answer.
+
+Observation: Chart created: 'Average inspection score by year' (line, 18 rows). It will be shown to the user below your answer.
+
+Observation: Chart created: 'Scored inspections by score band' (bar, 6 rows). It will be shown to the user below your answer.
+
+Observation: Chart created: 'Average inspection score by inspection type (types with 20+ scored visits)' (bar, 3 rows). It will be shown to the user below your answer.
+
+--- Usage: 17028 tokens, ~$0.0544 ---

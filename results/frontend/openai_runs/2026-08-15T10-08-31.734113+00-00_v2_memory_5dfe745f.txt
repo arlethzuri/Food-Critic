@@ -1,0 +1,217 @@
+Question: For which restaurants has the number of critical violations increased, and for which has it decreased over the last 5 years? Show me a detailed visual analysis.
+
+Variant: v2_memory | Provider: openai | Model: gpt-5.6-terra
+Timestamp: 2026-08-15T10:08:31.734113+00:00 | Duration: 27.64s
+
+--- Answer ---
+## Method
+
+I compared each establishment’s **earliest and latest calendar years with inspection records** during the past five years (from **August 15, 2021 through August 15, 2026**), summing cited critical-violation occurrences within each year. Only establishments with records in **at least two distinct years** are included.
+
+### Overall pattern
+Among **1,120** establishments with comparable multi-year inspection histories:
+
+- **590 decreased** in critical violations
+- **159 increased**
+- **371 had no change**
+
+The first chart summarizes that distribution; the next two show the 15 largest changes in each direction.
+
+## Largest increases
+
+| Restaurant | Address | Earlier year / critical violations | Latest year / critical violations | Change |
+|---|---|---:|---:|---:|
+| Sagato Bakery & Cafe | 44 W 7200 S | 2022: 2 | 2026: 24 | **+22** |
+| Ramen Ichizu | 915 S Washington St | 2025: 4 | 2026: 15 | **+11** |
+| IKEA Draper | 13312 S Pony Express Rd | 2021: 1 | 2025: 7 | **+6** |
+| Granatos Gourmet Market | 4051 W Terminal Dr | 2022: 0 | 2025: 6 | **+6** |
+| Seven Eleven #27330B | 1285 N Redwood Rd | 2022: 1 | 2025: 6 | **+5** |
+| Texas Roadhouse | 1904 W 5400 S | 2022: 10 | 2025: 14 | **+4** |
+| Dees Restaurant | 2085 S Redwood Rd | 2021: 2 | 2025: 6 | **+4** |
+| Sodexo Live @ MAEC Kitchen | 9575 S State St | 2022: 2 | 2026: 6 | **+4** |
+| WinCo | 11969 S Carlsbad Wy | 2023: 1 | 2026: 5 | **+4** |
+| Applebees West Valley | 2175 W City Center Ct | 2022: 0 | 2026: 4 | **+4** |
+| Burger King | 3920 W Terminal Dr | 2023: 0 | 2025: 4 | **+4** |
+| Mountain America Credit Union Cairns Cafe | 9800 S Monroe St | 2022: 3 | 2026: 6 | **+3** |
+| Volunteers of America Recovery on Rdwd | 1875 S Redwood Rd | 2023: 3 | 2025: 6 | **+3** |
+| Bon Appetit @ WGU | 4001 S 700 E | 2022: 2 | 2026: 5 | **+3** |
+| J Dawgs 513/Delta Center | 301 W South Temple St | 2024: 1 | 2025: 4 | **+3** |
+
+## Largest decreases
+
+| Restaurant | Address | Earlier year / critical violations | Latest year / critical violations | Change |
+|---|---|---:|---:|---:|
+| Brighton Molly Green | 12601 E Big Cottonwoodcyn Rd | 2022: 22 | 2026: 0 | **−22** |
+| Jersey Mikes Subs | 5510 W 13400 S | 2022: 19 | 2026: 0 | **−19** |
+| Cafe Rio | 5567 W High Market Dr | 2022: 22 | 2026: 4 | **−18** |
+| Penny Anns Cafe | 1810 S Main St | 2022: 16 | 2026: 1 | **−15** |
+| Chilis Southwest Grill #2 | 1070 E Fort Union Blvd | 2021: 14 | 2026: 0 | **−14** |
+| Heritage Convenience Store | 151 S Connor | 2022: 12 | 2026: 0 | **−12** |
+| McDonalds #5688 | 3900 W 5400 S | 2022: 12 | 2026: 0 | **−12** |
+| Saola | 7307 S Canyon Center Pkwy | 2022: 12 | 2026: 0 | **−12** |
+| Olive Garden #1565 | 10590 S State St | 2022: 12 | 2026: 1 | **−11** |
+| Barbacoa | 1335 S 700 W | 2022: 10 | 2026: 0 | **−10** |
+| The Store | 2050 E 6200 S | 2022: 9 | 2026: 0 | **−9** |
+| Apollo Burgers | 256 W 3300 S | 2022: 10 | 2026: 1 | **−9** |
+| Firehouse Subs #1821 | 1008 E Ft Union Blvd | 2022: 10 | 2026: 1 | **−9** |
+| Valley Bowling Bar | 3951 W 5400 S | 2025: 10 | 2026: 1 | **−9** |
+| Vessel Kitchen | 1146 E Fort Union Blvd | 2022: 10 | 2026: 1 | **−9** |
+
+### Interpretation notes
+- These are changes between the **first and last observed inspection years**, not necessarily a smooth year-by-year trend.
+- A decrease to zero means **no critical violations were cited in the latest observed year**, not that the establishment has never had violations.
+- Inspection frequency and the number/type of visits can differ across establishments, so these comparisons are best used as a screening view rather than a definitive measure of long-term food-safety performance.
+
+
+--- Reasoning trace ---
+Action: get_schema({})
+
+Observation: Project food_health_viz {
+  database_type: 'DuckDB'
+}
+
+Table establishment_keys {
+  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']
+  name varchar [not null]
+  address varchar [not null]
+  city varchar [not null]
+  city_state_zip varchar
+  establishment_type varchar
+  source varchar [note: 'friend_slc | own_scrape']
+  slchd_lat double
+  slchd_lon double
+  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']
+
+  Note: 'SLCHD establishment list, one row per portal listing.'
+}
+
+Table category {
+  category_id integer [pk]
+  category varchar
+}
+
+Table establishments {
+  gmap_id varchar [pk]
+  name varchar
+  address varchar
+  description varchar
+  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']
+  avg_rating double
+  num_of_reviews integer
+  price varchar
+  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']
+
+  Note: 'One row per Google Local place — all restaurants, not just SLCHD-matched.'
+}
+
+Table establishment_attributes {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  attribute varchar [not null]
+
+  indexes { (gmap_id, attribute) [pk] }
+
+  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. "Service options") dropped.'
+}
+
+Table establishment_categories {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  category_id integer [ref: > category.category_id, not null]
+
+  indexes { (gmap_id, category_id) [pk] }
+}
+
+Table gmap_hours {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  day integer [not null, note: '0=Sun … 6=Sat']
+  open_min bigint
+  open_max bigint
+
+  indexes { (gmap_id, day) [pk] }
+
+  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'
+}
+
+Table review {
+  user_id varchar
+  name varchar
+  time bigint
+  rating double
+  text varchar
+  resp varchar
+  gmap_id varchar [ref: > establishments.gmap_id]
+}
+
+Table inspection_types {
+  inspection_type_id integer [pk, note: 'parsed leading number, e.g. "01 - Routine" -> 1']
+  description varchar [note: 'e.g. "Routine"']
+}
+
+Table inspections {
+  inspection_id bigint [pk, increment]
+  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]
+  inspection_date date [not null]
+  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable — 27 rows have no type']
+  inspection_score integer
+
+  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'
+}
+
+Table violation_codes {
+  violation_code_id integer [pk, increment]
+  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. "4.5.18"']
+  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']
+  critical boolean [not null]
+}
+
+Table violations {
+  violation_id bigint [pk, increment]
+  inspection_id bigint [ref: > inspections.inspection_id, not null]
+  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]
+  violation_description varchar [note: 'per-occurrence free text']
+  violation_occurrences integer
+  violation_cos boolean [note: 'corrected on site']
+  violation_phr varchar [note: 'public health rationale']
+
+  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'
+}
+
+
+Action: run_sql({'query': "WITH annual AS (\n  SELECT i.slchd_establishment_key,\n         ek.name,\n         ek.address,\n         EXTRACT(YEAR FROM i.inspection_date)::INTEGER AS year,\n         SUM(CASE WHEN vc.critical THEN COALESCE(v.violation_occurrences, 1) ELSE 0 END) AS critical_violations\n  FROM inspections i\n  JOIN establishment_keys ek ON ek.slchd_establishment_key = i.slchd_establishment_key\n  LEFT JOIN violations v ON v.inspection_id = i.inspection_id\n  LEFT JOIN violation_codes vc ON vc.violation_code_id = v.violation_code_id\n  WHERE i.inspection_date >= CURRENT_DATE - INTERVAL '5 years'\n  GROUP BY 1,2,3,4\n), endpoints AS (\n  SELECT *,\n         ROW_NUMBER() OVER (PARTITION BY slchd_establishment_key ORDER BY year ASC) AS rn_first,\n         ROW_NUMBER() OVER (PARTITION BY slchd_establishment_key ORDER BY year DESC) AS rn_last\n  FROM annual\n), paired AS (\n  SELECT slchd_establishment_key,\n         MAX(name) AS name,\n         MAX(address) AS address,\n         MAX(CASE WHEN rn_first=1 THEN year END) AS first_year,\n         MAX(CASE WHEN rn_first=1 THEN critical_violations END) AS first_critical,\n         MAX(CASE WHEN rn_last=1 THEN year END) AS last_year,\n         MAX(CASE WHEN rn_last=1 THEN critical_violations END) AS last_critical\n  FROM endpoints\n  GROUP BY 1\n  HAVING COUNT(*) >= 2\n)\nSELECT CASE WHEN last_critical > first_critical THEN 'Increased' WHEN last_critical < first_critical THEN 'Decreased' ELSE 'No change' END AS direction,\n       COUNT(*) AS restaurant_count\nFROM paired\nGROUP BY 1\nORDER BY restaurant_count DESC;"})
+
+Action: run_sql({'query': "WITH annual AS (\n  SELECT i.slchd_establishment_key,\n         ek.name,\n         ek.address,\n         EXTRACT(YEAR FROM i.inspection_date)::INTEGER AS year,\n         SUM(CASE WHEN vc.critical THEN COALESCE(v.violation_occurrences, 1) ELSE 0 END) AS critical_violations\n  FROM inspections i\n  JOIN establishment_keys ek ON ek.slchd_establishment_key = i.slchd_establishment_key\n  LEFT JOIN violations v ON v.inspection_id = i.inspection_id\n  LEFT JOIN violation_codes vc ON vc.violation_code_id = v.violation_code_id\n  WHERE i.inspection_date >= CURRENT_DATE - INTERVAL '5 years'\n  GROUP BY 1,2,3,4\n), endpoints AS (\n  SELECT *, ROW_NUMBER() OVER (PARTITION BY slchd_establishment_key ORDER BY year ASC) AS rn_first, ROW_NUMBER() OVER (PARTITION BY slchd_establishment_key ORDER BY year DESC) AS rn_last FROM annual\n), paired AS (\n  SELECT slchd_establishment_key, MAX(name) AS name, MAX(address) AS address,\n         MAX(CASE WHEN rn_first=1 THEN year END) AS first_year,\n         MAX(CASE WHEN rn_first=1 THEN critical_violations END) AS first_critical,\n         MAX(CASE WHEN rn_last=1 THEN year END) AS last_year,\n         MAX(CASE WHEN rn_last=1 THEN critical_violations END) AS last_critical\n  FROM endpoints GROUP BY 1 HAVING COUNT(*) >= 2\n)\nSELECT name, address, first_year, first_critical, last_year, last_critical, last_critical-first_critical AS change\nFROM paired\nWHERE last_critical > first_critical\nORDER BY change DESC, last_critical DESC, name\nLIMIT 15;"})
+
+Action: run_sql({'query': "WITH annual AS (\n  SELECT i.slchd_establishment_key,\n         ek.name,\n         ek.address,\n         EXTRACT(YEAR FROM i.inspection_date)::INTEGER AS year,\n         SUM(CASE WHEN vc.critical THEN COALESCE(v.violation_occurrences, 1) ELSE 0 END) AS critical_violations\n  FROM inspections i\n  JOIN establishment_keys ek ON ek.slchd_establishment_key = i.slchd_establishment_key\n  LEFT JOIN violations v ON v.inspection_id = i.inspection_id\n  LEFT JOIN violation_codes vc ON vc.violation_code_id = v.violation_code_id\n  WHERE i.inspection_date >= CURRENT_DATE - INTERVAL '5 years'\n  GROUP BY 1,2,3,4\n), endpoints AS (\n  SELECT *, ROW_NUMBER() OVER (PARTITION BY slchd_establishment_key ORDER BY year ASC) AS rn_first, ROW_NUMBER() OVER (PARTITION BY slchd_establishment_key ORDER BY year DESC) AS rn_last FROM annual\n), paired AS (\n  SELECT slchd_establishment_key, MAX(name) AS name, MAX(address) AS address,\n         MAX(CASE WHEN rn_first=1 THEN year END) AS first_year,\n         MAX(CASE WHEN rn_first=1 THEN critical_violations END) AS first_critical,\n         MAX(CASE WHEN rn_last=1 THEN year END) AS last_year,\n         MAX(CASE WHEN rn_last=1 THEN critical_violations END) AS last_critical\n  FROM endpoints GROUP BY 1 HAVING COUNT(*) >= 2\n)\nSELECT name, address, first_year, first_critical, last_year, last_critical, last_critical-first_critical AS change\nFROM paired\nWHERE last_critical < first_critical\nORDER BY change ASC, last_critical ASC, name\nLIMIT 15;"})
+
+Action: plot_chart({'chart_type': 'bar', 'query': "WITH annual AS (\n  SELECT i.slchd_establishment_key, EXTRACT(YEAR FROM i.inspection_date)::INTEGER AS year,\n         SUM(CASE WHEN vc.critical THEN COALESCE(v.violation_occurrences, 1) ELSE 0 END) AS critical_violations\n  FROM inspections i LEFT JOIN violations v ON v.inspection_id=i.inspection_id LEFT JOIN violation_codes vc ON vc.violation_code_id=v.violation_code_id\n  WHERE i.inspection_date >= CURRENT_DATE - INTERVAL '5 years' GROUP BY 1,2\n), endpoints AS (\n  SELECT *, ROW_NUMBER() OVER(PARTITION BY slchd_establishment_key ORDER BY year) rn_first, ROW_NUMBER() OVER(PARTITION BY slchd_establishment_key ORDER BY year DESC) rn_last FROM annual\n), paired AS (\n  SELECT slchd_establishment_key, MAX(CASE WHEN rn_first=1 THEN critical_violations END) first_critical, MAX(CASE WHEN rn_last=1 THEN critical_violations END) last_critical FROM endpoints GROUP BY 1 HAVING COUNT(*)>=2\n)\nSELECT CASE WHEN last_critical>first_critical THEN 'Increased' WHEN last_critical<first_critical THEN 'Decreased' ELSE 'No change' END AS direction, COUNT(*) AS restaurant_count FROM paired GROUP BY 1 ORDER BY restaurant_count DESC", 'x': 'direction', 'y': 'restaurant_count', 'title': 'Restaurants by Change in Critical Violations: Earliest vs. Latest Inspection Year (Past 5 Years)'})
+
+Action: plot_chart({'chart_type': 'bar', 'query': "WITH annual AS (\n  SELECT i.slchd_establishment_key, ek.name, EXTRACT(YEAR FROM i.inspection_date)::INTEGER AS year,\n         SUM(CASE WHEN vc.critical THEN COALESCE(v.violation_occurrences, 1) ELSE 0 END) AS critical_violations\n  FROM inspections i JOIN establishment_keys ek ON ek.slchd_establishment_key=i.slchd_establishment_key LEFT JOIN violations v ON v.inspection_id=i.inspection_id LEFT JOIN violation_codes vc ON vc.violation_code_id=v.violation_code_id\n  WHERE i.inspection_date >= CURRENT_DATE - INTERVAL '5 years' GROUP BY 1,2,3\n), endpoints AS (\n  SELECT *, ROW_NUMBER() OVER(PARTITION BY slchd_establishment_key ORDER BY year) rn_first, ROW_NUMBER() OVER(PARTITION BY slchd_establishment_key ORDER BY year DESC) rn_last FROM annual\n), paired AS (\n  SELECT slchd_establishment_key, MAX(name) name, MAX(CASE WHEN rn_first=1 THEN critical_violations END) first_critical, MAX(CASE WHEN rn_last=1 THEN critical_violations END) last_critical FROM endpoints GROUP BY 1 HAVING COUNT(*)>=2\n)\nSELECT name, last_critical-first_critical AS change FROM paired WHERE last_critical>first_critical ORDER BY change DESC, name LIMIT 15", 'x': 'name', 'y': 'change', 'title': '15 Largest Increases in Critical Violations (Earliest vs. Latest Inspection Year)'})
+
+Action: plot_chart({'chart_type': 'bar', 'query': "WITH annual AS (\n  SELECT i.slchd_establishment_key, ek.name, EXTRACT(YEAR FROM i.inspection_date)::INTEGER AS year,\n         SUM(CASE WHEN vc.critical THEN COALESCE(v.violation_occurrences, 1) ELSE 0 END) AS critical_violations\n  FROM inspections i JOIN establishment_keys ek ON ek.slchd_establishment_key=i.slchd_establishment_key LEFT JOIN violations v ON v.inspection_id=i.inspection_id LEFT JOIN violation_codes vc ON vc.violation_code_id=v.violation_code_id\n  WHERE i.inspection_date >= CURRENT_DATE - INTERVAL '5 years' GROUP BY 1,2,3\n), endpoints AS (\n  SELECT *, ROW_NUMBER() OVER(PARTITION BY slchd_establishment_key ORDER BY year) rn_first, ROW_NUMBER() OVER(PARTITION BY slchd_establishment_key ORDER BY year DESC) rn_last FROM annual\n), paired AS (\n  SELECT slchd_establishment_key, MAX(name) name, MAX(CASE WHEN rn_first=1 THEN critical_violations END) first_critical, MAX(CASE WHEN rn_last=1 THEN critical_violations END) last_critical FROM endpoints GROUP BY 1 HAVING COUNT(*)>=2\n)\nSELECT name, last_critical-first_critical AS change FROM paired WHERE last_critical<first_critical ORDER BY change ASC, name LIMIT 15", 'x': 'name', 'y': 'change', 'title': '15 Largest Decreases in Critical Violations (Earliest vs. Latest Inspection Year)'})
+
+Observation: {"row_count": 3, "truncated": false, "rows": [{"direction": "Decreased", "restaurant_count": 590}, {"direction": "No change", "restaurant_count": 371}, {"direction": "Increased", "restaurant_count": 159}]}
+
+Observation: {"row_count": 15, "truncated": false, "rows": [{"name": "SAGATO BAKERY & CAFE", "address": "44 W 7200 S", "first_year": 2022, "first_critical": 2.0, "last_year": 2026, "last_critical": 24.0, "change": 22.0}, {"name": "RAMEN ICHIZU", "address": "915 S WASHINGTON ST", "first_year": 2025, "first_critical": 4.0, "last_year": 2026, "last_critical": 15.0, "change": 11.0}, {"name": "IKEA DRAPER", "address": "13312 S PONY EXPRESS RD", "first_year": 2021, "first_critical": 1.0, "last_year": 2025, "last_critical": 7.0, "change": 6.0}, {"name": "GRANATOS GOURMET MARKET", "address": "4051 W TERMINAL DR", "first_year": 2022, "first_critical": 0.0, "last_year": 2025, "last_critical": 6.0, "change": 6.0}, {"name": "SEVEN ELEVEN #27330B", "address": "1285 N REDWOOD RD", "first_year": 2022, "first_critical": 1.0, "last_year": 2025, "last_critical": 6.0, "change": 5.0}, {"name": "TEXAS ROADHOUSE", "address": "1904 W 5400 S", "first_year": 2022, "first_critical": 10.0, "last_year": 2025, "last_critical": 14.0, "change": 4.0}, {"name": "DEES RESTAURANT", "address": "2085 S REDWOOD RD", "first_year": 2021, "first_critical": 2.0, "last_year": 2025, "last_critical": 6.0, "change": 4.0}, {"name": "SODEXO LIVE @ MAEC KITCHEN", "address": "9575 S STATE ST", "first_year": 2022, "first_critical": 2.0, "last_year": 2026, "last_critical": 6.0, "change": 4.0}, {"name": "WINCO", "address": "11969 S CARLSBAD WY", "first_year": 2023, "first_critical": 1.0, "last_year": 2026, "last_critical": 5.0, "change": 4.0}, {"name": "APPLEBEES WEST VALLEY", "address": "2175 W CITY CENTER CT", "first_year": 2022, "first_critical": 0.0, "last_year": 2026, "last_critical": 4.0, "change": 4.0}, {"name": "BURGER KING", "address": "3920 W TERMINAL DR", "first_year": 2023, "first_critical": 0.0, "last_year": 2025, "last_critical": 4.0, "change": 4.0}, {"name": "MOUNTAIN AMERICA CREDIT UNION CAIRNS CAFE", "address": "9800 S MONROE ST", "first_year": 2022, "first_critical": 3.0, "last_year": 2026, "last_critical": 6.0, "change": 3.0}, {"name": "VOLUNTEERS OF AMERICA RECOVERY ON RDWD", "address": "1875 S REDWOOD RD", "first_year": 2023, "first_critical": 3.0, "last_year": 2025, "last_critical": 6.0, "change": 3.0}, {"name": "BON APPETIT @ WGU", "address": "4001 S 700 E", "first_year": 2022, "first_critical": 2.0, "last_year": 2026, "last_critical": 5.0, "change": 3.0}, {"name": "J DAWGS 513/DELTA CENTER", "address": "301 W SOUTH TEMPLE ST", "first_year": 2024, "first_critical": 1.0, "last_year": 2025, "last_critical": 4.0, "change": 3.0}]}
+
+Observation: {"row_count": 15, "truncated": false, "rows": [{"name": "BRIGHTON MOLLY GREEN", "address": "12601 E BIG COTTONWOODCYN RD", "first_year": 2022, "first_critical": 22.0, "last_year": 2026, "last_critical": 0.0, "change": -22.0}, {"name": "JERSEY MIKES SUBS", "address": "5510 W 13400 S", "first_year": 2022, "first_critical": 19.0, "last_year": 2026, "last_critical": 0.0, "change": -19.0}, {"name": "CAFE RIO", "address": "5567 W HIGH MARKET DR", "first_year": 2022, "first_critical": 22.0, "last_year": 2026, "last_critical": 4.0, "change": -18.0}, {"name": "PENNY ANNS CAFE", "address": "1810 S MAIN ST", "first_year": 2022, "first_critical": 16.0, "last_year": 2026, "last_critical": 1.0, "change": -15.0}, {"name": "CHILIS SOUTHWEST GRILL #2", "address": "1070 E FORT UNION BLVD", "first_year": 2021, "first_critical": 14.0, "last_year": 2026, "last_critical": 0.0, "change": -14.0}, {"name": "HERITAGE CONVENIENCE STORE", "address": "151 S CONNOR", "first_year": 2022, "first_critical": 12.0, "last_year": 2026, "last_critical": 0.0, "change": -12.0}, {"name": "MCDONALDS #5688", "address": "3900 W 5400 S", "first_year": 2022, "first_critical": 12.0, "last_year": 2026, "last_critical": 0.0, "change": -12.0}, {"name": "SAOLA", "address": "7307 S CANYON CENTER PKWY", "first_year": 2022, "first_critical": 12.0, "last_year": 2026, "last_critical": 0.0, "change": -12.0}, {"name": "OLIVE GARDEN #1565", "address": "10590 S STATE ST", "first_year": 2022, "first_critical": 12.0, "last_year": 2026, "last_critical": 1.0, "change": -11.0}, {"name": "BARBACOA", "address": "1335 S 700 W", "first_year": 2022, "first_critical": 10.0, "last_year": 2026, "last_critical": 0.0, "change": -10.0}, {"name": "THE STORE", "address": "2050 E 6200 S", "first_year": 2022, "first_critical": 9.0, "last_year": 2026, "last_critical": 0.0, "change": -9.0}, {"name": "APOLLO BURGERS", "address": "256 W 3300 S", "first_year": 2022, "first_critical": 10.0, "last_year": 2026, "last_critical": 1.0, "change": -9.0}, {"name": "FIREHOUSE SUBS #1821", "address": "1008 E FT UNION BLVD", "first_year": 2022, "first_critical": 10.0, "last_year": 2026, "last_critical": 1.0, "change": -9.0}, {"name": "VALLEY BOWLING BAR", "address": "3951 W 5400 S", "first_year": 2025, "first_critical": 10.0, "last_year": 2026, "last_critical": 1.0, "change": -9.0}, {"name": "VESSEL KITCHEN", "address": "1146 E FORT UNION BLVD", "first_year": 2022, "first_critical": 10.0, "last_year": 2026, "last_critical": 1.0, "change": -9.0}]}
+
+Observation: Chart created: 'Restaurants by Change in Critical Violations: Earliest vs. Latest Inspection Year (Past 5 Years)' (bar, 3 rows). It will be shown to the user below your answer.
+
+Observation: SQL error: Parser Error: syntax error at or near "name"
+
+LINE 9:   SELECT slchd_establishment_key, MAX(name) name, MAX(CASE WHEN rn_first=1 THEN critical_violations...
+                                                    ^
+
+Observation: SQL error: Parser Error: syntax error at or near "name"
+
+LINE 9:   SELECT slchd_establishment_key, MAX(name) name, MAX(CASE WHEN rn_first=1 THEN critical_violations...
+                                                    ^
+
+Action: plot_chart({'chart_type': 'bar', 'query': "WITH annual AS (\n  SELECT i.slchd_establishment_key, ek.name AS restaurant_name, EXTRACT(YEAR FROM i.inspection_date)::INTEGER AS year,\n         SUM(CASE WHEN vc.critical THEN COALESCE(v.violation_occurrences, 1) ELSE 0 END) AS critical_violations\n  FROM inspections i JOIN establishment_keys ek ON ek.slchd_establishment_key=i.slchd_establishment_key LEFT JOIN violations v ON v.inspection_id=i.inspection_id LEFT JOIN violation_codes vc ON vc.violation_code_id=v.violation_code_id\n  WHERE i.inspection_date >= CURRENT_DATE - INTERVAL '5 years' GROUP BY 1,2,3\n), endpoints AS (\n  SELECT *, ROW_NUMBER() OVER(PARTITION BY slchd_establishment_key ORDER BY year) rn_first, ROW_NUMBER() OVER(PARTITION BY slchd_establishment_key ORDER BY year DESC) rn_last FROM annual\n), paired AS (\n  SELECT slchd_establishment_key, MAX(restaurant_name) AS restaurant_name, MAX(CASE WHEN rn_first=1 THEN critical_violations END) AS first_critical, MAX(CASE WHEN rn_last=1 THEN critical_violations END) AS last_critical FROM endpoints GROUP BY 1 HAVING COUNT(*)>=2\n)\nSELECT restaurant_name, last_critical-first_critical AS change FROM paired WHERE last_critical>first_critical ORDER BY change DESC, restaurant_name LIMIT 15", 'x': 'restaurant_name', 'y': 'change', 'title': '15 Largest Increases in Critical Violations (Earliest vs. Latest Inspection Year)'})
+
+Action: plot_chart({'chart_type': 'bar', 'query': "WITH annual AS (\n  SELECT i.slchd_establishment_key, ek.name AS restaurant_name, EXTRACT(YEAR FROM i.inspection_date)::INTEGER AS year,\n         SUM(CASE WHEN vc.critical THEN COALESCE(v.violation_occurrences, 1) ELSE 0 END) AS critical_violations\n  FROM inspections i JOIN establishment_keys ek ON ek.slchd_establishment_key=i.slchd_establishment_key LEFT JOIN violations v ON v.inspection_id=i.inspection_id LEFT JOIN violation_codes vc ON vc.violation_code_id=v.violation_code_id\n  WHERE i.inspection_date >= CURRENT_DATE - INTERVAL '5 years' GROUP BY 1,2,3\n), endpoints AS (\n  SELECT *, ROW_NUMBER() OVER(PARTITION BY slchd_establishment_key ORDER BY year) rn_first, ROW_NUMBER() OVER(PARTITION BY slchd_establishment_key ORDER BY year DESC) rn_last FROM annual\n), paired AS (\n  SELECT slchd_establishment_key, MAX(restaurant_name) AS restaurant_name, MAX(CASE WHEN rn_first=1 THEN critical_violations END) AS first_critical, MAX(CASE WHEN rn_last=1 THEN critical_violations END) AS last_critical FROM endpoints GROUP BY 1 HAVING COUNT(*)>=2\n)\nSELECT restaurant_name, last_critical-first_critical AS change FROM paired WHERE last_critical<first_critical ORDER BY change ASC, restaurant_name LIMIT 15", 'x': 'restaurant_name', 'y': 'change', 'title': '15 Largest Decreases in Critical Violations (Earliest vs. Latest Inspection Year)'})
+
+Observation: Chart created: '15 Largest Increases in Critical Violations (Earliest vs. Latest Inspection Year)' (bar, 15 rows). It will be shown to the user below your answer.
+
+Observation: Chart created: '15 Largest Decreases in Critical Violations (Earliest vs. Latest Inspection Year)' (bar, 15 rows). It will be shown to the user below your answer.
+
+--- Usage: 24667 tokens, ~$0.0927 ---

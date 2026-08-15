@@ -1,0 +1,151 @@
+Question: What's the difference between a critical and a non-critical violation, and how does each affect an inspection score?
+
+Variant: v1_memory | Provider: openai | Model: gpt-5.6-terra
+Timestamp: 2026-08-15T09:57:45.371385+00:00 | Duration: 12.09s
+
+--- Answer ---
+A **critical violation** is a citation whose violation code is flagged as `critical` in the SLCHD portal data. A **non-critical violation** is one flagged `critical = false`. The dataset does not provide a further narrative definition of the risk distinction or a published point schedule by violation type, so I can’t responsibly claim a fixed number of score points per critical versus non-critical citation.
+
+For scoring:
+
+- The **inspection score is total violation points** for that visit: **0 means clean, and higher scores are worse**.
+- Both critical and non-critical citations can contribute to the score, but the available data do **not** establish a universal “critical = X points / non-critical = Y points” rule.
+- In the recorded inspections, critical citations appeared in **9,690 cited-violation rows** (**10,744 occurrences**), while non-critical citations appeared in **22,339 rows** (**25,862 occurrences**).
+- Inspections containing a critical citation had an average score of **21.6** (among citation rows), compared with **15.9** for inspections containing a non-critical citation. That association does not by itself prove the point value of either type, since inspections can contain multiple citations of both types.
+
+The chart shows average inspection scores grouped by whether an inspection had critical citations, non-critical citations, both, or no cited violations.
+
+--- Reasoning trace ---
+Action: get_schema({})
+
+Observation: Project food_health_viz {
+  database_type: 'DuckDB'
+}
+
+Table establishment_keys {
+  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']
+  name varchar [not null]
+  address varchar [not null]
+  city varchar [not null]
+  city_state_zip varchar
+  establishment_type varchar
+  source varchar [note: 'friend_slc | own_scrape']
+  slchd_lat double
+  slchd_lon double
+  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']
+
+  Note: 'SLCHD establishment list, one row per portal listing.'
+}
+
+Table category {
+  category_id integer [pk]
+  category varchar
+}
+
+Table establishments {
+  gmap_id varchar [pk]
+  name varchar
+  address varchar
+  description varchar
+  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']
+  avg_rating double
+  num_of_reviews integer
+  price varchar
+  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']
+
+  Note: 'One row per Google Local place — all restaurants, not just SLCHD-matched.'
+}
+
+Table establishment_attributes {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  attribute varchar [not null]
+
+  indexes { (gmap_id, attribute) [pk] }
+
+  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. "Service options") dropped.'
+}
+
+Table establishment_categories {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  category_id integer [ref: > category.category_id, not null]
+
+  indexes { (gmap_id, category_id) [pk] }
+}
+
+Table gmap_hours {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  day integer [not null, note: '0=Sun … 6=Sat']
+  open_min bigint
+  open_max bigint
+
+  indexes { (gmap_id, day) [pk] }
+
+  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'
+}
+
+Table review {
+  user_id varchar
+  name varchar
+  time bigint
+  rating double
+  text varchar
+  resp varchar
+  gmap_id varchar [ref: > establishments.gmap_id]
+}
+
+Table inspection_types {
+  inspection_type_id integer [pk, note: 'parsed leading number, e.g. "01 - Routine" -> 1']
+  description varchar [note: 'e.g. "Routine"']
+}
+
+Table inspections {
+  inspection_id bigint [pk, increment]
+  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]
+  inspection_date date [not null]
+  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable — 27 rows have no type']
+  inspection_score integer
+
+  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'
+}
+
+Table violation_codes {
+  violation_code_id integer [pk, increment]
+  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. "4.5.18"']
+  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']
+  critical boolean [not null]
+}
+
+Table violations {
+  violation_id bigint [pk, increment]
+  inspection_id bigint [ref: > inspections.inspection_id, not null]
+  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]
+  violation_description varchar [note: 'per-occurrence free text']
+  violation_occurrences integer
+  violation_cos boolean [note: 'corrected on site']
+  violation_phr varchar [note: 'public health rationale']
+
+  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'
+}
+
+
+Action: get_column_glossary({'table_dot_column': 'violation_codes.critical'})
+
+Observation: {"description": "Whether citations of this code are critical. One fixed value per code \u2014 verified across all citations, no code has mixed critical/non-critical citations. (3 codes were found inconsistently labeled in the raw source and were normalized to critical=true; see data/processed/clean_processed.ipynb, 'Fix inconsistent violation criticality'.)", "reference": "slchd_portal"}
+
+Action: get_column_glossary({'table_dot_column': 'inspections.inspection_score'})
+
+Action: run_sql({'query': 'SELECT vc.critical, COUNT(*) AS cited_violation_rows, SUM(COALESCE(v.violation_occurrences, 1)) AS total_occurrences, MIN(i.inspection_score) AS min_score, MAX(i.inspection_score) AS max_score, AVG(i.inspection_score) AS avg_score FROM violations v JOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id JOIN inspections i ON v.inspection_id = i.inspection_id GROUP BY vc.critical ORDER BY vc.critical DESC'})
+
+Action: run_sql({'query': 'SELECT i.inspection_score, SUM(CASE WHEN vc.critical THEN COALESCE(v.violation_occurrences,1) ELSE 0 END) AS critical_occurrences, SUM(CASE WHEN NOT vc.critical THEN COALESCE(v.violation_occurrences,1) ELSE 0 END) AS noncritical_occurrences FROM inspections i LEFT JOIN violations v ON i.inspection_id=v.inspection_id LEFT JOIN violation_codes vc ON v.violation_code_id=vc.violation_code_id GROUP BY i.inspection_id, i.inspection_score ORDER BY i.inspection_score DESC LIMIT 10'})
+
+Observation: {"description": "Total violation points for this inspection. 0 = clean. Higher = worse (confirmed: inspections with any cited violation average score 17.6 vs 1.7 for clean ones).", "reference": "slchd_portal"}
+
+Observation: {"row_count": 2, "truncated": false, "rows": [{"critical": true, "cited_violation_rows": 9690, "total_occurrences": 10744.0, "min_score": 0, "max_score": 186, "avg_score": 21.615376676986585}, {"critical": false, "cited_violation_rows": 22339, "total_occurrences": 25862.0, "min_score": 0, "max_score": 186, "avg_score": 15.911947714758941}]}
+
+Observation: {"row_count": 10, "truncated": false, "rows": [{"inspection_score": 297, "critical_occurrences": 0.0, "noncritical_occurrences": 0.0}, {"inspection_score": 186, "critical_occurrences": 14.0, "noncritical_occurrences": 21.0}, {"inspection_score": 185, "critical_occurrences": 16.0, "noncritical_occurrences": 10.0}, {"inspection_score": 145, "critical_occurrences": 9.0, "noncritical_occurrences": 3.0}, {"inspection_score": 138, "critical_occurrences": 8.0, "noncritical_occurrences": 8.0}, {"inspection_score": 137, "critical_occurrences": 7.0, "noncritical_occurrences": 4.0}, {"inspection_score": 136, "critical_occurrences": 7.0, "noncritical_occurrences": 9.0}, {"inspection_score": 128, "critical_occurrences": 7.0, "noncritical_occurrences": 1.0}, {"inspection_score": 128, "critical_occurrences": 6.0, "noncritical_occurrences": 4.0}, {"inspection_score": 127, "critical_occurrences": 5.0, "noncritical_occurrences": 6.0}]}
+
+Action: plot_chart({'chart_type': 'bar', 'query': "WITH per_inspection AS ( SELECT i.inspection_id, i.inspection_score, SUM(CASE WHEN vc.critical THEN COALESCE(v.violation_occurrences, 1) ELSE 0 END) AS critical_occurrences, SUM(CASE WHEN vc.critical = FALSE THEN COALESCE(v.violation_occurrences, 1) ELSE 0 END) AS noncritical_occurrences FROM inspections i LEFT JOIN violations v ON i.inspection_id = v.inspection_id LEFT JOIN violation_codes vc ON vc.violation_code_id = v.violation_code_id GROUP BY i.inspection_id, i.inspection_score ) SELECT CASE WHEN critical_occurrences > 0 AND noncritical_occurrences > 0 THEN 'Both types cited' WHEN critical_occurrences > 0 THEN 'Critical only' WHEN noncritical_occurrences > 0 THEN 'Non-critical only' ELSE 'No cited violations' END AS citation_group, ROUND(AVG(inspection_score), 1) AS average_inspection_score FROM per_inspection GROUP BY citation_group ORDER BY average_inspection_score DESC", 'title': 'Average inspection score by cited violation type', 'x': 'citation_group', 'y': 'average_inspection_score'})
+
+Observation: Chart created: 'Average inspection score by cited violation type' (bar, 4 rows). It will be shown to the user below your answer.
+
+--- Usage: 15678 tokens, ~$0.0401 ---

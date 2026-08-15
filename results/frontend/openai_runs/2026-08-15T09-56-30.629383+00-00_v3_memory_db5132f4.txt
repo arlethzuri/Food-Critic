@@ -1,0 +1,222 @@
+Question: What does an inspection score mean?
+
+Variant: v3_memory | Provider: openai | Model: gpt-5.6-terra
+Timestamp: 2026-08-15T09:56:30.629383+00:00 | Duration: 10.11s
+
+--- Answer ---
+## What an inspection score represents
+
+An **inspection score** is the numeric result recorded for a specific Salt Lake County Health Department food-establishment inspection. In this dataset, it is stored as an integer on each inspection visit; it is **not** a restaurant rating and should not be compared directly with Google’s 1–5 customer rating.
+
+### How to interpret it
+- **Lower is better:** a score of **0** corresponds to no cited violations on that inspection in this dataset; higher scores indicate more or/or more consequential cited inspection issues.
+- It is a **snapshot of one visit**, not a permanent grade or a prediction of current conditions.
+- Look at the **inspection date, inspection type, cited violations, and repeat history** alongside the score. A single score alone does not say which food-safety practice was involved.
+- An inspection with **no violation rows is treated as clean in this data**, rather than as missing violation detail.
+
+### Important context
+Utah’s food-service rule requires the regulatory authority to inspect food establishments at least every **six months** in the ordinary case, with risk-based exceptions; the rule also distinguishes how violations are handled during inspection and correction. Salt Lake County’s inspection-process page directs the public to its food-service inspection scores and rankings. [R392-100, §8-401.10; Salt Lake County Health Department — Food Inspection Process, p.1]
+
+### Data caveat
+Only **139 of 8,592 establishments (1.6%)** in this dataset have a matched Salt Lake County inspection listing. For the other **98.4%**, absence of inspection history here does **not** mean the restaurant had a clean inspection—it means there is no matched record in this dataset.
+
+### Visualization
+The chart shows the distribution of recorded inspection-score values across inspection visits. Because scores are recorded per visit, use it as context—not as a substitute for reviewing the actual violations and dates for a particular establishment.
+
+Hypothesis: none (confidence: high)
+
+--- Reasoning trace ---
+Action: retrieve_regulation({'query': 'Salt Lake County food establishment inspection score meaning scoring system inspection process'})
+
+Observation: [Salt Lake County Health Dept — Food Inspection Process, p.1]
+Look up recent inspections of any food service establishment in Salt Lake County.
+Services
+View Food Service Inspection Scores and Rankings
+
+---
+
+[R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 8-406 Core Item Violation, p.214]
+inspection frequency based on a written RISK-based 
+inspection schedule that is being uniformly applied 
+throughout the jurisdiction or 
+ 
+(3) The establishment's operation involves only coffee 
+service and other unPACKAGED or prePACKAGED FOOD that 
+is not TIME/TEMPERATURE CONTROL FOR SAFETY FOOD such 
+as carbonated BEVERAGES and snack FOOD such as chips, 
+nuts, popcorn, and pretzels. 
+ 
+(C) The REGULATORY AUTHORITY shall periodically inspect 
+throughout its PERMIT period a TEMPORARY FOOD 
+ESTABLISHMENT that prepares, sells, or serves unPACKAGED 
+TIME/TEMPERATURE CONTROL FOR SAFETY FOOD and that:
+
+---
+
+[R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 8-406 Core Item Violation, p.214]
+211  
+8-4 INSPECTION AND CORRECTION OF VIOLATIONS 
+ 
+Subparts 
+ 
+8-401 Frequency 
+8-402 Competency and Access 
+8-403 Report of Findings 
+8-404 Imminent Health Hazard 
+8-405 Violation of Priority Item or Priority 
+Foundation Item 
+8-406 Core Item Violation 
+ 
+ 
+ 
+Frequency 8-401.10 Establishing Inspection Interval. 
+ 
+(A) Except as specified in ¶¶ (B) and (C) of this section, the 
+REGULATORY AUTHORITY shall inspect a FOOD ESTABLISHMENT at 
+least once every 6 months and twice in a season for seasonal 
+operations. 
+ 
+(B) The REGULATORY AUTHORITY may increase the interval 
+between inspections beyond 6 months if: 
+ 
+(1) The FOOD ESTABLISHMENT is fully operating under an 
+APPROVED and validated HACCP PLAN as specified under 
+§ 8-201.14 and ¶¶ 8-103.12(A) and (B); 
+ 
+(2) The FOOD ESTABLISHMENT is assigned a less frequent 
+inspection frequency based on a written RISK-based 
+inspection schedule that is being uniformly applied 
+throughout the jurisdiction or
+
+---
+
+[R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 8-908.20 Respondent Acceptance of Consent Agreement, p.246]
+the following purposes, according to LAW for gaining access: 
+ 
+(A) If admission to the PREMISES of a FOOD ESTABLISHMENT is 
+denied or other circumstances exist that would justify an 
+inspection order under LAW, to make an inspection including 
+taking photographs; 
+ 
+(B) To examine and sample the FOOD; and 
+ 
+(C) To examine the records on the PREMISES relating to FOOD 
+purchased, received, or used by the FOOD ESTABLISHMENT.
+
+Action: get_schema({})
+
+Observation: Project food_health_viz {
+  database_type: 'DuckDB'
+}
+
+Table establishment_keys {
+  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']
+  name varchar [not null]
+  address varchar [not null]
+  city varchar [not null]
+  city_state_zip varchar
+  establishment_type varchar
+  source varchar [note: 'friend_slc | own_scrape']
+  slchd_lat double
+  slchd_lon double
+  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']
+
+  Note: 'SLCHD establishment list, one row per portal listing.'
+}
+
+Table category {
+  category_id integer [pk]
+  category varchar
+}
+
+Table establishments {
+  gmap_id varchar [pk]
+  name varchar
+  address varchar
+  description varchar
+  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']
+  avg_rating double
+  num_of_reviews integer
+  price varchar
+  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']
+
+  Note: 'One row per Google Local place — all restaurants, not just SLCHD-matched.'
+}
+
+Table establishment_attributes {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  attribute varchar [not null]
+
+  indexes { (gmap_id, attribute) [pk] }
+
+  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. "Service options") dropped.'
+}
+
+Table establishment_categories {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  category_id integer [ref: > category.category_id, not null]
+
+  indexes { (gmap_id, category_id) [pk] }
+}
+
+Table gmap_hours {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  day integer [not null, note: '0=Sun … 6=Sat']
+  open_min bigint
+  open_max bigint
+
+  indexes { (gmap_id, day) [pk] }
+
+  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'
+}
+
+Table review {
+  user_id varchar
+  name varchar
+  time bigint
+  rating double
+  text varchar
+  resp varchar
+  gmap_id varchar [ref: > establishments.gmap_id]
+}
+
+Table inspection_types {
+  inspection_type_id integer [pk, note: 'parsed leading number, e.g. "01 - Routine" -> 1']
+  description varchar [note: 'e.g. "Routine"']
+}
+
+Table inspections {
+  inspection_id bigint [pk, increment]
+  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]
+  inspection_date date [not null]
+  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable — 27 rows have no type']
+  inspection_score integer
+
+  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'
+}
+
+Table violation_codes {
+  violation_code_id integer [pk, increment]
+  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. "4.5.18"']
+  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']
+  critical boolean [not null]
+}
+
+Table violations {
+  violation_id bigint [pk, increment]
+  inspection_id bigint [ref: > inspections.inspection_id, not null]
+  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]
+  violation_description varchar [note: 'per-occurrence free text']
+  violation_occurrences integer
+  violation_cos boolean [note: 'corrected on site']
+  violation_phr varchar [note: 'public health rationale']
+
+  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'
+}
+
+
+Action: plot_chart({'chart_type': 'bar', 'color': '', 'query': 'SELECT inspection_score, COUNT(*) AS inspection_count FROM inspections WHERE inspection_score IS NOT NULL GROUP BY inspection_score ORDER BY inspection_score', 'title': 'Distribution of recorded Salt Lake County inspection scores', 'x': 'inspection_score', 'y': 'inspection_count'})
+
+Observation: Chart created: 'Distribution of recorded Salt Lake County inspection scores' (bar, 89 rows). It will be shown to the user below your answer.
+
+--- Usage: 20277 tokens, ~$0.0462 ---

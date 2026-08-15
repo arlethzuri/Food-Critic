@@ -1,0 +1,879 @@
+{
+  "source": "frontend",
+  "run_id": "7f8ab4ee",
+  "timestamp": "2026-08-15T09:48:04.285308+00:00",
+  "variant": "v3_memory",
+  "provider": "openai",
+  "model": "gpt-5.6-terra",
+  "question": "How many establishments have a Salt Lake County health inspection on record?",
+  "output_text": "## Salt Lake County inspection records\n\n**139 establishments** in the dataset have a matched Salt Lake County Health Department (SLCHD) inspection record on file.\n\nThe accompanying chart compares matched versus unmatched records. This is a limited matched subset: **98.4% of establishments have no matched SLCHD inspection history**, which should not be interpreted as a clean inspection record.",
+  "structured_response": {
+    "narrative_answer": "## Salt Lake County inspection records\n\n**139 establishments** in the dataset have a matched Salt Lake County Health Department (SLCHD) inspection record on file.\n\nThe accompanying chart compares matched versus unmatched records. This is a limited matched subset: **98.4% of establishments have no matched SLCHD inspection history**, which should not be interpreted as a clean inspection record.",
+    "hypothesis": "none",
+    "confidence": "high",
+    "establishment_name": "Salt Lake County establishments dataset",
+    "supporting_evidence": [],
+    "undermining_evidence": [],
+    "candidate_pool": [
+      {
+        "gmap_id": "0x87528b6161c18005:0xb3dbdde5d924dac5",
+        "name": "K-Recipe",
+        "address": "K-Recipe, 3390 State St #34, South Salt Lake, UT 84115",
+        "latitude": 40.6977993,
+        "longitude": -111.889649,
+        "avg_rating": 5.0,
+        "num_of_reviews": 34,
+        "price": null,
+        "distance_mi": null,
+        "slchd_establishment_key": "K RECIPE|3390 S STATE ST|SOUTH SALT LAKE",
+        "inspection_score": 13.0,
+        "critical_violation_count": 21,
+        "total_violation_count": 36,
+        "included": true
+      }
+    ]
+  },
+  "trace_text": "Action: get_schema({})\n\nObservation: Project food_health_viz {\n  database_type: 'DuckDB'\n}\n\nTable establishment_keys {\n  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']\n  name varchar [not null]\n  address varchar [not null]\n  city varchar [not null]\n  city_state_zip varchar\n  establishment_type varchar\n  source varchar [note: 'friend_slc | own_scrape']\n  slchd_lat double\n  slchd_lon double\n  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']\n\n  Note: 'SLCHD establishment list, one row per portal listing.'\n}\n\nTable category {\n  category_id integer [pk]\n  category varchar\n}\n\nTable establishments {\n  gmap_id varchar [pk]\n  name varchar\n  address varchar\n  description varchar\n  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']\n  avg_rating double\n  num_of_reviews integer\n  price varchar\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']\n\n  Note: 'One row per Google Local place \u2014 all restaurants, not just SLCHD-matched.'\n}\n\nTable establishment_attributes {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  attribute varchar [not null]\n\n  indexes { (gmap_id, attribute) [pk] }\n\n  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. \"Service options\") dropped.'\n}\n\nTable establishment_categories {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  category_id integer [ref: > category.category_id, not null]\n\n  indexes { (gmap_id, category_id) [pk] }\n}\n\nTable gmap_hours {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  day integer [not null, note: '0=Sun \u2026 6=Sat']\n  open_min bigint\n  open_max bigint\n\n  indexes { (gmap_id, day) [pk] }\n\n  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'\n}\n\nTable review {\n  user_id varchar\n  name varchar\n  time bigint\n  rating double\n  text varchar\n  resp varchar\n  gmap_id varchar [ref: > establishments.gmap_id]\n}\n\nTable inspection_types {\n  inspection_type_id integer [pk, note: 'parsed leading number, e.g. \"01 - Routine\" -> 1']\n  description varchar [note: 'e.g. \"Routine\"']\n}\n\nTable inspections {\n  inspection_id bigint [pk, increment]\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]\n  inspection_date date [not null]\n  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable \u2014 27 rows have no type']\n  inspection_score integer\n\n  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'\n}\n\nTable violation_codes {\n  violation_code_id integer [pk, increment]\n  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. \"4.5.18\"']\n  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']\n  critical boolean [not null]\n}\n\nTable violations {\n  violation_id bigint [pk, increment]\n  inspection_id bigint [ref: > inspections.inspection_id, not null]\n  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]\n  violation_description varchar [note: 'per-occurrence free text']\n  violation_occurrences integer\n  violation_cos boolean [note: 'corrected on site']\n  violation_phr varchar [note: 'public health rationale']\n\n  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'\n}\n\n\nAction: search_establishments({'category_contains': '', 'limit': 1, 'max_inspection_score': None, 'max_price_level': None, 'min_critical_violations': None, 'min_inspection_score': None, 'min_rating': None, 'name_contains': '', 'near_lat': None, 'near_lon': None, 'radius_mi': None, 'require_inspection_data': True, 'sort_by': 'avg_rating', 'sort_desc': True})\n\nObservation: {\"row_count\": 1, \"rows\": [{\"gmap_id\": \"0x87528b6161c18005:0xb3dbdde5d924dac5\", \"name\": \"K-Recipe\", \"address\": \"K-Recipe, 3390 State St #34, South Salt Lake, UT 84115\", \"latitude\": 40.6977993, \"longitude\": -111.889649, \"avg_rating\": 5.0, \"num_of_reviews\": 34, \"price\": null, \"slchd_establishment_key\": \"K RECIPE|3390 S STATE ST|SOUTH SALT LAKE\", \"distance_mi\": null, \"most_recent_inspection_score\": 13, \"critical_violation_count\": 21, \"total_violation_count\": 36}]}\n\nAction: run_sql({'query': 'SELECT COUNT(*) AS establishments_with_inspection_record FROM establishments WHERE slchd_establishment_key IS NOT NULL'})\n\nObservation: {\"row_count\": 1, \"truncated\": false, \"rows\": [{\"establishments_with_inspection_record\": 139}]}\n\nAction: plot_chart({'chart_type': 'bar', 'color': '', 'query': \"SELECT 'Matched SLCHD inspection record' AS record_status, COUNT(*) AS establishment_count FROM establishments WHERE slchd_establishment_key IS NOT NULL UNION ALL SELECT 'No matched SLCHD inspection record' AS record_status, COUNT(*) AS establishment_count FROM establishments WHERE slchd_establishment_key IS NULL\", 'title': 'Salt Lake County Health-Inspection Record Match Status', 'x': 'record_status', 'y': 'establishment_count'})\n\nObservation: Chart created: 'Salt Lake County Health-Inspection Record Match Status' (bar, 2 rows). It will be shown to the user below your answer.",
+  "timeline": [
+    {
+      "index": 0,
+      "kind": "map",
+      "tool_name": "search_establishments",
+      "tool_args": {
+        "category_contains": "",
+        "limit": 1,
+        "max_inspection_score": null,
+        "max_price_level": null,
+        "min_critical_violations": null,
+        "min_inspection_score": null,
+        "min_rating": null,
+        "name_contains": "",
+        "near_lat": null,
+        "near_lon": null,
+        "radius_mi": null,
+        "require_inspection_data": true,
+        "sort_by": "avg_rating",
+        "sort_desc": true
+      },
+      "caption": "Searching establishments: has SLCHD inspection history",
+      "rows": [
+        {
+          "gmap_id": "0x87528b6161c18005:0xb3dbdde5d924dac5",
+          "name": "K-Recipe",
+          "address": "K-Recipe, 3390 State St #34, South Salt Lake, UT 84115",
+          "latitude": 40.6977993,
+          "longitude": -111.889649,
+          "avg_rating": 5.0,
+          "num_of_reviews": 34,
+          "price": null,
+          "slchd_establishment_key": "K RECIPE|3390 S STATE ST|SOUTH SALT LAKE",
+          "distance_mi": null,
+          "most_recent_inspection_score": 13,
+          "critical_violation_count": 21,
+          "total_violation_count": 36
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "kind": "sql",
+      "tool_name": "run_sql",
+      "tool_args": {
+        "query": "SELECT COUNT(*) AS establishments_with_inspection_record FROM establishments WHERE slchd_establishment_key IS NOT NULL"
+      },
+      "caption": "Running a SQL query",
+      "rows": [
+        {
+          "establishments_with_inspection_record": 139
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "kind": "chart",
+      "tool_name": "plot_chart",
+      "tool_args": {
+        "chart_type": "bar",
+        "color": "",
+        "query": "SELECT 'Matched SLCHD inspection record' AS record_status, COUNT(*) AS establishment_count FROM establishments WHERE slchd_establishment_key IS NOT NULL UNION ALL SELECT 'No matched SLCHD inspection record' AS record_status, COUNT(*) AS establishment_count FROM establishments WHERE slchd_establishment_key IS NULL",
+        "title": "Salt Lake County Health-Inspection Record Match Status",
+        "x": "record_status",
+        "y": "establishment_count"
+      },
+      "caption": "Charting: Salt Lake County Health-Inspection Record Match Status",
+      "rows": []
+    }
+  ],
+  "messages": [
+    {
+      "type": "HumanMessage",
+      "content": "How many establishments have a Salt Lake County health inspection on record?"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "get_schema",
+          "args": {},
+          "id": "call_xabrS5LPqoQkgtxjusOlVOWl",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 3956,
+        "output_tokens": 13,
+        "total_tokens": 3969,
+        "input_token_details": {
+          "audio": 0,
+          "cache_read": 0,
+          "cache_creation": 3953
+        },
+        "output_token_details": {
+          "audio": 0,
+          "reasoning": 0
+        }
+      },
+      "model_name": "gpt-5.6-terra"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "Project food_health_viz {\n  database_type: 'DuckDB'\n}\n\nTable establishment_keys {\n  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']\n  name varchar [not null]\n  address varchar [not null]\n  city varchar [not null]\n  city_state_zip varchar\n  establishment_type varchar\n  source varchar [note: 'friend_slc | own_scrape']\n  slchd_lat double\n  slchd_lon double\n  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']\n\n  Note: 'SLCHD establishment list, one row per portal listing.'\n}\n\nTable category {\n  category_id integer [pk]\n  category varchar\n}\n\nTable establishments {\n  gmap_id varchar [pk]\n  name varchar\n  address varchar\n  description varchar\n  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']\n  avg_rating double\n  num_of_reviews integer\n  price varchar\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']\n\n  Note: 'One row per Google Local place \u2014 all restaurants, not just SLCHD-matched.'\n}\n\nTable establishment_attributes {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  attribute varchar [not null]\n\n  indexes { (gmap_id, attribute) [pk] }\n\n  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. \"Service options\") dropped.'\n}\n\nTable establishment_categories {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  category_id integer [ref: > category.category_id, not null]\n\n  indexes { (gmap_id, category_id) [pk] }\n}\n\nTable gmap_hours {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  day integer [not null, note: '0=Sun \u2026 6=Sat']\n  open_min bigint\n  open_max bigint\n\n  indexes { (gmap_id, day) [pk] }\n\n  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'\n}\n\nTable review {\n  user_id varchar\n  name varchar\n  time bigint\n  rating double\n  text varchar\n  resp varchar\n  gmap_id varchar [ref: > establishments.gmap_id]\n}\n\nTable inspection_types {\n  inspection_type_id integer [pk, note: 'parsed leading number, e.g. \"01 - Routine\" -> 1']\n  description varchar [note: 'e.g. \"Routine\"']\n}\n\nTable inspections {\n  inspection_id bigint [pk, increment]\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]\n  inspection_date date [not null]\n  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable \u2014 27 rows have no type']\n  inspection_score integer\n\n  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'\n}\n\nTable violation_codes {\n  violation_code_id integer [pk, increment]\n  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. \"4.5.18\"']\n  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']\n  critical boolean [not null]\n}\n\nTable violations {\n  violation_id bigint [pk, increment]\n  inspection_id bigint [ref: > inspections.inspection_id, not null]\n  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]\n  violation_description varchar [note: 'per-occurrence free text']\n  violation_occurrences integer\n  violation_cos boolean [note: 'corrected on site']\n  violation_phr varchar [note: 'public health rationale']\n\n  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'\n}\n",
+      "tool_call_id": "call_xabrS5LPqoQkgtxjusOlVOWl",
+      "name": "get_schema"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "search_establishments",
+          "args": {
+            "category_contains": "",
+            "limit": 1,
+            "max_inspection_score": null,
+            "max_price_level": null,
+            "min_critical_violations": null,
+            "min_inspection_score": null,
+            "min_rating": null,
+            "name_contains": "",
+            "near_lat": null,
+            "near_lon": null,
+            "radius_mi": null,
+            "require_inspection_data": true,
+            "sort_by": "avg_rating",
+            "sort_desc": true
+          },
+          "id": "call_BfthavhCBCIiqBrUpRUPpVPY",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 4844,
+        "output_tokens": 93,
+        "total_tokens": 4937,
+        "input_token_details": {
+          "audio": 0,
+          "cache_read": 3953,
+          "cache_creation": 888
+        },
+        "output_token_details": {
+          "audio": 0,
+          "reasoning": 0
+        }
+      },
+      "model_name": "gpt-5.6-terra"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 1, \"rows\": [{\"gmap_id\": \"0x87528b6161c18005:0xb3dbdde5d924dac5\", \"name\": \"K-Recipe\", \"address\": \"K-Recipe, 3390 State St #34, South Salt Lake, UT 84115\", \"latitude\": 40.6977993, \"longitude\": -111.889649, \"avg_rating\": 5.0, \"num_of_reviews\": 34, \"price\": null, \"slchd_establishment_key\": \"K RECIPE|3390 S STATE ST|SOUTH SALT LAKE\", \"distance_mi\": null, \"most_recent_inspection_score\": 13, \"critical_violation_count\": 21, \"total_violation_count\": 36}]}",
+      "tool_call_id": "call_BfthavhCBCIiqBrUpRUPpVPY",
+      "name": "search_establishments"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "SELECT COUNT(*) AS establishments_with_inspection_record FROM establishments WHERE slchd_establishment_key IS NOT NULL"
+          },
+          "id": "call_3OjoTx0tzERMikhfcdiUsr9e",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 5124,
+        "output_tokens": 37,
+        "total_tokens": 5161,
+        "input_token_details": {
+          "audio": 0,
+          "cache_read": 4841,
+          "cache_creation": 280
+        },
+        "output_token_details": {
+          "audio": 0,
+          "reasoning": 0
+        }
+      },
+      "model_name": "gpt-5.6-terra"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 1, \"truncated\": false, \"rows\": [{\"establishments_with_inspection_record\": 139}]}",
+      "tool_call_id": "call_3OjoTx0tzERMikhfcdiUsr9e",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "tool_calls": [
+        {
+          "name": "plot_chart",
+          "args": {
+            "chart_type": "bar",
+            "color": "",
+            "query": "SELECT 'Matched SLCHD inspection record' AS record_status, COUNT(*) AS establishment_count FROM establishments WHERE slchd_establishment_key IS NOT NULL UNION ALL SELECT 'No matched SLCHD inspection record' AS record_status, COUNT(*) AS establishment_count FROM establishments WHERE slchd_establishment_key IS NULL",
+            "title": "Salt Lake County Health-Inspection Record Match Status",
+            "x": "record_status",
+            "y": "establishment_count"
+          },
+          "id": "call_gX5uvs6oEtbOATQwSWk3TWkj",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 5201,
+        "output_tokens": 108,
+        "total_tokens": 5309,
+        "input_token_details": {
+          "audio": 0,
+          "cache_read": 5121,
+          "cache_creation": 77
+        },
+        "output_token_details": {
+          "audio": 0,
+          "reasoning": 0
+        }
+      },
+      "model_name": "gpt-5.6-terra"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "Chart created: 'Salt Lake County Health-Inspection Record Match Status' (bar, 2 rows). It will be shown to the user below your answer.",
+      "tool_call_id": "call_gX5uvs6oEtbOATQwSWk3TWkj",
+      "name": "plot_chart"
+    },
+    {
+      "type": "AIMessage",
+      "content": "{\"establishment_name\":\"Salt Lake County establishments dataset\",\"hypothesis\":\"none\",\"confidence\":\"high\",\"narrative_answer\":\"## Salt Lake County inspection records\\n\\n**139 establishments** in the dataset have a matched Salt Lake County Health Department (SLCHD) inspection record on file.\\n\\nThe accompanying chart compares matched versus unmatched records. This is a limited matched subset: **98.4% of establishments have no matched SLCHD inspection history**, which should not be interpreted as a clean inspection record.\",\"supporting_evidence\":[],\"undermining_evidence\":[],\"candidate_pool\":[]}",
+      "tool_calls": [],
+      "usage_metadata": {
+        "input_tokens": 5352,
+        "output_tokens": 128,
+        "total_tokens": 5480,
+        "input_token_details": {
+          "audio": 0,
+          "cache_read": 5198,
+          "cache_creation": 151
+        },
+        "output_token_details": {
+          "audio": 0,
+          "reasoning": 0
+        }
+      },
+      "model_name": "gpt-5.6-terra"
+    }
+  ],
+  "charts": [
+    {
+      "data": [
+        {
+          "hovertemplate": "record_status=%{x}<br>establishment_count=%{y}<extra></extra>",
+          "legendgroup": "",
+          "marker": {
+            "color": "#000001",
+            "pattern": {
+              "shape": ""
+            }
+          },
+          "name": "",
+          "orientation": "v",
+          "showlegend": false,
+          "textposition": "auto",
+          "x": [
+            "Matched SLCHD inspection record",
+            "No matched SLCHD inspection record"
+          ],
+          "xaxis": "x",
+          "y": {
+            "dtype": "i2",
+            "bdata": "iwAFIQ=="
+          },
+          "yaxis": "y",
+          "type": "bar"
+        }
+      ],
+      "layout": {
+        "template": {
+          "data": {
+            "candlestick": [
+              {
+                "decreasing": {
+                  "line": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "line": {
+                    "color": "#000032"
+                  }
+                },
+                "type": "candlestick"
+              }
+            ],
+            "contourcarpet": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contourcarpet"
+              }
+            ],
+            "contour": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contour"
+              }
+            ],
+            "heatmap": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "heatmap"
+              }
+            ],
+            "histogram2d": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "histogram2d"
+              }
+            ],
+            "icicle": [
+              {
+                "textfont": {
+                  "color": "white"
+                },
+                "type": "icicle"
+              }
+            ],
+            "sankey": [
+              {
+                "textfont": {
+                  "color": "#000036"
+                },
+                "type": "sankey"
+              }
+            ],
+            "scatter": [
+              {
+                "marker": {
+                  "line": {
+                    "width": 0
+                  }
+                },
+                "type": "scatter"
+              }
+            ],
+            "table": [
+              {
+                "cells": {
+                  "fill": {
+                    "color": "#000038"
+                  },
+                  "font": {
+                    "color": "#000037"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "header": {
+                  "fill": {
+                    "color": "#000040"
+                  },
+                  "font": {
+                    "color": "#000036"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "type": "table"
+              }
+            ],
+            "waterfall": [
+              {
+                "connector": {
+                  "line": {
+                    "color": "#000036",
+                    "width": 2
+                  }
+                },
+                "decreasing": {
+                  "marker": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "marker": {
+                    "color": "#000032"
+                  }
+                },
+                "totals": {
+                  "marker": {
+                    "color": "#000034"
+                  }
+                },
+                "type": "waterfall"
+              }
+            ]
+          },
+          "layout": {
+            "coloraxis": {
+              "colorscale": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorscale": {
+              "diverging": [
+                [
+                  0.0,
+                  "#000021"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000022"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000023"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000024"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000025"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000026"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000027"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000028"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000029"
+                ],
+                [
+                  1.0,
+                  "#000030"
+                ]
+              ],
+              "sequential": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ],
+              "sequentialminus": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorway": [
+              "#000001",
+              "#000002",
+              "#000003",
+              "#000004",
+              "#000005",
+              "#000006",
+              "#000007",
+              "#000008",
+              "#000009",
+              "#000010"
+            ]
+          }
+        },
+        "xaxis": {
+          "anchor": "y",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "record_status"
+          }
+        },
+        "yaxis": {
+          "anchor": "x",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "establishment_count"
+          }
+        },
+        "legend": {
+          "tracegroupgap": 0
+        },
+        "title": {
+          "text": "Salt Lake County Health-Inspection Record Match Status"
+        },
+        "barmode": "relative"
+      }
+    }
+  ],
+  "candidate_pool_raw": [
+    {
+      "gmap_id": "0x87528b6161c18005:0xb3dbdde5d924dac5",
+      "name": "K-Recipe",
+      "address": "K-Recipe, 3390 State St #34, South Salt Lake, UT 84115",
+      "latitude": 40.6977993,
+      "longitude": -111.889649,
+      "avg_rating": 5.0,
+      "num_of_reviews": 34,
+      "price": null,
+      "slchd_establishment_key": "K RECIPE|3390 S STATE ST|SOUTH SALT LAKE",
+      "distance_mi": null,
+      "most_recent_inspection_score": 13,
+      "critical_violation_count": 21,
+      "total_violation_count": 36
+    }
+  ],
+  "duration_seconds": 9.13,
+  "usage": {
+    "available": true,
+    "per_call": [
+      {
+        "input_tokens": 3956,
+        "output_tokens": 13,
+        "total_tokens": 3969
+      },
+      {
+        "input_tokens": 4844,
+        "output_tokens": 93,
+        "total_tokens": 4937
+      },
+      {
+        "input_tokens": 5124,
+        "output_tokens": 37,
+        "total_tokens": 5161
+      },
+      {
+        "input_tokens": 5201,
+        "output_tokens": 108,
+        "total_tokens": 5309
+      },
+      {
+        "input_tokens": 5352,
+        "output_tokens": 128,
+        "total_tokens": 5480
+      }
+    ],
+    "input_tokens": 24477,
+    "output_tokens": 379,
+    "total_tokens": 24856
+  },
+  "tokens_per_minute": 163372.7,
+  "estimated_cost_usd": 0.053502,
+  "success": true,
+  "error": null,
+  "chart_image_files": [
+    "2026-08-15T09-48-04.285308+00-00_v3_memory_7f8ab4ee_chart0.png"
+  ]
+}

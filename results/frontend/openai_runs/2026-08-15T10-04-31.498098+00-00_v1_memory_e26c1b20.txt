@@ -1,0 +1,134 @@
+Question: What does the issue category "cold holding" mean?
+
+Variant: v1_memory | Provider: openai | Model: gpt-5.6-terra
+Timestamp: 2026-08-15T10:04:31.498098+00:00 | Duration: 6.97s
+
+--- Answer ---
+“Cold holding” refers to keeping foods that need temperature control—such as milk or other potentially hazardous foods—properly refrigerated while they are stored or displayed.
+
+In this dataset, it appears as violation code **4.3.59**, labeled **“Cold Holding*,”** and it is marked **critical**. Examples cited by inspectors include milk held at **47°F** in a cold-holding unit and milk left at **58°F** on a counter before being moved into refrigeration.
+
+The chart shows the dataset’s cited cold-holding violations by code.
+
+--- Reasoning trace ---
+Action: get_schema({})
+
+Observation: Project food_health_viz {
+  database_type: 'DuckDB'
+}
+
+Table establishment_keys {
+  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']
+  name varchar [not null]
+  address varchar [not null]
+  city varchar [not null]
+  city_state_zip varchar
+  establishment_type varchar
+  source varchar [note: 'friend_slc | own_scrape']
+  slchd_lat double
+  slchd_lon double
+  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']
+
+  Note: 'SLCHD establishment list, one row per portal listing.'
+}
+
+Table category {
+  category_id integer [pk]
+  category varchar
+}
+
+Table establishments {
+  gmap_id varchar [pk]
+  name varchar
+  address varchar
+  description varchar
+  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']
+  avg_rating double
+  num_of_reviews integer
+  price varchar
+  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']
+
+  Note: 'One row per Google Local place — all restaurants, not just SLCHD-matched.'
+}
+
+Table establishment_attributes {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  attribute varchar [not null]
+
+  indexes { (gmap_id, attribute) [pk] }
+
+  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. "Service options") dropped.'
+}
+
+Table establishment_categories {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  category_id integer [ref: > category.category_id, not null]
+
+  indexes { (gmap_id, category_id) [pk] }
+}
+
+Table gmap_hours {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  day integer [not null, note: '0=Sun … 6=Sat']
+  open_min bigint
+  open_max bigint
+
+  indexes { (gmap_id, day) [pk] }
+
+  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'
+}
+
+Table review {
+  user_id varchar
+  name varchar
+  time bigint
+  rating double
+  text varchar
+  resp varchar
+  gmap_id varchar [ref: > establishments.gmap_id]
+}
+
+Table inspection_types {
+  inspection_type_id integer [pk, note: 'parsed leading number, e.g. "01 - Routine" -> 1']
+  description varchar [note: 'e.g. "Routine"']
+}
+
+Table inspections {
+  inspection_id bigint [pk, increment]
+  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]
+  inspection_date date [not null]
+  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable — 27 rows have no type']
+  inspection_score integer
+
+  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'
+}
+
+Table violation_codes {
+  violation_code_id integer [pk, increment]
+  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. "4.5.18"']
+  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']
+  critical boolean [not null]
+}
+
+Table violations {
+  violation_id bigint [pk, increment]
+  inspection_id bigint [ref: > inspections.inspection_id, not null]
+  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]
+  violation_description varchar [note: 'per-occurrence free text']
+  violation_occurrences integer
+  violation_cos boolean [note: 'corrected on site']
+  violation_phr varchar [note: 'public health rationale']
+
+  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'
+}
+
+
+Action: run_sql({'query': "SELECT vc.code_text, vc.critical, v.violation_description, v.violation_phr\nFROM violations v\nJOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\nWHERE lower(v.violation_description) LIKE '%cold holding%'\nLIMIT 10"})
+
+Observation: {"row_count": 10, "truncated": false, "rows": [{"code_text": "4.4.37", "critical": false, "violation_description": "Cold holding unit lacks an internal ambient thermometer.", "violation_phr": "Temperature Measuring Devices"}, {"code_text": "4.4.37", "critical": false, "violation_description": "Cold holding unit lacks an internal ambient thermometer.", "violation_phr": "Temperature Measuring Devices"}, {"code_text": "4.2.2", "critical": true, "violation_description": "The person in charge is unable to demonstrate adequate knowledge of proper hot and cold holding temperatures for potentially hazardous foods.\nThe person in charge is unable to demonstrate adequate knowledge of proper thawing and cooling procedures of potentially hazardous foods.", "violation_phr": "Demonstration of Knowledge**"}, {"code_text": "4.3.59", "critical": true, "violation_description": "Milk is being healed at 47 degrees in a cold holding unit.", "violation_phr": "Cold Holding*"}, {"code_text": "4.6.41", "critical": false, "violation_description": "The floor is dirty beneath cold holding equipment.", "violation_phr": "Cleaning-Frequency and Restrictions"}, {"code_text": "4.4.37", "critical": false, "violation_description": "Cold holding unit lacks an internal ambient thermometer.", "violation_phr": "Temperature Measuring Devices"}, {"code_text": "4.4.37", "critical": false, "violation_description": "Cold holding unit lacks an internal ambient thermometer.", "violation_phr": "Temperature Measuring Devices"}, {"code_text": "4.3.59", "critical": true, "violation_description": "Nonfat milk is being held out of temperature control at 58\u00b0F on a counter. This milk was placed under proper cold holding in a reach in fridge.", "violation_phr": "Cold Holding*"}, {"code_text": "4.4.37", "critical": false, "violation_description": "Cold holding unit lacks an internal ambient thermometer.", "violation_phr": "Temperature Measuring Devices"}, {"code_text": "4.2.2", "critical": true, "violation_description": "The person in charge is unable to demonstrate adequate knowledge of proper hot and cold holding temperatures for potentially hazardous foods.", "violation_phr": "Demonstration of Knowledge**"}]}
+
+Action: plot_chart({'chart_type': 'bar', 'query': "SELECT vc.code_text, vc.critical, COUNT(*) AS cited_violations\nFROM violations v\nJOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\nWHERE v.violation_phr = 'Cold Holding*'\nGROUP BY vc.code_text, vc.critical\nORDER BY cited_violations DESC", 'x': 'code_text', 'y': 'cited_violations', 'color': 'critical', 'title': 'Cited Cold Holding Violations by Code'})
+
+Observation: Chart created: 'Cited Cold Holding Violations by Code' (bar, 2 rows). It will be shown to the user below your answer.
+
+--- Usage: 11545 tokens, ~$0.0263 ---

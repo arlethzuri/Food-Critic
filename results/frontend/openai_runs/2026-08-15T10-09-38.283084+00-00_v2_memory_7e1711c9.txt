@@ -1,0 +1,174 @@
+Question: Which street has the highest number of 3 star restaurants?
+
+Variant: v2_memory | Provider: openai | Model: gpt-5.6-terra
+Timestamp: 2026-08-15T10:09:38.283084+00:00 | Duration: 23.68s
+
+--- Answer ---
+**N Main St** and **State St** tie for the highest count, with **6 approximately 3-star restaurants each** (ratings from 2.95 to 3.04 in the dataset).
+
+Next were **S Redwood Rd** with **4**, followed by **E 3900 S**, **E State St**, and **S 5600 W** with **2 each**.
+
+The chart shows the top 10 street-name groupings.
+
+--- Reasoning trace ---
+Action: get_schema({})
+
+Observation: Project food_health_viz {
+  database_type: 'DuckDB'
+}
+
+Table establishment_keys {
+  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']
+  name varchar [not null]
+  address varchar [not null]
+  city varchar [not null]
+  city_state_zip varchar
+  establishment_type varchar
+  source varchar [note: 'friend_slc | own_scrape']
+  slchd_lat double
+  slchd_lon double
+  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']
+
+  Note: 'SLCHD establishment list, one row per portal listing.'
+}
+
+Table category {
+  category_id integer [pk]
+  category varchar
+}
+
+Table establishments {
+  gmap_id varchar [pk]
+  name varchar
+  address varchar
+  description varchar
+  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']
+  avg_rating double
+  num_of_reviews integer
+  price varchar
+  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']
+
+  Note: 'One row per Google Local place — all restaurants, not just SLCHD-matched.'
+}
+
+Table establishment_attributes {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  attribute varchar [not null]
+
+  indexes { (gmap_id, attribute) [pk] }
+
+  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. "Service options") dropped.'
+}
+
+Table establishment_categories {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  category_id integer [ref: > category.category_id, not null]
+
+  indexes { (gmap_id, category_id) [pk] }
+}
+
+Table gmap_hours {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  day integer [not null, note: '0=Sun … 6=Sat']
+  open_min bigint
+  open_max bigint
+
+  indexes { (gmap_id, day) [pk] }
+
+  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'
+}
+
+Table review {
+  user_id varchar
+  name varchar
+  time bigint
+  rating double
+  text varchar
+  resp varchar
+  gmap_id varchar [ref: > establishments.gmap_id]
+}
+
+Table inspection_types {
+  inspection_type_id integer [pk, note: 'parsed leading number, e.g. "01 - Routine" -> 1']
+  description varchar [note: 'e.g. "Routine"']
+}
+
+Table inspections {
+  inspection_id bigint [pk, increment]
+  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]
+  inspection_date date [not null]
+  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable — 27 rows have no type']
+  inspection_score integer
+
+  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'
+}
+
+Table violation_codes {
+  violation_code_id integer [pk, increment]
+  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. "4.5.18"']
+  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']
+  critical boolean [not null]
+}
+
+Table violations {
+  violation_id bigint [pk, increment]
+  inspection_id bigint [ref: > inspections.inspection_id, not null]
+  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]
+  violation_description varchar [note: 'per-occurrence free text']
+  violation_occurrences integer
+  violation_cos boolean [note: 'corrected on site']
+  violation_phr varchar [note: 'public health rationale']
+
+  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'
+}
+
+
+Action: search_establishments({'min_rating': 3, 'limit': 1})
+
+Observation: {"row_count": 1, "rows": [{"gmap_id": "0x80cac2bd755f2c63:0xaac02cfd1eedb6c", "name": "Zion Hawaiian", "address": "Zion Hawaiian, 932 Zion \u2013 Mount Carmel Hwy, Springdale, UT 84767", "latitude": 37.1890011, "longitude": -112.9999502, "avg_rating": 5.0, "num_of_reviews": 1, "price": null, "slchd_establishment_key": null, "distance_mi": null, "most_recent_inspection_score": null, "critical_violation_count": 0, "total_violation_count": 0}]}
+
+Action: run_sql({'query': "WITH three_star AS (\n  SELECT trim(regexp_replace(address, '^[^,]*,\\\\s*', '')) AS street_address\n  FROM establishments\n  WHERE avg_rating >= 2.95 AND avg_rating < 3.05\n), streets AS (\n  SELECT regexp_replace(street_address, ',.*$', '') AS street\n  FROM three_star\n  WHERE street_address IS NOT NULL AND street_address <> ''\n)\nSELECT street, COUNT(*) AS restaurant_count\nFROM streets\nGROUP BY street\nORDER BY restaurant_count DESC, street\nLIMIT 10"})
+
+Observation: {"row_count": 10, "truncated": false, "rows": [{"street": "McDonald's", "restaurant_count": 7}, {"street": "KFC", "restaurant_count": 6}, {"street": "Burger King", "restaurant_count": 5}, {"street": "Domino's Pizza", "restaurant_count": 5}, {"street": "Pizza Hut", "restaurant_count": 4}, {"street": "Subway", "restaurant_count": 4}, {"street": "Wendy's", "restaurant_count": 4}, {"street": "Applebee\u2019s Grill + Bar", "restaurant_count": 2}, {"street": "Arby's", "restaurant_count": 2}, {"street": "Maverik Adventure's First Stop", "restaurant_count": 2}]}
+
+Action: run_sql({'query': 'SELECT address FROM establishments WHERE avg_rating >= 2.95 AND avg_rating < 3.05 LIMIT 10'})
+
+Observation: {"row_count": 10, "truncated": false, "rows": [{"address": "La Puente Restaurant #7 Sandy, 61 W 10600 S, Sandy, UT 84070"}, {"address": "TA, 1889 Pheasant Ln, Tooele, UT 84074"}, {"address": "Maverik Adventure's First Stop, 520 W Main St, Lehi, UT 84043"}, {"address": "Summit Fitness Kitchen Meal Prep, 1532 1450 S St, St. George, UT 84790"}, {"address": "Arctic Circle, 3883 5400 S, Salt Lake City, UT 84118"}, {"address": "The Cat Lounge, 500 E State St, American Fork, UT 84003"}, {"address": "Farr's Fresh Ice Cream & Frozen Yogurt Cafe, 496 N 990 W, American Fork, UT 84003"}, {"address": "Bistro H, 281 Zion Park Blvd, Springdale, UT 84767"}, {"address": "Applebee\u2019s Grill + Bar, 11460 District Dr, South Jordan, UT 84095"}, {"address": "Arby's, 10 Center St, Panguitch, UT 84759"}]}
+
+Action: run_sql({'query': "WITH three_star AS (\n  SELECT regexp_replace(address, '^[^,]*,\\\\s*', '') AS remainder\n  FROM establishments\n  WHERE avg_rating >= 2.95 AND avg_rating < 3.05\n), parsed AS (\n  SELECT regexp_extract(remainder, '^([^,]+),', 1) AS street\n  FROM three_star\n)\nSELECT street, COUNT(*) AS restaurant_count\nFROM parsed\nWHERE street <> ''\nGROUP BY street\nORDER BY restaurant_count DESC, street\nLIMIT 10"})
+
+Observation: {"row_count": 10, "truncated": false, "rows": [{"street": "McDonald's", "restaurant_count": 7}, {"street": "KFC", "restaurant_count": 6}, {"street": "Burger King", "restaurant_count": 5}, {"street": "Domino's Pizza", "restaurant_count": 5}, {"street": "Pizza Hut", "restaurant_count": 4}, {"street": "Subway", "restaurant_count": 4}, {"street": "Wendy's", "restaurant_count": 4}, {"street": "Applebee\u2019s Grill + Bar", "restaurant_count": 2}, {"street": "Arby's", "restaurant_count": 2}, {"street": "Maverik Adventure's First Stop", "restaurant_count": 2}]}
+
+Action: run_sql({'query': "SELECT regexp_replace(address, '^[^,]*,\\\\s*', '') AS remainder, regexp_extract(regexp_replace(address, '^[^,]*,\\\\s*', ''), '^([^,]+),', 1) AS street FROM establishments WHERE avg_rating >= 2.95 AND avg_rating < 3.05 LIMIT 5"})
+
+Observation: {"row_count": 5, "truncated": false, "rows": [{"remainder": "La Puente Restaurant #7 Sandy, 61 W 10600 S, Sandy, UT 84070", "street": "La Puente Restaurant #7 Sandy"}, {"remainder": "TA, 1889 Pheasant Ln, Tooele, UT 84074", "street": "TA"}, {"remainder": "Maverik Adventure's First Stop, 520 W Main St, Lehi, UT 84043", "street": "Maverik Adventure's First Stop"}, {"remainder": "Summit Fitness Kitchen Meal Prep, 1532 1450 S St, St. George, UT 84790", "street": "Summit Fitness Kitchen Meal Prep"}, {"remainder": "Arctic Circle, 3883 5400 S, Salt Lake City, UT 84118", "street": "Arctic Circle"}]}
+
+Action: run_sql({'query': "WITH parsed AS (\n  SELECT regexp_extract(address, '^[^,]*,\\\\s*([^,]+),', 1) AS street\n  FROM establishments\n  WHERE avg_rating >= 2.95 AND avg_rating < 3.05\n)\nSELECT street, COUNT(*) AS restaurant_count\nFROM parsed\nWHERE street <> ''\nGROUP BY street\nORDER BY restaurant_count DESC, street\nLIMIT 10"})
+
+Observation: {"row_count": 0, "truncated": false, "rows": []}
+
+Action: run_sql({'query': "SELECT address, regexp_extract(address, '^[^,]*,\\\\s*([^,]+),', 1) AS street FROM establishments WHERE avg_rating >= 2.95 AND avg_rating < 3.05 LIMIT 5"})
+
+Observation: {"row_count": 5, "truncated": false, "rows": [{"address": "La Puente Restaurant #7 Sandy, 61 W 10600 S, Sandy, UT 84070", "street": ""}, {"address": "TA, 1889 Pheasant Ln, Tooele, UT 84074", "street": ""}, {"address": "Maverik Adventure's First Stop, 520 W Main St, Lehi, UT 84043", "street": ""}, {"address": "Summit Fitness Kitchen Meal Prep, 1532 1450 S St, St. George, UT 84790", "street": ""}, {"address": "Arctic Circle, 3883 5400 S, Salt Lake City, UT 84118", "street": ""}]}
+
+Action: run_sql({'query': "WITH parsed AS (\n  SELECT split_part(split_part(address, ', ', 2), ', ', 1) AS street\n  FROM establishments\n  WHERE avg_rating >= 2.95 AND avg_rating < 3.05\n)\nSELECT street, COUNT(*) AS restaurant_count\nFROM parsed\nWHERE street <> ''\nGROUP BY street\nORDER BY restaurant_count DESC, street\nLIMIT 10"})
+
+Observation: {"row_count": 10, "truncated": false, "rows": [{"street": "10 Center St", "restaurant_count": 1}, {"street": "10235 State St", "restaurant_count": 1}, {"street": "10450 S State St", "restaurant_count": 1}, {"street": "10450 State St", "restaurant_count": 1}, {"street": "10672 State St", "restaurant_count": 1}, {"street": "11428 S Pkwy Plaza Dr #300", "restaurant_count": 1}, {"street": "11460 District Dr", "restaurant_count": 1}, {"street": "1155 N Hill Field Rd", "restaurant_count": 1}, {"street": "1206-1222 W State Rd", "restaurant_count": 1}, {"street": "1224 E Main St", "restaurant_count": 1}]}
+
+Action: run_sql({'query': "WITH parsed AS (\n  SELECT split_part(split_part(address, ', ', 2), ', ', 1) AS street\n  FROM establishments\n  WHERE avg_rating >= 2.95 AND avg_rating < 3.05\n), normalized AS (\n  SELECT regexp_replace(street, '^[0-9]+(?:-[0-9]+)?\\\\s+', '') AS street_name\n  FROM parsed\n)\nSELECT street_name, COUNT(*) AS restaurant_count\nFROM normalized\nWHERE street_name <> ''\nGROUP BY street_name\nORDER BY restaurant_count DESC, street_name\nLIMIT 10"})
+
+Observation: {"row_count": 10, "truncated": false, "rows": [{"street_name": "10 Center St", "restaurant_count": 1}, {"street_name": "10235 State St", "restaurant_count": 1}, {"street_name": "10450 S State St", "restaurant_count": 1}, {"street_name": "10450 State St", "restaurant_count": 1}, {"street_name": "10672 State St", "restaurant_count": 1}, {"street_name": "11428 S Pkwy Plaza Dr #300", "restaurant_count": 1}, {"street_name": "11460 District Dr", "restaurant_count": 1}, {"street_name": "1155 N Hill Field Rd", "restaurant_count": 1}, {"street_name": "1206-1222 W State Rd", "restaurant_count": 1}, {"street_name": "1224 E Main St", "restaurant_count": 1}]}
+
+Action: run_sql({'query': "SELECT regexp_replace('61 W 10600 S', '^[0-9]+\\\\s+', '') AS x"})
+
+Observation: {"row_count": 1, "truncated": false, "rows": [{"x": "61 W 10600 S"}]}
+
+Action: run_sql({'query': "WITH parsed AS (\n  SELECT split_part(split_part(address, ', ', 2), ', ', 1) AS street\n  FROM establishments\n  WHERE avg_rating >= 2.95 AND avg_rating < 3.05\n), normalized AS (\n  SELECT regexp_replace(street, '^[0-9]+ +', '') AS street_name\n  FROM parsed\n)\nSELECT street_name, COUNT(*) AS restaurant_count\nFROM normalized\nWHERE street_name <> ''\nGROUP BY street_name\nORDER BY restaurant_count DESC, street_name\nLIMIT 10"})
+
+Observation: {"row_count": 10, "truncated": false, "rows": [{"street_name": "N Main St", "restaurant_count": 6}, {"street_name": "State St", "restaurant_count": 6}, {"street_name": "S Redwood Rd", "restaurant_count": 4}, {"street_name": "E 3900 S", "restaurant_count": 2}, {"street_name": "E State St", "restaurant_count": 2}, {"street_name": "S 5600 W", "restaurant_count": 2}, {"street_name": "1206-1222 W State Rd", "restaurant_count": 1}, {"street_name": "1450 S St", "restaurant_count": 1}, {"street_name": "3600 W", "restaurant_count": 1}, {"street_name": "5400 S", "restaurant_count": 1}]}
+
+Action: plot_chart({'chart_type': 'bar', 'query': "WITH parsed AS (\n  SELECT split_part(split_part(address, ', ', 2), ', ', 1) AS street\n  FROM establishments\n  WHERE avg_rating >= 2.95 AND avg_rating < 3.05\n), normalized AS (\n  SELECT regexp_replace(street, '^[0-9]+ +', '') AS street_name\n  FROM parsed\n)\nSELECT street_name, COUNT(*) AS restaurant_count\nFROM normalized\nWHERE street_name <> ''\nGROUP BY street_name\nORDER BY restaurant_count DESC, street_name\nLIMIT 10", 'title': 'Streets with the Most Approximately 3-Star Restaurants', 'x': 'street_name', 'y': 'restaurant_count'})
+
+Observation: Chart created: 'Streets with the Most Approximately 3-Star Restaurants' (bar, 10 rows). It will be shown to the user below your answer.
+
+--- Usage: 60140 tokens, ~$0.1329 ---
