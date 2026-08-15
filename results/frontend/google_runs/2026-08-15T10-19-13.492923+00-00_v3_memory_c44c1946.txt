@@ -1,0 +1,508 @@
+Question: What does the issue category "cold holding" mean?
+
+Variant: v3_memory | Provider: google | Model: gemini-3.6-flash
+Timestamp: 2026-08-15T10:19:13.492923+00:00 | Duration: 147.42s
+
+--- Answer ---
+In Utah food safety regulations (Utah Admin Code R392-100 / FDA Food Code 2013 § 3-501.16) and Salt Lake County health inspections, the issue category Cold Holding refers to the requirement that cold Time/Temperature Control for Safety (TCS) foods—such as meats, dairy, cut leafy greens, cut tomatoes, and cooked dishes—must be maintained at an internal temperature of 41°F (5°C) or lower during storage, display, and service.
+
+Key details regarding Cold Holding include:
+1. Public Health Rationale: The range between 41°F and 135°F is known as the 'temperature danger zone.' Maintaining TCS foods at 41°F or lower prevents or drastically slows the growth of foodborne pathogens such as Listeria monocytogenes, Salmonella, E. coli, and Staphylococcus aureus.
+2. Violation Severity: In Salt Lake County health inspections, Cold Holding (Violation Code 4.3.59) is classified as a Critical Violation (Priority Item) because temperature abuse directly increases the risk of foodborne illness.
+3. Frequency in Salt Lake County: Inspection records show that Cold Holding is the 3rd most cited critical violation across Salt Lake County establishments, with 727 total citations recorded.
+
+Hypothesis: none (confidence: high)
+
+--- Reasoning trace ---
+Action: retrieve_regulation({'query': 'cold holding'})
+
+Action: run_sql({'query': "SELECT * FROM violation_codes WHERE lower(code_description) LIKE '%cold holding%' OR lower(code_description) LIKE '%cold%' LIMIT 10;"})
+
+Observation: [R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 3-502 Specialized Processing Methods, p.92]
+91  
+(1) Placing the FOOD in shallow pans; Pf 
+ 
+(2) Separating the FOOD into smaller or thinner portions; Pf 
+ 
+(3) Using rapid cooling EQUIPMENT; Pf 
+ 
+(4) Stirring the FOOD in a container placed in an ice water 
+bath; Pf 
+ 
+(5) Using containers that facilitate heat transfer; Pf 
+ 
+(6) Adding ice as an ingredient; Pf or 
+ 
+(7) Other effective methods. Pf 
+ 
+(B) When placed in cooling or cold holding EQUIPMENT, FOOD 
+containers in which FOOD is being cooled shall be: 
+ 
+(1) Arranged in the EQUIPMENT to provide maximum heat 
+transfer through the container walls; and 
+ 
+(2) Loosely covered, or uncovered if protected from overhead 
+contamination as specified under Subparagraph 
+3-305.11(A)(2), during the cooling period to facilitate heat 
+transfer from the surface of the FOOD. 
+ 
+ 
+3-501.16 Time/Temperature Control for Safety Food, Hot 
+and Cold Holding. 
+ 
+(A) Except during preparation, cooking, or cooling, or when time
+
+---
+
+[R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 4-204.13 Dispensing Equipment, Protection of, p.122]
+condition that results in an internal machine temperature 
+that cannot maintain FOOD temperatures as specified under 
+Chapter 3; P and 
+ 
+(2) If a condition specified under Subparagraph (A)(1) of 
+this section occurs, until the machine is serviced and 
+restocked with FOOD that has been maintained at 
+temperatures specified under Chapter 3. P 
+ 
+(B) When the automatic shutoff within a machine vending 
+TIME/TEMPERATURE CONTROL FOR SAFETY FOOD is activated:
+
+---
+
+[R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 4-204.13 Dispensing Equipment, Protection of, p.123]
+122  
+(1) In a refrigerated vending machine, the ambient air 
+temperature may not exceed 5oC (41oF) for more than 30 
+minutes immediately after the machine is filled, serviced, or 
+restocked; P or 
+ 
+(2) In a hot holding vending machine, the ambient air 
+temperature may not be less than 57 oC (135 oF) for more 
+than 120 minutes immediately after the machine is filled, 
+serviced, or restocked. P 
+ 
+ 
+ 
+4-204.112 Temperature Measuring Devices. 
+ 
+(A) In a mechanically refrigerated or hot FOOD storage unit, the 
+sensor of a TEMPERATURE MEASURING DEVICE shall be located to 
+measure the air temperature or a simulated product 
+temperature in the warmest part of a mechanically refrigerated 
+unit and in the coolest part of a hot FOOD storage unit. 
+ 
+(B) Except as specified in ¶ (C) of this section, cold or hot 
+holding EQUIPMENT used for TIME/TEMPERATURE CONTROL FOR 
+SAFETY FOOD shall be designed to include and shall be 
+equipped with at least one integral or permanently affixed
+
+---
+
+[R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 3-502.12 Reduced Oxygen Packaging Without a, p.101]
+(d) Placed in a PACKAGE with an oxygen barrier and sealed 
+before cooking, or placed in a PACKAGE and sealed 
+immediately after cooking and before reaching a 
+temperature below 57°C (135°F), P 
+ 
+(e) Cooled to 5°C (41°F) in the sealed PACKAGE or bag as 
+specified under § 3-501.14 and: P 
+ 
+(i) Cooled to 1°C (34°F) within 48 hours of reaching 5°C 
+(41°F) and held at that temperature until consumed or 
+discarded within 30 days after the date of PACKAGING;P 
+ 
+(ii) Held at 5°C (41°F) or less for no more than 7 days, 
+at which time the FOOD must be consumed or 
+discarded; P or 
+ 
+(iii) Held frozen with no shelf life restriction while 
+frozen until consumed or used. P 
+ 
+(f) Held in a refrigeration unit that is equipped with an 
+electronic system that continuously monitors time and 
+temperature and is visually examined for proper 
+operation twice daily, Pf
+
+Observation: SQL error: Binder Error: Referenced column "code_description" not found in FROM clause!
+Candidate bindings: "code_text", "violation_code_id", "asterisk_count"
+
+LINE 1: SELECT * FROM violation_codes WHERE lower(code_description) LIKE '%cold holding%' OR lower(code_descr...
+                                                  ^
+
+Action: get_schema({})
+
+Observation: Project food_health_viz {
+  database_type: 'DuckDB'
+}
+
+Table establishment_keys {
+  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']
+  name varchar [not null]
+  address varchar [not null]
+  city varchar [not null]
+  city_state_zip varchar
+  establishment_type varchar
+  source varchar [note: 'friend_slc | own_scrape']
+  slchd_lat double
+  slchd_lon double
+  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']
+
+  Note: 'SLCHD establishment list, one row per portal listing.'
+}
+
+Table category {
+  category_id integer [pk]
+  category varchar
+}
+
+Table establishments {
+  gmap_id varchar [pk]
+  name varchar
+  address varchar
+  description varchar
+  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']
+  avg_rating double
+  num_of_reviews integer
+  price varchar
+  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']
+
+  Note: 'One row per Google Local place — all restaurants, not just SLCHD-matched.'
+}
+
+Table establishment_attributes {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  attribute varchar [not null]
+
+  indexes { (gmap_id, attribute) [pk] }
+
+  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. "Service options") dropped.'
+}
+
+Table establishment_categories {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  category_id integer [ref: > category.category_id, not null]
+
+  indexes { (gmap_id, category_id) [pk] }
+}
+
+Table gmap_hours {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  day integer [not null, note: '0=Sun … 6=Sat']
+  open_min bigint
+  open_max bigint
+
+  indexes { (gmap_id, day) [pk] }
+
+  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'
+}
+
+Table review {
+  user_id varchar
+  name varchar
+  time bigint
+  rating double
+  text varchar
+  resp varchar
+  gmap_id varchar [ref: > establishments.gmap_id]
+}
+
+Table inspection_types {
+  inspection_type_id integer [pk, note: 'parsed leading number, e.g. "01 - Routine" -> 1']
+  description varchar [note: 'e.g. "Routine"']
+}
+
+Table inspections {
+  inspection_id bigint [pk, increment]
+  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]
+  inspection_date date [not null]
+  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable — 27 rows have no type']
+  inspection_score integer
+
+  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'
+}
+
+Table violation_codes {
+  violation_code_id integer [pk, increment]
+  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. "4.5.18"']
+  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']
+  critical boolean [not null]
+}
+
+Table violations {
+  violation_id bigint [pk, increment]
+  inspection_id bigint [ref: > inspections.inspection_id, not null]
+  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]
+  violation_description varchar [note: 'per-occurrence free text']
+  violation_occurrences integer
+  violation_cos boolean [note: 'corrected on site']
+  violation_phr varchar [note: 'public health rationale']
+
+  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'
+}
+
+
+Action: run_sql({'query': "SELECT code_text, asterisk_count, critical, COUNT(*) as cnt \nFROM violations v \nJOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id \nWHERE lower(v.violation_phr) LIKE '%cold%' OR lower(v.violation_description) LIKE '%cold%'\nGROUP BY code_text, asterisk_count, critical \nORDER BY cnt DESC \nLIMIT 20;"})
+
+Observation: {"row_count": 20, "truncated": false, "rows": [{"code_text": "4.3.59", "asterisk_count": 1, "critical": true, "cnt": 726}, {"code_text": "4.4.37", "asterisk_count": 0, "critical": false, "cnt": 42}, {"code_text": "4.5.30", "asterisk_count": 0, "critical": false, "cnt": 15}, {"code_text": "4.2.2", "asterisk_count": 2, "critical": true, "cnt": 13}, {"code_text": "4.3.64", "asterisk_count": 2, "critical": true, "cnt": 8}, {"code_text": "4.5.8", "asterisk_count": 2, "critical": true, "cnt": 7}, {"code_text": "4.4.63", "asterisk_count": 0, "critical": false, "cnt": 7}, {"code_text": "4.4.85", "asterisk_count": 0, "critical": false, "cnt": 5}, {"code_text": "4.4.61", "asterisk_count": 0, "critical": false, "cnt": 4}, {"code_text": "4.5.30", "asterisk_count": 1, "critical": true, "cnt": 3}, {"code_text": "7.4.4 (ii)", "asterisk_count": 0, "critical": true, "cnt": 3}, {"code_text": "4.4.62", "asterisk_count": 0, "critical": false, "cnt": 3}, {"code_text": "4.6.41", "asterisk_count": 0, "critical": false, "cnt": 2}, {"code_text": "4.4.51", "asterisk_count": 2, "critical": true, "cnt": 2}, {"code_text": "4.4.82", "asterisk_count": 1, "critical": true, "cnt": 2}, {"code_text": "4.4.57", "asterisk_count": 2, "critical": true, "cnt": 2}, {"code_text": "4.3.31", "asterisk_count": 0, "critical": false, "cnt": 2}, {"code_text": "4.5.20", "asterisk_count": 0, "critical": false, "cnt": 2}, {"code_text": "4.3.64", "asterisk_count": 1, "critical": true, "cnt": 2}, {"code_text": "R392-102", "asterisk_count": 0, "critical": false, "cnt": 1}]}
+
+Action: run_sql({'query': "SELECT DISTINCT violation_phr, violation_description \nFROM violations v \nJOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id \nWHERE vc.code_text = '4.3.59' \nLIMIT 5;"})
+
+Observation: {"row_count": 5, "truncated": false, "rows": [{"violation_phr": "Cold Holding*", "violation_description": "Cut lettuce is being held at 61\u00b0F in the walk in cooler."}, {"violation_phr": "Hot Holding.*", "violation_description": "Mushroom soup is being held at 111\u00b0F in the steam table."}, {"violation_phr": "Cold Holding*", "violation_description": "Shredded lettuce is being held at 48\u00b0F in a make table."}, {"violation_phr": "Cold Holding*", "violation_description": "Milk is being held at 48\u00b0F in a reach in cooler. (Front beverage cooler)"}, {"violation_phr": "Cold Holding*", "violation_description": "Cut tomatoes is being held at  49\u00b0F in the make table."}]}
+
+Action: classify_violation({'violation_phr': 'Cold Holding*'})
+
+Observation: ViolationType.temperature_control (matched keyword: 'cold holding')
+
+Action: retrieve_regulation({'query': '3-501.16'})
+
+Observation: [R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 4-904.14 Rinsing Equipment and Utensils after Cleaning, p.154]
+152 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+This page is intended to be blank.
+
+---
+
+[R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 8-906.10 Appointment by Regulatory Authority and, p.243]
+specified in ¶ 8-913.10(B) for each violation of this Code that 
+is alleged and found to be committed, and calculated based 
+on each day a violation occurs as specified in ¶ 8-913.10(C);
+
+---
+
+[R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 1-201 Applicability and Terms Defined, p.23]
+AW   values 
+ 
+pH: < 4.2 
+ 
+pH:  4.2 - 4.6 
+ 
+pH: > 4.6 - 5.0 
+ 
+pH: > 5.0 
+ 
+< 0.88 
+ 
+non-TCS 
+food* 
+ 
+Non-TCS 
+food 
+ 
+non-TCS food 
+ 
+non-TCS 
+food 
+ 
+0.88 – 0.90 
+ 
+non-TCS 
+food 
+ 
+non-TCS 
+food 
+ 
+non-TCS food 
+ 
+PA** 
+ 
+> 0.90 – 0.92 
+ 
+non-TCS 
+food 
+ 
+non-TCS 
+food 
+ 
+PA 
+ 
+PA 
+ 
+> 0.92 
+ 
+non-TCS 
+food 
+ 
+PA 
+ 
+PA 
+ 
+PA 
+*  TCS FOOD means TIME/TEMPERATURE CONTROL FOR SAFETY FOOD 
+** PA means Product Assessment required 
+ 
+(3)  "Time/temperature control for safety food" does not include:
+
+---
+
+[R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), p.1]
+1  
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+R392-100 Food Service Sanitation Rule 
+(Based on the U.S. Food and Drug Administration's Food Code 2013 with Utah Amendments) 
+ Effective Date: May 15, 2016
+
+Action: retrieve_regulation({'query': 'cold holding 41°F temperature'})
+
+Observation: [R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 4-204.13 Dispensing Equipment, Protection of, p.123]
+122  
+(1) In a refrigerated vending machine, the ambient air 
+temperature may not exceed 5oC (41oF) for more than 30 
+minutes immediately after the machine is filled, serviced, or 
+restocked; P or 
+ 
+(2) In a hot holding vending machine, the ambient air 
+temperature may not be less than 57 oC (135 oF) for more 
+than 120 minutes immediately after the machine is filled, 
+serviced, or restocked. P 
+ 
+ 
+ 
+4-204.112 Temperature Measuring Devices. 
+ 
+(A) In a mechanically refrigerated or hot FOOD storage unit, the 
+sensor of a TEMPERATURE MEASURING DEVICE shall be located to 
+measure the air temperature or a simulated product 
+temperature in the warmest part of a mechanically refrigerated 
+unit and in the coolest part of a hot FOOD storage unit. 
+ 
+(B) Except as specified in ¶ (C) of this section, cold or hot 
+holding EQUIPMENT used for TIME/TEMPERATURE CONTROL FOR 
+SAFETY FOOD shall be designed to include and shall be 
+equipped with at least one integral or permanently affixed
+
+---
+
+[R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 3-404 Other Methods, p.88]
+(165oF) for 15 seconds. P 
+ 
+(B) Except as specified under ¶ (C) of this section, 
+TIME/TEMPERATURE CONTROL FOR SAFETY FOOD reheated in a 
+microwave oven for hot holding shall be reheated so that all parts 
+of the FOOD reach a temperature of at least 74oC (165oF) and the 
+FOOD is rotated or stirred, covered, and allowed to stand covered 
+for 2 minutes after reheating. P 
+ 
+(C) READY-TO-EAT TIME/TEMPERATURE CONTROL FOR SAFETY FOOD 
+that has been commercially processed and PACKAGED in a FOOD 
+PROCESSING PLANT that is inspected by the REGULATORY 
+AUTHORITY that has jurisdiction over the plant, shall be heated to 
+a temperature of at least 57oC (135oF) when being reheated for 
+hot holding. P 
+ 
+(D) Reheating for hot holding as specified under ¶¶ (A) - (C) of 
+this section shall be done rapidly and the time the FOOD is 
+between 5ºC (41ºF) and the temperatures specified under ¶¶  (A) 
+- (C) of this section may not exceed 2 hours. P
+
+---
+
+[R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 3-502 Specialized Processing Methods, p.91]
+ambient temperature, such as reconstituted FOODS and canned 
+tuna. P 
+ 
+(C) Except as specified under ¶ (D) of this section, a 
+TIME/TEMPERATURE CONTROL FOR SAFETY FOOD received in 
+compliance with LAWS allowing a temperature above 5oC (41oF) 
+during shipment from the supplier as specified in ¶ 3-202.11(B), 
+shall be cooled within 4 hours to 5oC (41oF) or less. P 
+ 
+(D) Raw EGGS shall be received as specified under 
+¶ 3-202.11(C) and immediately placed in refrigerated EQUIPMENT 
+that maintains an ambient air temperature of 7oC (45oF) or less. P 
+ 
+ 
+3-501.15 Cooling Methods. 
+ 
+(A) Cooling shall be accomplished in accordance with the time 
+and temperature criteria specified under § 3-501.14 by using one 
+or more of the following methods based on the type of FOOD 
+being cooled:
+
+---
+
+[R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 3-502 Specialized Processing Methods, p.90]
+89  
+(A) Under refrigeration that maintains the FOOD temperature at 
+5oC (41oF) or less; or 
+ 
+(B) At any temperature if the FOOD remains frozen. 
+ 
+ 
+3-501.13 Thawing. 
+ 
+Except as specified in ¶ (D) of this section, TIME/TEMPERATURE 
+CONTROL FOR SAFETY FOOD shall be thawed: 
+ 
+(A) Under refrigeration that maintains the FOOD temperature at 
+5oC (41oF) or less; or 
+ 
+(B) Completely submerged under running water: 
+ 
+(1) At a water temperature of 21oC (70oF) or below, 
+ 
+(2) With sufficient water velocity to agitate and float off 
+loose particles in an overflow, and 
+ 
+(3) For a period of time that does not allow thawed portions 
+of READY-TO-EAT FOOD to rise above 5oC (41oF), or 
+ 
+(4) For a period of time that does not allow thawed 
+portions of a raw animal FOOD requiring cooking as 
+specified under ¶ 3-401.11(A) or (B) to be above 5oC 
+(41oF), for more than 4 hours including: 
+ 
+(a) The time the FOOD is exposed to the running water 
+and the time needed for preparation for cooking, or
+
+Action: run_sql({'query': "SELECT violation_phr, COUNT(*) as violation_count, SUM(CASE WHEN critical THEN 1 ELSE 0 END) as critical_count\nFROM violations v\nJOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\nWHERE violation_phr IS NOT NULL AND TRIM(violation_phr) != ''\nGROUP BY violation_phr\nORDER BY violation_count DESC\nLIMIT 10;"})
+
+Observation: {"row_count": 10, "truncated": false, "rows": [{"violation_phr": "Nonfood-Contact Surfaces-Cleaning", "violation_count": 2176, "critical_count": 0.0}, {"violation_phr": "Equipment, Food-Contact Surfaces, Nonfood-Contact Surfaces, and Utensils-Cleaning*", "violation_count": 2112, "critical_count": 2112.0}, {"violation_phr": "Repairing-Physical Facilities", "violation_count": 2109, "critical_count": 0.0}, {"violation_phr": "Cleaning-Frequency and Restrictions", "violation_count": 1975, "critical_count": 0.0}, {"violation_phr": "Good Repair and Proper Adjustment", "violation_count": 1661, "critical_count": 0.0}, {"violation_phr": "System Maintained in Good Repair Non-critical", "violation_count": 1044, "critical_count": 0.0}, {"violation_phr": "Fixed Equipment-Spacing or Sealing", "violation_count": 996, "critical_count": 0.0}, {"violation_phr": "Cleaning Ventilation Systems-Nuisance and Discharge Prohibition", "violation_count": 863, "critical_count": 0.0}, {"violation_phr": "Eating, Drinking, or Using Tobacco**", "violation_count": 757, "critical_count": 757.0}, {"violation_phr": "Cold Holding*", "violation_count": 727, "critical_count": 727.0}]}
+
+Action: run_sql({'query': "SELECT violation_phr, COUNT(*) as critical_count\nFROM violations v\nJOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\nWHERE vc.critical = true AND violation_phr IS NOT NULL AND TRIM(violation_phr) != ''\nGROUP BY violation_phr\nORDER BY critical_count DESC\nLIMIT 10;"})
+
+Observation: {"row_count": 10, "truncated": false, "rows": [{"violation_phr": "Equipment, Food-Contact Surfaces, Nonfood-Contact Surfaces, and Utensils-Cleaning*", "critical_count": 2112}, {"violation_phr": "Eating, Drinking, or Using Tobacco**", "critical_count": 757}, {"violation_phr": "Cold Holding*", "critical_count": 727}, {"violation_phr": "Using a Handwashing Sink.**", "critical_count": 680}, {"violation_phr": "Manual and Mechanical Warewashing Equipment-Chemical Sanitization, Temperature, pH, Concentration and Hardness*", "critical_count": 593}, {"violation_phr": "Hand Drying Provision**", "critical_count": 424}, {"violation_phr": "Working Containers-Common Name**", "critical_count": 338}, {"violation_phr": "Food Safety Manager Certification", "critical_count": 313}, {"violation_phr": "Hot Holding.*", "critical_count": 296}, {"violation_phr": "Ready-to-Eat, Potentially hazardous food (time/temperature control for safety food) - Date Marking.**", "critical_count": 265}]}
+
+Action: run_sql({'query': "SELECT YEAR(i.inspection_date) as year, COUNT(*) as cold_holding_count\nFROM violations v\nJOIN inspections i ON v.inspection_id = i.inspection_id\nWHERE v.violation_phr LIKE '%Cold Holding%'\nGROUP BY YEAR(i.inspection_date)\nORDER BY year;"})
+
+Observation: {"row_count": 14, "truncated": false, "rows": [{"year": 2011, "cold_holding_count": 1}, {"year": 2014, "cold_holding_count": 3}, {"year": 2015, "cold_holding_count": 11}, {"year": 2016, "cold_holding_count": 10}, {"year": 2017, "cold_holding_count": 17}, {"year": 2018, "cold_holding_count": 37}, {"year": 2019, "cold_holding_count": 51}, {"year": 2020, "cold_holding_count": 39}, {"year": 2021, "cold_holding_count": 61}, {"year": 2022, "cold_holding_count": 100}, {"year": 2023, "cold_holding_count": 100}, {"year": 2024, "cold_holding_count": 158}, {"year": 2025, "cold_holding_count": 104}, {"year": 2026, "cold_holding_count": 35}]}
+
+Action: plot_chart({'title': 'Top Critical Health Violations in Salt Lake County Inspections', 'x': 'violation_category', 'chart_type': 'bar', 'query': "SELECT REPLACE(REPLACE(violation_phr, '*', ''), ' -', '') AS violation_category, COUNT(*) AS critical_citations FROM violations v JOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id WHERE vc.critical = true AND v.violation_phr IS NOT NULL AND TRIM(v.violation_phr) != '' GROUP BY violation_phr ORDER BY critical_citations DESC LIMIT 8", 'y': 'critical_citations'})
+
+Observation: Chart created: 'Top Critical Health Violations in Salt Lake County Inspections' (bar, 8 rows). It will be shown to the user below your answer.
+
+--- Usage: 99509 tokens, ~$0.1714 ---

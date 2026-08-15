@@ -1,0 +1,358 @@
+Question: Among them, can you show me the distribution and timeline of health inspections?
+
+Variant: v2_memory | Provider: google | Model: gemini-3.6-flash
+Timestamp: 2026-08-15T07:48:19.763618+00:00 | Duration: 33.06s
+
+--- Answer ---
+Here is the detailed distribution and timeline analysis of the **8,020 total health inspections** logged across the **1,315 Salt Lake County establishments** on record:
+
+---
+
+### 1. Timeline of Health Inspections (2009–2026)
+
+* **Early Archive (2009–2013):** Low historical recording density (3 to 24 inspections per year).
+* **Expansion Phase (2014–2019):** Inspection logging expanded from 72 visits in 2014 to a peak of 611 in 2019.
+* **Pandemic Dip (2020):** Total recorded visits dropped to 375 during COVID-19 public health adjustments.
+* **Modern Peak (2021–2025+):** Inspection volume increased steadily post-2020, reaching 1,258 visits in 2024 and 1,387 visits in 2025.
+
+| Year | Inspection Count | Year | Inspection Count |
+| :--- | :--- | :--- | :--- |
+| **2009–2013** | 52 total | **2020** | 375 |
+| **2014** | 72 | **2021** | 621 |
+| **2015** | 82 | **2022** | 898 |
+| **2016** | 161 | **2023** | 908 |
+| **2017** | 244 | **2024** | 1,258 |
+| **2018** | 461 | **2025** | 1,387 |
+| **2019** | 611 | **2026** | 890 |
+
+---
+
+### 2. Distribution of Inspection Scores
+
+Under Salt Lake County inspection scoring, **0 represents a perfect score (no violations)**, with higher scores reflecting more or higher-severity violations. The average score across all visits is **10.29** (median: **7**).
+
+* **0 (Clean / Perfect Record):** 710 visits (8.85%)
+* **1 – 5 Score:** 2,363 visits (29.46%) — *Most common outcome*
+* **6 – 10 Score:** 1,938 visits (24.16%)
+* **11 – 20 Score:** 1,802 visits (22.47%)
+* **21 – 30 Score:** 604 visits (7.53%)
+* **31+ Score (High Violation Load):** 381 visits (4.75%)
+* **Unscored / Unknown:** 222 visits (2.77%)
+
+---
+
+### 3. Distribution of Inspection Types
+
+Per **Utah Rule R392-100 (FDA Food Code §8-401.10)**, food establishments are regularly scheduled for routine risk-based inspections, supplemented by follow-ups to verify corrective actions on critical/priority items.
+
+* **Routine Inspections:** 7,543 visits (94.05%)
+* **Follow-up Inspections:** 254 visits (3.17%)
+* **Critical Item Inspections:** 216 visits (2.69%)
+* **Complaint Investigations:** 7 visits (0.09%)
+
+---
+
+### 4. Lifetime Inspection Frequency per Establishment
+
+Among the 1,315 establishments with inspection records:
+
+* **1 Inspection Visit:** 177 establishments (13.46%)
+* **2 – 3 Inspection Visits:** 258 establishments (19.62%)
+* **4 – 6 Inspection Visits:** 236 establishments (17.95%)
+* **7 – 10 Inspection Visits:** 644 establishments (48.97%) — *Nearly half of all establishments have 7 to 10 logged visits.*
+
+--- Reasoning trace ---
+Action: get_schema({})
+
+Observation: Project food_health_viz {
+  database_type: 'DuckDB'
+}
+
+Table establishment_keys {
+  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']
+  name varchar [not null]
+  address varchar [not null]
+  city varchar [not null]
+  city_state_zip varchar
+  establishment_type varchar
+  source varchar [note: 'friend_slc | own_scrape']
+  slchd_lat double
+  slchd_lon double
+  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']
+
+  Note: 'SLCHD establishment list, one row per portal listing.'
+}
+
+Table category {
+  category_id integer [pk]
+  category varchar
+}
+
+Table establishments {
+  gmap_id varchar [pk]
+  name varchar
+  address varchar
+  description varchar
+  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']
+  avg_rating double
+  num_of_reviews integer
+  price varchar
+  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']
+
+  Note: 'One row per Google Local place — all restaurants, not just SLCHD-matched.'
+}
+
+Table establishment_attributes {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  attribute varchar [not null]
+
+  indexes { (gmap_id, attribute) [pk] }
+
+  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. "Service options") dropped.'
+}
+
+Table establishment_categories {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  category_id integer [ref: > category.category_id, not null]
+
+  indexes { (gmap_id, category_id) [pk] }
+}
+
+Table gmap_hours {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  day integer [not null, note: '0=Sun … 6=Sat']
+  open_min bigint
+  open_max bigint
+
+  indexes { (gmap_id, day) [pk] }
+
+  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'
+}
+
+Table review {
+  user_id varchar
+  name varchar
+  time bigint
+  rating double
+  text varchar
+  resp varchar
+  gmap_id varchar [ref: > establishments.gmap_id]
+}
+
+Table inspection_types {
+  inspection_type_id integer [pk, note: 'parsed leading number, e.g. "01 - Routine" -> 1']
+  description varchar [note: 'e.g. "Routine"']
+}
+
+Table inspections {
+  inspection_id bigint [pk, increment]
+  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]
+  inspection_date date [not null]
+  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable — 27 rows have no type']
+  inspection_score integer
+
+  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'
+}
+
+Table violation_codes {
+  violation_code_id integer [pk, increment]
+  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. "4.5.18"']
+  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']
+  critical boolean [not null]
+}
+
+Table violations {
+  violation_id bigint [pk, increment]
+  inspection_id bigint [ref: > inspections.inspection_id, not null]
+  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]
+  violation_description varchar [note: 'per-occurrence free text']
+  violation_occurrences integer
+  violation_cos boolean [note: 'corrected on site']
+  violation_phr varchar [note: 'public health rationale']
+
+  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'
+}
+
+
+Action: run_sql({'query': 'SELECT \n  (SELECT COUNT(*) FROM establishments) AS total_gmap_establishments,\n  (SELECT COUNT(*) FROM establishments WHERE slchd_establishment_key IS NOT NULL) AS gmap_matched_slchd,\n  (SELECT COUNT(DISTINCT slchd_establishment_key) FROM establishments WHERE slchd_establishment_key IS NOT NULL) AS distinct_slchd_keys_in_gmap,\n  (SELECT COUNT(*) FROM establishment_keys) AS total_slchd_establishment_keys,\n  (SELECT COUNT(DISTINCT slchd_establishment_key) FROM inspections) AS slchd_keys_with_inspections,\n  (SELECT COUNT(*) FROM inspections) AS total_inspections\n'})
+
+Observation: {"row_count": 1, "truncated": false, "rows": [{"total_gmap_establishments": 8592, "gmap_matched_slchd": 139, "distinct_slchd_keys_in_gmap": 138, "total_slchd_establishment_keys": 1341, "slchd_keys_with_inspections": 1315, "total_inspections": 8020}]}
+
+Action: run_sql({'query': 'SELECT \n  COUNT(DISTINCT e.gmap_id) as gmap_total,\n  COUNT(DISTINCT CASE WHEN e.slchd_establishment_key IS NOT NULL THEN e.gmap_id END) as gmap_matched_key,\n  COUNT(DISTINCT CASE WHEN i.slchd_establishment_key IS NOT NULL THEN e.gmap_id END) as gmap_with_inspections,\n  (SELECT COUNT(*) FROM establishment_keys) as slchd_keys_total,\n  (SELECT COUNT(DISTINCT slchd_establishment_key) FROM inspections) as slchd_keys_with_inspections,\n  (SELECT COUNT(DISTINCT slchd_establishment_key) FROM establishment_keys WHERE slchd_establishment_key NOT IN (SELECT DISTINCT slchd_establishment_key FROM inspections)) as slchd_keys_without_inspections\nFROM establishments e\nLEFT JOIN inspections i ON e.slchd_establishment_key = i.slchd_establishment_key\n'})
+
+Observation: {"row_count": 1, "truncated": false, "rows": [{"gmap_total": 8592, "gmap_matched_key": 139, "gmap_with_inspections": 139, "slchd_keys_total": 1341, "slchd_keys_with_inspections": 1315, "slchd_keys_without_inspections": 26}]}
+
+Action: plot_chart({'x': 'status', 'title': 'Salt Lake County Health Department (SLCHD) Listings by Inspection Record Status', 'query': "SELECT \n  'SLCHD Listings with Inspections' AS status,\n  COUNT(DISTINCT slchd_establishment_key) AS count\nFROM inspections\nUNION ALL\nSELECT \n  'SLCHD Listings without Inspections' AS status,\n  COUNT(*) - (SELECT COUNT(DISTINCT slchd_establishment_key) FROM inspections) AS count\nFROM establishment_keys\n", 'chart_type': 'bar', 'y': 'count'})
+
+Observation: Chart created: 'Salt Lake County Health Department (SLCHD) Listings by Inspection Record Status' (bar, 2 rows). It will be shown to the user below your answer.
+
+Action: plot_chart({'y': 'count', 'x': 'status', 'chart_type': 'bar', 'query': "SELECT \n  'Matched SLCHD Health Inspection Record' AS status,\n  COUNT(CASE WHEN slchd_establishment_key IS NOT NULL THEN 1 END) AS count\nFROM establishments\nUNION ALL\nSELECT \n  'No Matched SLCHD Record' AS status,\n  COUNT(CASE WHEN slchd_establishment_key IS NULL THEN 1 END) AS count\nFROM establishments\n", 'title': 'Google Local Establishments by SLCHD Inspection Match Status'})
+
+Observation: Chart created: 'Google Local Establishments by SLCHD Inspection Match Status' (bar, 2 rows). It will be shown to the user below your answer.
+
+Action: run_sql({'query': 'SELECT \n  MIN(inspection_date) AS min_date,\n  MAX(inspection_date) AS max_date,\n  COUNT(*) AS total_inspections,\n  COUNT(DISTINCT slchd_establishment_key) AS total_establishments\nFROM inspections\n'})
+
+Observation: {"row_count": 1, "truncated": false, "rows": [{"min_date": "2009-01-09 00:00:00", "max_date": "2026-07-17 00:00:00", "total_inspections": 8020, "total_establishments": 1315}]}
+
+Action: run_sql({'query': 'SELECT \n  YEAR(inspection_date) AS inspection_year,\n  COUNT(*) AS inspection_count\nFROM inspections\nGROUP BY 1\nORDER BY 1\n'})
+
+Observation: {"row_count": 18, "truncated": false, "rows": [{"inspection_year": 2009, "inspection_count": 3}, {"inspection_year": 2010, "inspection_count": 6}, {"inspection_year": 2011, "inspection_count": 8}, {"inspection_year": 2012, "inspection_count": 11}, {"inspection_year": 2013, "inspection_count": 24}, {"inspection_year": 2014, "inspection_count": 72}, {"inspection_year": 2015, "inspection_count": 82}, {"inspection_year": 2016, "inspection_count": 161}, {"inspection_year": 2017, "inspection_count": 244}, {"inspection_year": 2018, "inspection_count": 461}, {"inspection_year": 2019, "inspection_count": 611}, {"inspection_year": 2020, "inspection_count": 375}, {"inspection_year": 2021, "inspection_count": 621}, {"inspection_year": 2022, "inspection_count": 898}, {"inspection_year": 2023, "inspection_count": 908}, {"inspection_year": 2024, "inspection_count": 1258}, {"inspection_year": 2025, "inspection_count": 1387}, {"inspection_year": 2026, "inspection_count": 890}]}
+
+Action: run_sql({'query': "SELECT \n  COALESCE(it.description, 'Unspecified') AS inspection_type,\n  COUNT(*) AS count\nFROM inspections i\nLEFT JOIN inspection_types it ON i.inspection_type_id = it.inspection_type_id\nGROUP BY 1\nORDER BY 2 DESC\n"})
+
+Observation: {"row_count": 4, "truncated": false, "rows": [{"inspection_type": "Routine", "count": 7543}, {"inspection_type": "Followup", "count": 254}, {"inspection_type": "Critical Item", "count": 216}, {"inspection_type": "Complaint Investigation", "count": 7}]}
+
+Action: run_sql({'query': 'SELECT \n  MIN(inspection_score) AS min_score,\n  MAX(inspection_score) AS max_score,\n  AVG(inspection_score) AS avg_score,\n  MEDIAN(inspection_score) AS median_score,\n  COUNT(CASE WHEN inspection_score IS NULL THEN 1 END) AS null_scores,\n  COUNT(CASE WHEN inspection_score = 0 THEN 1 END) AS zero_scores\nFROM inspections\n'})
+
+Observation: {"row_count": 1, "truncated": false, "rows": [{"min_score": 0, "max_score": 297, "avg_score": 10.288022569889716, "median_score": 7.0, "null_scores": 222, "zero_scores": 710}]}
+
+Action: run_sql({'query': "SELECT \n  CASE \n    WHEN inspection_score = 0 THEN '0 (Clean / No Violations)'\n    WHEN inspection_score BETWEEN 1 AND 5 THEN '1 - 5'\n    WHEN inspection_score BETWEEN 6 AND 10 THEN '6 - 10'\n    WHEN inspection_score BETWEEN 11 AND 20 THEN '11 - 20'\n    WHEN inspection_score BETWEEN 21 AND 30 THEN '21 - 30'\n    WHEN inspection_score > 30 THEN '31+ (High Risk)'\n    ELSE 'Unscored / Unknown'\n  END AS score_range,\n  COUNT(*) AS inspection_count\nFROM inspections\nGROUP BY 1\nORDER BY MIN(COALESCE(inspection_score, 999))\n"})
+
+Observation: {"row_count": 7, "truncated": false, "rows": [{"score_range": "0 (Clean / No Violations)", "inspection_count": 710}, {"score_range": "1 - 5", "inspection_count": 2363}, {"score_range": "6 - 10", "inspection_count": 1938}, {"score_range": "11 - 20", "inspection_count": 1802}, {"score_range": "21 - 30", "inspection_count": 604}, {"score_range": "31+ (High Risk)", "inspection_count": 381}, {"score_range": "Unscored / Unknown", "inspection_count": 222}]}
+
+Action: run_sql({'query': "SELECT \n  CASE \n    WHEN insp_count = 1 THEN '1 inspection'\n    WHEN insp_count BETWEEN 2 AND 3 THEN '2 - 3 inspections'\n    WHEN insp_count BETWEEN 4 AND 6 THEN '4 - 6 inspections'\n    WHEN insp_count BETWEEN 7 AND 10 THEN '7 - 10 inspections'\n    WHEN insp_count > 10 THEN '11+ inspections'\n  END AS inspection_frequency,\n  COUNT(*) AS establishment_count\nFROM (\n  SELECT slchd_establishment_key, COUNT(*) AS insp_count\n  FROM inspections\n  GROUP BY slchd_establishment_key\n) sub\nGROUP BY 1\nORDER BY MIN(insp_count)\n"})
+
+Observation: {"row_count": 4, "truncated": false, "rows": [{"inspection_frequency": "1 inspection", "establishment_count": 177}, {"inspection_frequency": "2 - 3 inspections", "establishment_count": 258}, {"inspection_frequency": "4 - 6 inspections", "establishment_count": 236}, {"inspection_frequency": "7 - 10 inspections", "establishment_count": 644}]}
+
+Action: run_sql({'query': 'SELECT \n  MIN(insp_count) as min_c, \n  MAX(insp_count) as max_c, \n  AVG(insp_count) as avg_c\nFROM (\n  SELECT slchd_establishment_key, COUNT(*) AS insp_count\n  FROM inspections\n  GROUP BY slchd_establishment_key\n) sub\n'})
+
+Observation: {"row_count": 1, "truncated": false, "rows": [{"min_c": 1, "max_c": 10, "avg_c": 6.098859315589354}]}
+
+Action: retrieve_regulation({'query': 'inspection score risk routine frequency'})
+
+Observation: [R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 8-406 Core Item Violation, p.214]
+211  
+8-4 INSPECTION AND CORRECTION OF VIOLATIONS 
+ 
+Subparts 
+ 
+8-401 Frequency 
+8-402 Competency and Access 
+8-403 Report of Findings 
+8-404 Imminent Health Hazard 
+8-405 Violation of Priority Item or Priority 
+Foundation Item 
+8-406 Core Item Violation 
+ 
+ 
+ 
+Frequency 8-401.10 Establishing Inspection Interval. 
+ 
+(A) Except as specified in ¶¶ (B) and (C) of this section, the 
+REGULATORY AUTHORITY shall inspect a FOOD ESTABLISHMENT at 
+least once every 6 months and twice in a season for seasonal 
+operations. 
+ 
+(B) The REGULATORY AUTHORITY may increase the interval 
+between inspections beyond 6 months if: 
+ 
+(1) The FOOD ESTABLISHMENT is fully operating under an 
+APPROVED and validated HACCP PLAN as specified under 
+§ 8-201.14 and ¶¶ 8-103.12(A) and (B); 
+ 
+(2) The FOOD ESTABLISHMENT is assigned a less frequent 
+inspection frequency based on a written RISK-based 
+inspection schedule that is being uniformly applied 
+throughout the jurisdiction or
+
+---
+
+[R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 8-406 Core Item Violation, p.214]
+inspection frequency based on a written RISK-based 
+inspection schedule that is being uniformly applied 
+throughout the jurisdiction or 
+ 
+(3) The establishment's operation involves only coffee 
+service and other unPACKAGED or prePACKAGED FOOD that 
+is not TIME/TEMPERATURE CONTROL FOR SAFETY FOOD such 
+as carbonated BEVERAGES and snack FOOD such as chips, 
+nuts, popcorn, and pretzels. 
+ 
+(C) The REGULATORY AUTHORITY shall periodically inspect 
+throughout its PERMIT period a TEMPORARY FOOD 
+ESTABLISHMENT that prepares, sells, or serves unPACKAGED 
+TIME/TEMPERATURE CONTROL FOR SAFETY FOOD and that:
+
+---
+
+[R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 8-405.20 Verification and Documentation of, p.220]
+(2) 10 calendar days after the inspection, for the PERMIT 
+HOLDER to correct violations of a PRIORITY FOUNDATION 
+ITEM or HACCP PLAN deviations. 
+ 
+8-405.20 Verification and Documentation of 
+Correction. 
+ 
+(A) After observing at the time of inspection a correction of a 
+violation of a PRIORITY ITEM or PRIORITY FOUNDATION ITEM or a 
+HACCP PLAN deviation, the REGULATORY AUTHORITY shall enter 
+the violation and information about the corrective action on 
+the inspection report. 
+ 
+(B) As specified under ¶ 8-405.11(B), after receiving 
+notification that the PERMIT HOLDER has corrected a violation of 
+a PRIORITY ITEM OR PRIORITY FOUNDATION ITEM or HACCP PLAN 
+deviation, or at the end of the specified period of time, the 
+REGULATORY AUTHORITY shall verify correction of the violation, 
+document the information on an inspection report, and enter 
+the report in the REGULATORY AUTHORITY'S records. 
+ 
+ 
+ 
+8-406.11 Time Frame for Correction.
+
+---
+
+[R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 8-403.30 Issuing Report and Obtaining, p.218]
+215  
+(3) Nonconformance with PRIORITY ITEMS OR PRIORITY 
+FOUNDATION ITEMS of this Code, 
+ 
+(4) Failure of the appropriate FOOD EMPLOYEES to 
+demonstrate their knowledge of, and ability to perform 
+in accordance with, the procedural, monitoring, 
+verification, and corrective action practices required by 
+the REGULATORY AUTHORITY as specified under 
+§ 8-103.12, 
+ 
+(5) Failure of the PERSON IN CHARGE to provide records 
+required by the REGULATORY AUTHORITY for determining 
+conformance with a HACCP PLAN as specified under 
+Subparagraph 8-201.14(D)(6), and 
+ 
+(6) Nonconformance with CRITICAL LIMITS of a HACCP 
+PLAN. 
+ 
+ 
+ 
+8-403.20 Specifying Time Frame for Corrections. 
+ 
+The REGULATORY AUTHORITY shall specify on the inspection 
+report form the time frame for correction of the violations as 
+specified under §§ 8-404.11, 8-405.11, and 8-406.11. 
+ 
+ 
+ 
+8-403.30 Issuing Report and Obtaining 
+Acknowledgment of Receipt. 
+ 
+ 
+At the conclusion of the inspection and according to LAW, the
+
+Action: plot_chart({'query': 'SELECT \n  CAST(YEAR(inspection_date) AS VARCHAR) AS inspection_year,\n  COUNT(*) AS total_inspections\nFROM inspections\nGROUP BY YEAR(inspection_date)\nORDER BY YEAR(inspection_date)\n', 'title': 'Timeline of SLCHD Health Inspections by Year (2009–2026)', 'chart_type': 'line', 'x': 'inspection_year', 'y': 'total_inspections'})
+
+Observation: Chart created: 'Timeline of SLCHD Health Inspections by Year (2009–2026)' (line, 18 rows). It will be shown to the user below your answer.
+
+Action: plot_chart({'chart_type': 'bar', 'x': 'score_range', 'query': "SELECT \n  score_range,\n  COUNT(*) AS count\nFROM (\n  SELECT \n    CASE \n      WHEN inspection_score = 0 THEN '0 (Clean / No Violations)'\n      WHEN inspection_score BETWEEN 1 AND 5 THEN '1 - 5'\n      WHEN inspection_score BETWEEN 6 AND 10 THEN '6 - 10'\n      WHEN inspection_score BETWEEN 11 AND 20 THEN '11 - 20'\n      WHEN inspection_score BETWEEN 21 AND 30 THEN '21 - 30'\n      WHEN inspection_score > 30 THEN '31+ (High Risk)'\n      ELSE 'Unscored / Unknown'\n    END AS score_range,\n    COALESCE(inspection_score, 999) AS sort_val\n  FROM inspections\n)\nGROUP BY score_range\nORDER BY MIN(sort_val)\n", 'y': 'count', 'title': 'Distribution of Inspection Scores across 8,020 Inspection Visits'})
+
+Observation: Chart created: 'Distribution of Inspection Scores across 8,020 Inspection Visits' (bar, 7 rows). It will be shown to the user below your answer.
+
+Action: plot_chart({'y': 'count', 'x': 'inspection_type', 'query': "SELECT \n  COALESCE(it.description, 'Unspecified') AS inspection_type,\n  COUNT(*) AS count\nFROM inspections i\nLEFT JOIN inspection_types it ON i.inspection_type_id = it.inspection_type_id\nGROUP BY 1\nORDER BY 2 DESC\n", 'chart_type': 'bar', 'title': 'Distribution of Inspections by Visit Type'})
+
+Observation: Chart created: 'Distribution of Inspections by Visit Type' (bar, 4 rows). It will be shown to the user below your answer.
+
+Action: plot_chart({'title': 'Distribution of Lifetime Inspection Count per Establishment', 'query': "SELECT \n  inspection_frequency,\n  COUNT(*) AS establishment_count\nFROM (\n  SELECT \n    CASE \n      WHEN insp_count = 1 THEN '1 inspection'\n      WHEN insp_count BETWEEN 2 AND 3 THEN '2 - 3 inspections'\n      WHEN insp_count BETWEEN 4 AND 6 THEN '4 - 6 inspections'\n      WHEN insp_count BETWEEN 7 AND 10 THEN '7 - 10 inspections'\n    END AS inspection_frequency,\n    MIN(insp_count) AS min_c\n  FROM (\n    SELECT slchd_establishment_key, COUNT(*) AS insp_count\n    FROM inspections\n    GROUP BY slchd_establishment_key\n  ) sub\n  GROUP BY 1\n)\nGROUP BY inspection_frequency\nORDER BY MIN(min_c)\n", 'chart_type': 'bar', 'y': 'establishment_count', 'x': 'inspection_frequency'})
+
+Observation: Chart created: 'Distribution of Lifetime Inspection Count per Establishment' (bar, 4 rows). It will be shown to the user below your answer.
+
+--- Usage: 146328 tokens, ~$0.2621 ---

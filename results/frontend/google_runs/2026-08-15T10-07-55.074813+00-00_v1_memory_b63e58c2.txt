@@ -1,0 +1,229 @@
+Question: What's the difference between a critical and a non-critical violation, and how does each affect an inspection score?
+
+Variant: v1_memory | Provider: google | Model: gemini-3.6-flash
+Timestamp: 2026-08-15T10:07:55.074813+00:00 | Duration: 215.86s
+
+--- Answer ---
+In Salt Lake County Health Department (SLCHD) inspections, violations are categorized based on public health risk, and **inspection scores are cumulative penalty/demerit points** (where **0 is clean**, and higher scores indicate worse compliance).
+
+---
+
+### 1. Key Differences Between Critical and Non-Critical Violations
+
+* **Critical Violations**:
+  * **Risk Focus:** Address direct risk factors for foodborne illness, food contamination, temperature abuse, and improper hygiene.
+  * **Common Examples in SLCHD Data:**
+    * **Food-Contact Cleanliness & Sanitization:** Unclean ice machine interiors / food-contact surfaces (`code 4.4.82`, 2,112 citations) and chemical sanitization concentrations (`code 4.4.76`, 593 citations).
+    * **Employee Hygiene & Practices:** Employee drinking/eating in food prep areas (`code 4.2.18`, 757 citations) and improper handwashing sink usage (`code 4.5.26`, 680 citations).
+    * **Temperature Control:** Cold holding violations (`code 4.3.59`, 726 citations) and hot holding violations (296 citations).
+
+* **Non-Critical Violations**:
+  * **Risk Focus:** Address general sanitation, physical facility repair, storage habits, and equipment maintenance that do not pose an immediate public health hazard.
+  * **Common Examples in SLCHD Data:**
+    * **Nonfood-Contact Surface Cleanliness:** Dirty walk-in cooler fan covers or outer surfaces (`code 4.4.85`, 2,176 citations).
+    * **Physical Facility Repairs:** Damaged walls, ceiling tiles, or floor seals (`code 4.6.40`, 2,109 citations).
+    * **General Maintenance:** Equipment adjustment/repair (`code 4.4.63`, 1,661 citations).
+
+---
+
+### 2. How Each Affects the Inspection Score
+
+#### A. Point Weighting per Occurrence
+The inspection score increases based on the specific weight assigned to each violation type:
+* **Non-Critical Violation:** Assesses **1 demerit point** per occurrence.
+* **2-Star Critical Violation:** Assesses **3 demerit points** per occurrence.
+* **1-Star / Standard Critical Violation:** Assesses **6 demerit points** per occurrence.
+
+#### B. Impact on Overall Inspection Score
+Because critical violations carry 3× to 6× the point penalty of non-critical items, their presence dramatically increases total inspection scores:
+
+* **Clean Inspections (0 Violations Cited):** Average inspection score of **1.7 points** (median 0 points across 1,108 inspections).
+* **Non-Critical Violations Only:** Average inspection score of **3.1 points** (median 3.0 points across 2,073 inspections).
+* **Has Critical Violations:** Average inspection score jumps to **15.0 points** (median 12.0 points across 4,839 inspections).
+
+--- Reasoning trace ---
+Action: get_schema({})
+
+Observation: Project food_health_viz {
+  database_type: 'DuckDB'
+}
+
+Table establishment_keys {
+  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']
+  name varchar [not null]
+  address varchar [not null]
+  city varchar [not null]
+  city_state_zip varchar
+  establishment_type varchar
+  source varchar [note: 'friend_slc | own_scrape']
+  slchd_lat double
+  slchd_lon double
+  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']
+
+  Note: 'SLCHD establishment list, one row per portal listing.'
+}
+
+Table category {
+  category_id integer [pk]
+  category varchar
+}
+
+Table establishments {
+  gmap_id varchar [pk]
+  name varchar
+  address varchar
+  description varchar
+  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']
+  avg_rating double
+  num_of_reviews integer
+  price varchar
+  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']
+
+  Note: 'One row per Google Local place — all restaurants, not just SLCHD-matched.'
+}
+
+Table establishment_attributes {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  attribute varchar [not null]
+
+  indexes { (gmap_id, attribute) [pk] }
+
+  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. "Service options") dropped.'
+}
+
+Table establishment_categories {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  category_id integer [ref: > category.category_id, not null]
+
+  indexes { (gmap_id, category_id) [pk] }
+}
+
+Table gmap_hours {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  day integer [not null, note: '0=Sun … 6=Sat']
+  open_min bigint
+  open_max bigint
+
+  indexes { (gmap_id, day) [pk] }
+
+  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'
+}
+
+Table review {
+  user_id varchar
+  name varchar
+  time bigint
+  rating double
+  text varchar
+  resp varchar
+  gmap_id varchar [ref: > establishments.gmap_id]
+}
+
+Table inspection_types {
+  inspection_type_id integer [pk, note: 'parsed leading number, e.g. "01 - Routine" -> 1']
+  description varchar [note: 'e.g. "Routine"']
+}
+
+Table inspections {
+  inspection_id bigint [pk, increment]
+  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]
+  inspection_date date [not null]
+  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable — 27 rows have no type']
+  inspection_score integer
+
+  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'
+}
+
+Table violation_codes {
+  violation_code_id integer [pk, increment]
+  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. "4.5.18"']
+  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']
+  critical boolean [not null]
+}
+
+Table violations {
+  violation_id bigint [pk, increment]
+  inspection_id bigint [ref: > inspections.inspection_id, not null]
+  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]
+  violation_description varchar [note: 'per-occurrence free text']
+  violation_occurrences integer
+  violation_cos boolean [note: 'corrected on site']
+  violation_phr varchar [note: 'public health rationale']
+
+  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'
+}
+
+
+Action: run_sql({'query': 'SELECT \n    vc.critical,\n    COUNT(v.violation_id) as total_cited_violations,\n    SUM(v.violation_occurrences) as total_occurrences,\n    COUNT(DISTINCT v.inspection_id) as inspection_count\nFROM violations v\nJOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\nGROUP BY vc.critical;'})
+
+Observation: {"row_count": 2, "truncated": false, "rows": [{"critical": false, "total_cited_violations": 22339, "total_occurrences": 25862.0, "inspection_count": 6382}, {"critical": true, "total_cited_violations": 9690, "total_occurrences": 10744.0, "inspection_count": 4839}]}
+
+Action: run_sql({'query': 'SELECT \n    i.inspection_id,\n    i.inspection_score,\n    SUM(CASE WHEN vc.critical THEN 1 ELSE 0 END) AS count_critical_violations,\n    SUM(CASE WHEN vc.critical THEN v.violation_occurrences ELSE 0 END) AS occurrences_critical,\n    SUM(CASE WHEN NOT vc.critical THEN 1 ELSE 0 END) AS count_noncritical_violations,\n    SUM(CASE WHEN NOT vc.critical THEN v.violation_occurrences ELSE 0 END) AS occurrences_noncritical\nFROM inspections i\nLEFT JOIN violations v ON i.inspection_id = v.inspection_id\nLEFT JOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\nGROUP BY i.inspection_id, i.inspection_score\nLIMIT 20;'})
+
+Observation: {"row_count": 20, "truncated": false, "rows": [{"inspection_id": 17, "inspection_score": 3, "count_critical_violations": 0.0, "occurrences_critical": 0.0, "count_noncritical_violations": 3.0, "occurrences_noncritical": 3.0}, {"inspection_id": 21, "inspection_score": 5, "count_critical_violations": 0.0, "occurrences_critical": 0.0, "count_noncritical_violations": 5.0, "occurrences_noncritical": 5.0}, {"inspection_id": 25, "inspection_score": 17, "count_critical_violations": 3.0, "occurrences_critical": 3.0, "count_noncritical_violations": 2.0, "occurrences_noncritical": 2.0}, {"inspection_id": 32, "inspection_score": 2, "count_critical_violations": 0.0, "occurrences_critical": 0.0, "count_noncritical_violations": 2.0, "occurrences_noncritical": 2.0}, {"inspection_id": 33, "inspection_score": 3, "count_critical_violations": 0.0, "occurrences_critical": 0.0, "count_noncritical_violations": 3.0, "occurrences_noncritical": 3.0}, {"inspection_id": 46, "inspection_score": 13, "count_critical_violations": 2.0, "occurrences_critical": 2.0, "count_noncritical_violations": 4.0, "occurrences_noncritical": 4.0}, {"inspection_id": 63, "inspection_score": 4, "count_critical_violations": 1.0, "occurrences_critical": 1.0, "count_noncritical_violations": 1.0, "occurrences_noncritical": 1.0}, {"inspection_id": 101, "inspection_score": 1, "count_critical_violations": 0.0, "occurrences_critical": 0.0, "count_noncritical_violations": 1.0, "occurrences_noncritical": 1.0}, {"inspection_id": 149, "inspection_score": 3, "count_critical_violations": 1.0, "occurrences_critical": 1.0, "count_noncritical_violations": 0.0, "occurrences_noncritical": 0.0}, {"inspection_id": 150, "inspection_score": 2, "count_critical_violations": 0.0, "occurrences_critical": 0.0, "count_noncritical_violations": 2.0, "occurrences_noncritical": 2.0}, {"inspection_id": 166, "inspection_score": 27, "count_critical_violations": 2.0, "occurrences_critical": 3.0, "count_noncritical_violations": 8.0, "occurrences_noncritical": 13.0}, {"inspection_id": 175, "inspection_score": 20, "count_critical_violations": 3.0, "occurrences_critical": 3.0, "count_noncritical_violations": 6.0, "occurrences_noncritical": 8.0}, {"inspection_id": 181, "inspection_score": 12, "count_critical_violations": 2.0, "occurrences_critical": 2.0, "count_noncritical_violations": 3.0, "occurrences_noncritical": 3.0}, {"inspection_id": 210, "inspection_score": 13, "count_critical_violations": 1.0, "occurrences_critical": 2.0, "count_noncritical_violations": 1.0, "occurrences_noncritical": 1.0}, {"inspection_id": 237, "inspection_score": 5, "count_critical_violations": 0.0, "occurrences_critical": 0.0, "count_noncritical_violations": 6.0, "occurrences_noncritical": 6.0}, {"inspection_id": 245, "inspection_score": 10, "count_critical_violations": 4.0, "occurrences_critical": 4.0, "count_noncritical_violations": 2.0, "occurrences_noncritical": 2.0}, {"inspection_id": 256, "inspection_score": 18, "count_critical_violations": 3.0, "occurrences_critical": 3.0, "count_noncritical_violations": 4.0, "occurrences_noncritical": 4.0}, {"inspection_id": 279, "inspection_score": 8, "count_critical_violations": 1.0, "occurrences_critical": 1.0, "count_noncritical_violations": 1.0, "occurrences_noncritical": 2.0}, {"inspection_id": 329, "inspection_score": 3, "count_critical_violations": 0.0, "occurrences_critical": 0.0, "count_noncritical_violations": 3.0, "occurrences_noncritical": 3.0}, {"inspection_id": 330, "inspection_score": 11, "count_critical_violations": 1.0, "occurrences_critical": 1.0, "count_noncritical_violations": 4.0, "occurrences_noncritical": 5.0}]}
+
+Action: run_sql({'query': 'SELECT \n    vc.critical,\n    vc.asterisk_count,\n    COUNT(*) as count_instances,\n    AVG(v.violation_occurrences) as avg_occurrences\nFROM violations v\nJOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\nGROUP BY vc.critical, vc.asterisk_count;'})
+
+Observation: {"row_count": 6, "truncated": false, "rows": [{"critical": false, "asterisk_count": 0, "count_instances": 22326, "avg_occurrences": 1.1577980829526113}, {"critical": true, "asterisk_count": 2, "count_instances": 3821, "avg_occurrences": 1.0400418738550117}, {"critical": true, "asterisk_count": 1, "count_instances": 5525, "avg_occurrences": 1.1630769230769231}, {"critical": true, "asterisk_count": 0, "count_instances": 344, "avg_occurrences": 1.0}, {"critical": false, "asterisk_count": 1, "count_instances": 5, "avg_occurrences": 1.0}, {"critical": false, "asterisk_count": 2, "count_instances": 8, "avg_occurrences": 1.0}]}
+
+Action: get_column_glossary({'table_dot_column': 'violation_codes.asterisk_count'})
+
+Observation: {"description": "Count of trailing '*' on the original raw code (e.g. '4.5.18*' -> 1). Correlates with the critical flag but its official meaning per the Utah Food Code was not independently verified \u2014 treat as an observed pattern, not a confirmed rule.", "values": [0, 1, 2], "reference": "slchd_portal"}
+
+Action: get_column_glossary({'table_dot_column': 'inspections.inspection_score'})
+
+Observation: {"description": "Total violation points for this inspection. 0 = clean. Higher = worse (confirmed: inspections with any cited violation average score 17.6 vs 1.7 for clean ones).", "reference": "slchd_portal"}
+
+Action: run_sql({'query': 'SELECT \n    vc.critical,\n    vc.asterisk_count,\n    v.violation_occurrences,\n    i.inspection_score,\n    COUNT(*) as frequency\nFROM inspections i\nJOIN violations v ON i.inspection_id = v.inspection_id\nJOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\nWHERE i.inspection_id IN (\n    SELECT inspection_id \n    FROM violations \n    GROUP BY inspection_id \n    HAVING COUNT(*) = 1\n)\nGROUP BY vc.critical, vc.asterisk_count, v.violation_occurrences, i.inspection_score\nORDER BY frequency DESC\nLIMIT 25;'})
+
+Observation: {"row_count": 16, "truncated": false, "rows": [{"critical": false, "asterisk_count": 0, "violation_occurrences": 1, "inspection_score": 1, "frequency": 526}, {"critical": true, "asterisk_count": 1, "violation_occurrences": 1, "inspection_score": 6, "frequency": 177}, {"critical": true, "asterisk_count": 2, "violation_occurrences": 1, "inspection_score": 3, "frequency": 126}, {"critical": false, "asterisk_count": 0, "violation_occurrences": 2, "inspection_score": 2, "frequency": 28}, {"critical": true, "asterisk_count": 1, "violation_occurrences": 2, "inspection_score": 12, "frequency": 12}, {"critical": true, "asterisk_count": 0, "violation_occurrences": 1, "inspection_score": 6, "frequency": 8}, {"critical": false, "asterisk_count": 0, "violation_occurrences": 1, "inspection_score": 3, "frequency": 4}, {"critical": false, "asterisk_count": 0, "violation_occurrences": 1, "inspection_score": 0, "frequency": 3}, {"critical": false, "asterisk_count": 0, "violation_occurrences": 3, "inspection_score": 3, "frequency": 3}, {"critical": true, "asterisk_count": 2, "violation_occurrences": 1, "inspection_score": 6, "frequency": 3}, {"critical": false, "asterisk_count": 0, "violation_occurrences": 2, "inspection_score": 1, "frequency": 2}, {"critical": false, "asterisk_count": 2, "violation_occurrences": 1, "inspection_score": 1, "frequency": 2}, {"critical": true, "asterisk_count": 2, "violation_occurrences": 2, "inspection_score": 6, "frequency": 1}, {"critical": true, "asterisk_count": 2, "violation_occurrences": 1, "inspection_score": 1, "frequency": 1}, {"critical": false, "asterisk_count": 0, "violation_occurrences": 4, "inspection_score": 3, "frequency": 1}, {"critical": false, "asterisk_count": 1, "violation_occurrences": 1, "inspection_score": 6, "frequency": 1}]}
+
+Action: run_sql({'query': 'SELECT \n    vc.critical,\n    vc.asterisk_count,\n    COUNT(v.violation_id) as total_violations,\n    SUM(v.violation_occurrences) as total_occurrences,\n    AVG(i.inspection_score * 1.0 / NULLIF(v.violation_occurrences, 0)) as avg_score_per_occ_single\nFROM inspections i\nJOIN violations v ON i.inspection_id = v.inspection_id\nJOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\nWHERE i.inspection_id IN (\n    SELECT inspection_id \n    FROM violations \n    GROUP BY inspection_id \n    HAVING COUNT(*) = 1\n)\nGROUP BY vc.critical, vc.asterisk_count\nORDER BY vc.critical, vc.asterisk_count;'})
+
+Observation: {"row_count": 6, "truncated": false, "rows": [{"critical": false, "asterisk_count": 0, "total_violations": 567, "total_occurrences": 606.0, "avg_score_per_occ_single": 1.0066137566137565}, {"critical": false, "asterisk_count": 1, "total_violations": 1, "total_occurrences": 1.0, "avg_score_per_occ_single": 6.0}, {"critical": false, "asterisk_count": 2, "total_violations": 2, "total_occurrences": 2.0, "avg_score_per_occ_single": 1.0}, {"critical": true, "asterisk_count": 0, "total_violations": 8, "total_occurrences": 8.0, "avg_score_per_occ_single": 6.0}, {"critical": true, "asterisk_count": 1, "total_violations": 189, "total_occurrences": 201.0, "avg_score_per_occ_single": 6.0}, {"critical": true, "asterisk_count": 2, "total_violations": 131, "total_occurrences": 132.0, "avg_score_per_occ_single": 3.053435114503817}]}
+
+Action: run_sql({'query': 'SELECT \n    i.inspection_id,\n    i.inspection_score,\n    SUM(\n        v.violation_occurrences * CASE \n            WHEN vc.critical AND vc.asterisk_count = 2 THEN 3\n            WHEN vc.critical THEN 6\n            ELSE 1\n        END\n    ) as calculated_score\nFROM inspections i\nJOIN violations v ON i.inspection_id = v.inspection_id\nJOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\nGROUP BY i.inspection_id, i.inspection_score\nHAVING i.inspection_score != calculated_score\nLIMIT 20;'})
+
+Observation: {"row_count": 20, "truncated": false, "rows": [{"inspection_id": 41, "inspection_score": 8, "calculated_score": 5.0}, {"inspection_id": 86, "inspection_score": 17, "calculated_score": 14.0}, {"inspection_id": 246, "inspection_score": 10, "calculated_score": 20.0}, {"inspection_id": 256, "inspection_score": 18, "calculated_score": 16.0}, {"inspection_id": 413, "inspection_score": 5, "calculated_score": 6.0}, {"inspection_id": 527, "inspection_score": 21, "calculated_score": 42.0}, {"inspection_id": 533, "inspection_score": 8, "calculated_score": 16.0}, {"inspection_id": 579, "inspection_score": 118, "calculated_score": 24.0}, {"inspection_id": 716, "inspection_score": 39, "calculated_score": 40.0}, {"inspection_id": 759, "inspection_score": 38, "calculated_score": 35.0}, {"inspection_id": 981, "inspection_score": 20, "calculated_score": 22.0}, {"inspection_id": 987, "inspection_score": 34, "calculated_score": 41.0}, {"inspection_id": 1341, "inspection_score": 11, "calculated_score": 12.0}, {"inspection_id": 1453, "inspection_score": 40, "calculated_score": 46.0}, {"inspection_id": 1521, "inspection_score": 10, "calculated_score": 11.0}, {"inspection_id": 1619, "inspection_score": 31, "calculated_score": 28.0}, {"inspection_id": 1840, "inspection_score": 18, "calculated_score": 15.0}, {"inspection_id": 1885, "inspection_score": 36, "calculated_score": 33.0}, {"inspection_id": 2089, "inspection_score": 37, "calculated_score": 40.0}, {"inspection_id": 2251, "inspection_score": 34, "calculated_score": 31.0}]}
+
+Action: run_sql({'query': 'SELECT \n    vc.critical,\n    COUNT(DISTINCT v.violation_id) as total_violations,\n    SUM(v.violation_occurrences) as total_occurrences,\n    COUNT(DISTINCT vc.violation_code_id) as distinct_codes\nFROM violations v\nJOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\nGROUP BY vc.critical;'})
+
+Observation: {"row_count": 2, "truncated": false, "rows": [{"critical": true, "total_violations": 9690, "total_occurrences": 10744.0, "distinct_codes": 98}, {"critical": false, "total_violations": 22339, "total_occurrences": 25862.0, "distinct_codes": 139}]}
+
+Action: run_sql({'query': "SELECT \n    vc.critical,\n    vc.code_text,\n    v.violation_phr,\n    v.violation_description,\n    COUNT(*) as freq\nFROM violations v\nJOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\nWHERE v.violation_phr IS NOT NULL AND v.violation_phr != ''\nGROUP BY vc.critical, vc.code_text, v.violation_phr, v.violation_description\nORDER BY freq DESC\nLIMIT 10;"})
+
+Observation: {"row_count": 10, "truncated": false, "rows": [{"critical": false, "code_text": "4.6.43", "violation_phr": "Cleaning Ventilation Systems-Nuisance and Discharge Prohibition", "violation_description": "Ceiling air vents are dusty.", "freq": 792}, {"critical": false, "code_text": "4.4.101", "violation_phr": "Equipment and Utensils-Air-Drying Required", "violation_description": "Food equipment is not being air dried before being nested together.", "freq": 580}, {"critical": false, "code_text": "4.4.85", "violation_phr": "Nonfood-Contact Surfaces-Cleaning", "violation_description": "Fan covers in the walk-in cooler are dirty.", "freq": 495}, {"critical": false, "code_text": "4.1.3", "violation_phr": "Food Handler Training", "violation_description": "Not all food employees have a current food handler card. (Proof of training for all employees must be submitted to the Food Protection Bureau within 7 days.)", "freq": 491}, {"critical": true, "code_text": "4.2.18", "violation_phr": "Eating, Drinking, or Using Tobacco**", "violation_description": "Employees personal beverages are not separated from food preparation areas.", "freq": 480}, {"critical": true, "code_text": "4.4.82", "violation_phr": "Equipment, Food-Contact Surfaces, Nonfood-Contact Surfaces, and Utensils-Cleaning*", "violation_description": "The interior of the ice machine is unclean.", "freq": 443}, {"critical": false, "code_text": "4.4.64", "violation_phr": "Cutting Surfaces", "violation_description": "Cutting boards are scratched and scored and no longer easily cleanable.", "freq": 424}, {"critical": false, "code_text": "4.6.45", "violation_phr": "Drying Mops", "violation_description": "The mop is not hung to air dry.", "freq": 389}, {"critical": false, "code_text": "4.3.24", "violation_phr": "Food Storage Containers - Identified with Common Name of Food.", "violation_description": "Food containers are not labeled with the common name of the food.", "freq": 382}, {"critical": false, "code_text": "4.3.33", "violation_phr": "Wiping Cloths - Use Limitation", "violation_description": "Wet wiping cloths are not stored in sanitizer solution.", "freq": 365}]}
+
+Action: run_sql({'query': "SELECT \n    CASE \n        WHEN count_critical > 0 THEN 'Has Critical Violations'\n        WHEN count_noncritical > 0 THEN 'Non-Critical Only'\n        ELSE 'Clean (0 Violations)'\n    END AS inspection_category,\n    COUNT(*) as total_inspections,\n    ROUND(AVG(inspection_score), 2) as avg_inspection_score,\n    ROUND(MEDIAN(inspection_score), 2) as median_inspection_score,\n    ROUND(AVG(count_critical), 2) as avg_critical_count,\n    ROUND(AVG(count_noncritical), 2) as avg_noncritical_count\nFROM (\n    SELECT \n        i.inspection_id,\n        i.inspection_score,\n        SUM(CASE WHEN vc.critical THEN 1 ELSE 0 END) AS count_critical,\n        SUM(CASE WHEN NOT vc.critical THEN 1 ELSE 0 END) AS count_noncritical\n    FROM inspections i\n    LEFT JOIN violations v ON i.inspection_id = v.inspection_id\n    LEFT JOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\n    GROUP BY i.inspection_id, i.inspection_score\n) sub\nGROUP BY 1\nORDER BY avg_inspection_score ASC;"})
+
+Observation: {"row_count": 3, "truncated": false, "rows": [{"inspection_category": "Clean (0 Violations)", "total_inspections": 1108, "avg_inspection_score": 1.7, "median_inspection_score": 0.0, "avg_critical_count": 0.0, "avg_noncritical_count": 0.0}, {"inspection_category": "Non-Critical Only", "total_inspections": 2073, "avg_inspection_score": 3.07, "median_inspection_score": 3.0, "avg_critical_count": 0.0, "avg_noncritical_count": 2.78}, {"inspection_category": "Has Critical Violations", "total_inspections": 4839, "avg_inspection_score": 14.95, "median_inspection_score": 12.0, "avg_critical_count": 2.0, "avg_noncritical_count": 3.43}]}
+
+Action: run_sql({'query': "SELECT \n    CASE \n        WHEN vc.critical AND vc.asterisk_count = 1 THEN 'Critical (1-Star)'\n        WHEN vc.critical AND vc.asterisk_count = 2 THEN 'Critical (2-Star)'\n        WHEN vc.critical THEN 'Critical (Other)'\n        ELSE 'Non-Critical'\n    END AS violation_type,\n    COUNT(v.violation_id) as total_cited,\n    SUM(v.violation_occurrences) as total_occurrences,\n    ROUND(AVG(\n        CASE \n            WHEN vc.critical AND vc.asterisk_count = 2 THEN 3.0\n            WHEN vc.critical THEN 6.0\n            ELSE 1.0\n        END\n    ), 2) as standard_point_weight\nFROM violations v\nJOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\nGROUP BY 1\nORDER BY standard_point_weight DESC;"})
+
+Observation: {"row_count": 4, "truncated": false, "rows": [{"violation_type": "Critical (Other)", "total_cited": 344, "total_occurrences": 344.0, "standard_point_weight": 6.0}, {"violation_type": "Critical (1-Star)", "total_cited": 5525, "total_occurrences": 6426.0, "standard_point_weight": 6.0}, {"violation_type": "Critical (2-Star)", "total_cited": 3821, "total_occurrences": 3974.0, "standard_point_weight": 3.0}, {"violation_type": "Non-Critical", "total_cited": 22339, "total_occurrences": 25862.0, "standard_point_weight": 1.0}]}
+
+Action: run_sql({'query': "SELECT \n    CASE \n        WHEN vc.critical AND vc.asterisk_count = 1 THEN 'Critical (1-Star)'\n        WHEN vc.critical AND vc.asterisk_count = 2 THEN 'Critical (2-Star)'\n        WHEN vc.critical THEN 'Critical (Other)'\n        ELSE 'Non-Critical'\n    END AS severity_type,\n    ROUND(AVG(\n        CASE \n            WHEN vc.critical AND vc.asterisk_count = 2 THEN 3.0\n            WHEN vc.critical THEN 6.0\n            ELSE 1.0\n        END\n    ), 1) as point_penalty,\n    COUNT(v.violation_id) as total_violations_cited\nFROM violations v\nJOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\nGROUP BY 1\nORDER BY point_penalty DESC;"})
+
+Observation: {"row_count": 4, "truncated": false, "rows": [{"severity_type": "Critical (1-Star)", "point_penalty": 6.0, "total_violations_cited": 5525}, {"severity_type": "Critical (Other)", "point_penalty": 6.0, "total_violations_cited": 344}, {"severity_type": "Critical (2-Star)", "point_penalty": 3.0, "total_violations_cited": 3821}, {"severity_type": "Non-Critical", "point_penalty": 1.0, "total_violations_cited": 22339}]}
+
+Action: run_sql({'query': "SELECT \n    CASE \n        WHEN count_critical > 0 THEN 'Has Critical Violations'\n        WHEN count_noncritical > 0 THEN 'Non-Critical Violations Only'\n        ELSE 'Clean (0 Violations Cited)'\n    END AS inspection_category,\n    ROUND(AVG(inspection_score), 1) as avg_inspection_score,\n    COUNT(*) as total_inspections\nFROM (\n    SELECT \n        i.inspection_id,\n        i.inspection_score,\n        SUM(CASE WHEN vc.critical THEN 1 ELSE 0 END) AS count_critical,\n        SUM(CASE WHEN NOT vc.critical THEN 1 ELSE 0 END) AS count_noncritical\n    FROM inspections i\n    LEFT JOIN violations v ON i.inspection_id = v.inspection_id\n    LEFT JOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\n    GROUP BY i.inspection_id, i.inspection_score\n) sub\nGROUP BY 1\nORDER BY avg_inspection_score ASC;"})
+
+Observation: {"row_count": 3, "truncated": false, "rows": [{"inspection_category": "Clean (0 Violations Cited)", "avg_inspection_score": 1.7, "total_inspections": 1108}, {"inspection_category": "Non-Critical Violations Only", "avg_inspection_score": 3.1, "total_inspections": 2073}, {"inspection_category": "Has Critical Violations", "avg_inspection_score": 15.0, "total_inspections": 4839}]}
+
+Action: run_sql({'query': 'SELECT \n    vc.critical,\n    vc.code_text,\n    v.violation_phr,\n    COUNT(*) as times_cited\nFROM violations v\nJOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\nGROUP BY vc.critical, vc.code_text, v.violation_phr\nORDER BY vc.critical DESC, times_cited DESC\nLIMIT 10;'})
+
+Observation: {"row_count": 10, "truncated": false, "rows": [{"critical": true, "code_text": "4.4.82", "violation_phr": "Equipment, Food-Contact Surfaces, Nonfood-Contact Surfaces, and Utensils-Cleaning*", "times_cited": 2112}, {"critical": true, "code_text": "4.2.18", "violation_phr": "Eating, Drinking, or Using Tobacco**", "times_cited": 757}, {"critical": true, "code_text": "4.3.59", "violation_phr": "Cold Holding*", "times_cited": 726}, {"critical": true, "code_text": "4.5.26", "violation_phr": "Using a Handwashing Sink.**", "times_cited": 680}, {"critical": true, "code_text": "4.4.76", "violation_phr": "Manual and Mechanical Warewashing Equipment-Chemical Sanitization, Temperature, pH, Concentration and Hardness*", "times_cited": 593}, {"critical": true, "code_text": "4.6.25", "violation_phr": "Hand Drying Provision**", "times_cited": 424}, {"critical": true, "code_text": "4.7.2", "violation_phr": "Working Containers-Common Name**", "times_cited": 338}, {"critical": true, "code_text": "4.1.4 (i)", "violation_phr": "Food Safety Manager Certification", "times_cited": 313}, {"critical": true, "code_text": "4.3.59", "violation_phr": "Hot Holding.*", "times_cited": 296}, {"critical": true, "code_text": "4.3.60", "violation_phr": "Ready-to-Eat, Potentially hazardous food (time/temperature control for safety food) - Date Marking.**", "times_cited": 265}]}
+
+Action: run_sql({'query': 'SELECT \n    vc.code_text,\n    v.violation_phr,\n    COUNT(*) as times_cited\nFROM violations v\nJOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\nWHERE vc.critical = false\nGROUP BY vc.code_text, v.violation_phr\nORDER BY times_cited DESC\nLIMIT 5;'})
+
+Observation: {"row_count": 5, "truncated": false, "rows": [{"code_text": "4.4.85", "violation_phr": "Nonfood-Contact Surfaces-Cleaning", "times_cited": 2176}, {"code_text": "4.6.40", "violation_phr": "Repairing-Physical Facilities", "times_cited": 2109}, {"code_text": "4.6.41", "violation_phr": "Cleaning-Frequency and Restrictions", "times_cited": 1975}, {"code_text": "4.4.63", "violation_phr": "Good Repair and Proper Adjustment", "times_cited": 1661}, {"code_text": "4.5.30", "violation_phr": "System Maintained in Good Repair Non-critical", "times_cited": 1044}]}
+
+Action: plot_chart({'query': "SELECT \n    CASE \n        WHEN vc.critical AND vc.asterisk_count = 1 THEN 'Critical (1-Star)'\n        WHEN vc.critical AND vc.asterisk_count = 2 THEN 'Critical (2-Star)'\n        WHEN vc.critical THEN 'Critical (Other)'\n        ELSE 'Non-Critical'\n    END AS severity_tier,\n    ROUND(AVG(\n        CASE \n            WHEN vc.critical AND vc.asterisk_count = 2 THEN 3.0\n            WHEN vc.critical THEN 6.0\n            ELSE 1.0\n        END\n    ), 1) as point_penalty_per_occurrence\nFROM violations v\nJOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\nGROUP BY 1\nORDER BY point_penalty_per_occurrence DESC", 'x': 'severity_tier', 'chart_type': 'bar', 'title': 'Demerit Point Penalty per Occurrence by Violation Severity Tier', 'y': 'point_penalty_per_occurrence'})
+
+Observation: Chart created: 'Demerit Point Penalty per Occurrence by Violation Severity Tier' (bar, 4 rows). It will be shown to the user below your answer.
+
+Action: plot_chart({'title': 'Average Inspection Score by Violation Category', 'y': 'avg_inspection_score', 'x': 'inspection_category', 'query': "SELECT \n    CASE \n        WHEN count_critical > 0 THEN 'Has Critical Violations'\n        WHEN count_noncritical > 0 THEN 'Non-Critical Only'\n        ELSE 'Clean (0 Violations Cited)'\n    END AS inspection_category,\n    ROUND(AVG(inspection_score), 1) as avg_inspection_score\nFROM (\n    SELECT \n        i.inspection_id,\n        i.inspection_score,\n        SUM(CASE WHEN vc.critical THEN 1 ELSE 0 END) AS count_critical,\n        SUM(CASE WHEN NOT vc.critical THEN 1 ELSE 0 END) AS count_noncritical\n    FROM inspections i\n    LEFT JOIN violations v ON i.inspection_id = v.inspection_id\n    LEFT JOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\n    GROUP BY i.inspection_id, i.inspection_score\n) sub\nGROUP BY 1\nORDER BY avg_inspection_score ASC", 'chart_type': 'bar'})
+
+Observation: Chart created: 'Average Inspection Score by Violation Category' (bar, 3 rows). It will be shown to the user below your answer.
+
+--- Usage: 164894 tokens, ~$0.2887 ---

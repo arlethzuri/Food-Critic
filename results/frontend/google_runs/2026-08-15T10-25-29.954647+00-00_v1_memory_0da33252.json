@@ -1,0 +1,2955 @@
+{
+  "source": "frontend",
+  "run_id": "0da33252",
+  "timestamp": "2026-08-15T10:25:29.954647+00:00",
+  "variant": "v1_memory",
+  "provider": "google",
+  "model": "gemini-3.6-flash",
+  "question": "Show me detailed visual analytics and statistics of inspection scores across all establishments.",
+  "output_text": "### Overall Summary Statistics\n\n* **Total Inspections Recorded**: 8,020 visits (7,798 with non-null numeric scores).\n* **Mean Inspection Score**: **10.29**\n* **Median Inspection Score**: **7.00**\n* **Standard Deviation**: 12.07\n* **Score Range**: **0** (clean visit) to **297** (worst score recorded).\n* **Database Coverage Note**: Only **139 out of 8,592** establishments in the local database (**1.62%**) have a matched Salt Lake County Health Department (SLCHD) inspection history. The vast majority (**98.38%**) have no matched SLCHD inspection history; this reflects unlinked dataset records rather than clean health records.\n\n---\n\n### Detailed Analytics Across Facets\n\n#### 1. Score Distribution (Histogram / Brackets)\n* **0 (Perfect / Clean Visit)**: 710 visits (9.1%)\n* **1 \u2013 5 (Low Violations)**: 2,363 visits (30.3%)\n* **6 \u2013 10 (Moderate Violations)**: 1,938 visits (24.9%)\n* **11 \u2013 20 (High Violations)**: 1,802 visits (23.1%)\n* **21 \u2013 30 (Very High Violations)**: 604 visits (7.7%)\n* **31 \u2013 50 (Severe Violations)**: 308 visits (3.9%)\n* **51+ (Critical Outliers)**: 73 visits (0.9%)\n\nOver **64%** of all inspections result in 10 or fewer violation points, while severe cases (score > 30) represent under 5% of visits.\n\n---\n\n#### 2. Yearly Trends (2015\u20132025)\n* **2015\u20132020**: Average scores dropped steadily from **13.00** in 2015 to a low of **9.80** in 2020.\n* **2021\u20132023**: Rebounded post-pandemic to **12.08** in 2022 and **12.01** in 2023.\n* **2024\u20132025**: Decreased again to **11.49** in 2024 and **8.90** in 2025.\n\n---\n\n#### 3. Breakdown by Inspection Visit Type\n* **Routine Inspections**: 7,380 visits | Avg Score: **10.45** (Median: 8)\n* **Critical Item Visits**: 202 visits | Avg Score: **9.02** (Median: 3)\n* **Follow-up Visits**: 211 visits | Avg Score: **6.19** (Median: 3)\n* **Complaint Investigations**: 5 visits | Avg Score: **1.80** (Median: 0)\n\nFollow-up visits reflect significant improvement compared to initial Routine inspections (averaging ~4.26 fewer points).\n\n---\n\n#### 4. Breakdown by Restaurant Category (\u226510 Matched Establishments)\n* **Highest Average Violation Scores**:\n  * American Restaurant: **15.28**\n  * Family Restaurant: **15.03**\n  * Takeout Restaurant: **14.88**\n  * Sandwich Shop: **14.76**\n* **Lowest Average Violation Scores**:\n  * Asian Restaurant: **7.58**\n  * Bar: **10.22**\n  * Breakfast Restaurant: **10.25**",
+  "structured_response": null,
+  "trace_text": "Action: get_schema({})\n\nObservation: Project food_health_viz {\n  database_type: 'DuckDB'\n}\n\nTable establishment_keys {\n  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']\n  name varchar [not null]\n  address varchar [not null]\n  city varchar [not null]\n  city_state_zip varchar\n  establishment_type varchar\n  source varchar [note: 'friend_slc | own_scrape']\n  slchd_lat double\n  slchd_lon double\n  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']\n\n  Note: 'SLCHD establishment list, one row per portal listing.'\n}\n\nTable category {\n  category_id integer [pk]\n  category varchar\n}\n\nTable establishments {\n  gmap_id varchar [pk]\n  name varchar\n  address varchar\n  description varchar\n  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']\n  avg_rating double\n  num_of_reviews integer\n  price varchar\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']\n\n  Note: 'One row per Google Local place \u2014 all restaurants, not just SLCHD-matched.'\n}\n\nTable establishment_attributes {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  attribute varchar [not null]\n\n  indexes { (gmap_id, attribute) [pk] }\n\n  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. \"Service options\") dropped.'\n}\n\nTable establishment_categories {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  category_id integer [ref: > category.category_id, not null]\n\n  indexes { (gmap_id, category_id) [pk] }\n}\n\nTable gmap_hours {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  day integer [not null, note: '0=Sun \u2026 6=Sat']\n  open_min bigint\n  open_max bigint\n\n  indexes { (gmap_id, day) [pk] }\n\n  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'\n}\n\nTable review {\n  user_id varchar\n  name varchar\n  time bigint\n  rating double\n  text varchar\n  resp varchar\n  gmap_id varchar [ref: > establishments.gmap_id]\n}\n\nTable inspection_types {\n  inspection_type_id integer [pk, note: 'parsed leading number, e.g. \"01 - Routine\" -> 1']\n  description varchar [note: 'e.g. \"Routine\"']\n}\n\nTable inspections {\n  inspection_id bigint [pk, increment]\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]\n  inspection_date date [not null]\n  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable \u2014 27 rows have no type']\n  inspection_score integer\n\n  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'\n}\n\nTable violation_codes {\n  violation_code_id integer [pk, increment]\n  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. \"4.5.18\"']\n  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']\n  critical boolean [not null]\n}\n\nTable violations {\n  violation_id bigint [pk, increment]\n  inspection_id bigint [ref: > inspections.inspection_id, not null]\n  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]\n  violation_description varchar [note: 'per-occurrence free text']\n  violation_occurrences integer\n  violation_cos boolean [note: 'corrected on site']\n  violation_phr varchar [note: 'public health rationale']\n\n  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'\n}\n\n\nAction: run_sql({'query': 'SELECT \\n    COUNT(*) as total_inspections,\\n    COUNT(inspection_score) as non_null_scores,\\n    MIN(inspection_score) as min_score,\\n    MAX(inspection_score) as max_score,\\n    AVG(inspection_score) as avg_score,\\n    MEDIAN(inspection_score) as median_score,\\n    STDDEV(inspection_score) as stddev_score\\nFROM inspections'})\n\nObservation: {\"row_count\": 1, \"truncated\": false, \"rows\": [{\"total_inspections\": 8020, \"non_null_scores\": 7798, \"min_score\": 0, \"max_score\": 297, \"avg_score\": 10.288022569889716, \"median_score\": 7.0, \"stddev_score\": 12.069595869540299}]}\n\nAction: run_sql({'query': 'SELECT \\n    it.description as inspection_type,\\n    COUNT(i.inspection_id) as count,\\n    ROUND(AVG(i.inspection_score), 2) as avg_score,\\n    MEDIAN(i.inspection_score) as median_score,\\n    MAX(i.inspection_score) as max_score\\nFROM inspections i\\nLEFT JOIN inspection_types it ON i.inspection_type_id = it.inspection_type_id\\nGROUP BY it.description\\nORDER BY count DESC'})\n\nObservation: {\"row_count\": 4, \"truncated\": false, \"rows\": [{\"inspection_type\": \"Routine\", \"count\": 7543, \"avg_score\": 10.45, \"median_score\": 8.0, \"max_score\": 297}, {\"inspection_type\": \"Followup\", \"count\": 254, \"avg_score\": 6.19, \"median_score\": 3.0, \"max_score\": 68}, {\"inspection_type\": \"Critical Item\", \"count\": 216, \"avg_score\": 9.02, \"median_score\": 3.0, \"max_score\": 186}, {\"inspection_type\": \"Complaint Investigation\", \"count\": 7, \"avg_score\": 1.8, \"median_score\": 0.0, \"max_score\": 6}]}\n\nAction: run_sql({'query': 'SELECT \\n    YEAR(inspection_date) as year,\\n    COUNT(*) as num_inspections,\\n    ROUND(AVG(inspection_score), 2) as avg_score,\\n    MEDIAN(inspection_score) as median_score\\nFROM inspections\\nWHERE inspection_score IS NOT NULL\\nGROUP BY year\\nORDER BY year'})\n\nObservation: {\"row_count\": 18, \"truncated\": false, \"rows\": [{\"year\": 2009, \"num_inspections\": 3, \"avg_score\": 7.0, \"median_score\": 4.0}, {\"year\": 2010, \"num_inspections\": 5, \"avg_score\": 4.8, \"median_score\": 3.0}, {\"year\": 2011, \"num_inspections\": 7, \"avg_score\": 6.71, \"median_score\": 7.0}, {\"year\": 2012, \"num_inspections\": 10, \"avg_score\": 6.0, \"median_score\": 5.5}, {\"year\": 2013, \"num_inspections\": 22, \"avg_score\": 8.91, \"median_score\": 8.5}, {\"year\": 2014, \"num_inspections\": 70, \"avg_score\": 8.73, \"median_score\": 6.0}, {\"year\": 2015, \"num_inspections\": 77, \"avg_score\": 13.0, \"median_score\": 11.0}, {\"year\": 2016, \"num_inspections\": 158, \"avg_score\": 12.25, \"median_score\": 8.0}, {\"year\": 2017, \"num_inspections\": 239, \"avg_score\": 11.41, \"median_score\": 8.0}, {\"year\": 2018, \"num_inspections\": 456, \"avg_score\": 11.09, \"median_score\": 9.0}, {\"year\": 2019, \"num_inspections\": 601, \"avg_score\": 10.19, \"median_score\": 8.0}, {\"year\": 2020, \"num_inspections\": 362, \"avg_score\": 9.8, \"median_score\": 7.0}, {\"year\": 2021, \"num_inspections\": 605, \"avg_score\": 10.4, \"median_score\": 8.0}, {\"year\": 2022, \"num_inspections\": 869, \"avg_score\": 12.08, \"median_score\": 9.0}, {\"year\": 2023, \"num_inspections\": 879, \"avg_score\": 12.01, \"median_score\": 8.0}, {\"year\": 2024, \"num_inspections\": 1227, \"avg_score\": 11.49, \"median_score\": 8.0}, {\"year\": 2025, \"num_inspections\": 1343, \"avg_score\": 8.9, \"median_score\": 6.0}, {\"year\": 2026, \"num_inspections\": 865, \"avg_score\": 6.33, \"median_score\": 5.0}]}\n\nAction: run_sql({'query': 'SELECT MIN(inspection_date), MAX(inspection_date) FROM inspections'})\n\nObservation: {\"row_count\": 1, \"truncated\": false, \"rows\": [{\"min(inspection_date)\": \"2009-01-09 00:00:00\", \"max(inspection_date)\": \"2026-07-17 00:00:00\"}]}\n\nAction: run_sql({'query': \"SELECT \\n    CASE \\n        WHEN inspection_score = 0 THEN '0 (Clean)'\\n        WHEN inspection_score BETWEEN 1 AND 5 THEN '1-5'\\n        WHEN inspection_score BETWEEN 6 AND 10 THEN '6-10'\\n        WHEN inspection_score BETWEEN 11 AND 20 THEN '11-20'\\n        WHEN inspection_score BETWEEN 21 AND 30 THEN '21-30'\\n        WHEN inspection_score BETWEEN 31 AND 50 THEN '31-50'\\n        ELSE '51+' \\n    END as score_range,\\n    COUNT(*) as inspection_count,\\n    ROUND(100.0 * COUNT(*) / (SELECT COUNT(*) FROM inspections WHERE inspection_score IS NOT NULL), 1) as percentage\\nFROM inspections\\nWHERE inspection_score IS NOT NULL\\nGROUP BY score_range\\nORDER BY MIN(inspection_score)\"})\n\nObservation: {\"row_count\": 7, \"truncated\": false, \"rows\": [{\"score_range\": \"0 (Clean)\", \"inspection_count\": 710, \"percentage\": 9.1}, {\"score_range\": \"1-5\", \"inspection_count\": 2363, \"percentage\": 30.3}, {\"score_range\": \"6-10\", \"inspection_count\": 1938, \"percentage\": 24.9}, {\"score_range\": \"11-20\", \"inspection_count\": 1802, \"percentage\": 23.1}, {\"score_range\": \"21-30\", \"inspection_count\": 604, \"percentage\": 7.7}, {\"score_range\": \"31-50\", \"inspection_count\": 308, \"percentage\": 3.9}, {\"score_range\": \"51+\", \"inspection_count\": 73, \"percentage\": 0.9}]}\n\nAction: run_sql({'query': 'SELECT \\n    c.category,\\n    COUNT(DISTINCT e.gmap_id) as establishment_count,\\n    COUNT(i.inspection_id) as inspection_count,\\n    ROUND(AVG(i.inspection_score), 2) as avg_inspection_score,\\n    ROUND(MEDIAN(i.inspection_score), 1) as median_inspection_score\\nFROM inspections i\\nJOIN establishment_keys ek ON i.slchd_establishment_key = ek.slchd_establishment_key\\nJOIN establishments e ON e.slchd_establishment_key = ek.slchd_establishment_key\\nJOIN establishment_categories ec ON e.gmap_id = ec.gmap_id\\nJOIN category c ON ec.category_id = c.category_id\\nGROUP BY c.category\\nHAVING COUNT(i.inspection_id) >= 20\\nORDER BY avg_inspection_score DESC\\nLIMIT 15'})\n\nObservation: {\"row_count\": 15, \"truncated\": false, \"rows\": [{\"category\": \"Bakery\", \"establishment_count\": 3, \"inspection_count\": 20, \"avg_inspection_score\": 26.4, \"median_inspection_score\": 20.0}, {\"category\": \"Bar & grill\", \"establishment_count\": 4, \"inspection_count\": 30, \"avg_inspection_score\": 26.23, \"median_inspection_score\": 21.0}, {\"category\": \"Steak house\", \"establishment_count\": 2, \"inspection_count\": 20, \"avg_inspection_score\": 25.1, \"median_inspection_score\": 24.5}, {\"category\": \"Ice cream shop\", \"establishment_count\": 9, \"inspection_count\": 81, \"avg_inspection_score\": 21.83, \"median_inspection_score\": 19.0}, {\"category\": \"Tex-Mex restaurant\", \"establishment_count\": 2, \"inspection_count\": 20, \"avg_inspection_score\": 17.1, \"median_inspection_score\": 15.5}, {\"category\": \"Burrito restaurant\", \"establishment_count\": 2, \"inspection_count\": 20, \"avg_inspection_score\": 17.1, \"median_inspection_score\": 15.5}, {\"category\": \"New American restaurant\", \"establishment_count\": 6, \"inspection_count\": 48, \"avg_inspection_score\": 16.25, \"median_inspection_score\": 13.0}, {\"category\": \"Chicken restaurant\", \"establishment_count\": 8, \"inspection_count\": 62, \"avg_inspection_score\": 15.55, \"median_inspection_score\": 10.5}, {\"category\": \"American restaurant\", \"establishment_count\": 29, \"inspection_count\": 270, \"avg_inspection_score\": 15.28, \"median_inspection_score\": 11.0}, {\"category\": \"Family restaurant\", \"establishment_count\": 14, \"inspection_count\": 118, \"avg_inspection_score\": 15.03, \"median_inspection_score\": 11.0}, {\"category\": \"Cake shop\", \"establishment_count\": 2, \"inspection_count\": 20, \"avg_inspection_score\": 14.95, \"median_inspection_score\": 12.5}, {\"category\": \"Takeout Restaurant\", \"establishment_count\": 25, \"inspection_count\": 240, \"avg_inspection_score\": 14.88, \"median_inspection_score\": 12.0}, {\"category\": \"Sandwich shop\", \"establishment_count\": 17, \"inspection_count\": 152, \"avg_inspection_score\": 14.76, \"median_inspection_score\": 11.5}, {\"category\": \"Mexican restaurant\", \"establishment_count\": 13, \"inspection_count\": 120, \"avg_inspection_score\": 13.73, \"median_inspection_score\": 12.5}, {\"category\": \"Restaurant\", \"establishment_count\": 74, \"inspection_count\": 620, \"avg_inspection_score\": 13.67, \"median_inspection_score\": 9.0}]}\n\nAction: run_sql({'query': 'SELECT \\n    c.category,\\n    COUNT(DISTINCT e.gmap_id) as establishment_count,\\n    COUNT(i.inspection_id) as inspection_count,\\n    ROUND(AVG(i.inspection_score), 2) as avg_inspection_score,\\n    ROUND(MEDIAN(i.inspection_score), 1) as median_inspection_score\\nFROM inspections i\\nJOIN establishment_keys ek ON i.slchd_establishment_key = ek.slchd_establishment_key\\nJOIN establishments e ON e.slchd_establishment_key = ek.slchd_establishment_key\\nJOIN establishment_categories ec ON e.gmap_id = ec.gmap_id\\nJOIN category c ON ec.category_id = c.category_id\\nGROUP BY c.category\\nHAVING COUNT(DISTINCT e.gmap_id) >= 10\\nORDER BY avg_inspection_score DESC'})\n\nObservation: {\"row_count\": 13, \"truncated\": false, \"rows\": [{\"category\": \"American restaurant\", \"establishment_count\": 29, \"inspection_count\": 270, \"avg_inspection_score\": 15.28, \"median_inspection_score\": 11.0}, {\"category\": \"Family restaurant\", \"establishment_count\": 14, \"inspection_count\": 118, \"avg_inspection_score\": 15.03, \"median_inspection_score\": 11.0}, {\"category\": \"Takeout Restaurant\", \"establishment_count\": 25, \"inspection_count\": 240, \"avg_inspection_score\": 14.88, \"median_inspection_score\": 12.0}, {\"category\": \"Sandwich shop\", \"establishment_count\": 17, \"inspection_count\": 152, \"avg_inspection_score\": 14.76, \"median_inspection_score\": 11.5}, {\"category\": \"Mexican restaurant\", \"establishment_count\": 13, \"inspection_count\": 120, \"avg_inspection_score\": 13.73, \"median_inspection_score\": 12.5}, {\"category\": \"Restaurant\", \"establishment_count\": 74, \"inspection_count\": 620, \"avg_inspection_score\": 13.67, \"median_inspection_score\": 9.0}, {\"category\": \"Hamburger restaurant\", \"establishment_count\": 20, \"inspection_count\": 182, \"avg_inspection_score\": 13.58, \"median_inspection_score\": 9.0}, {\"category\": \"Fast food restaurant\", \"establishment_count\": 45, \"inspection_count\": 415, \"avg_inspection_score\": 13.27, \"median_inspection_score\": 10.0}, {\"category\": \"Cafe\", \"establishment_count\": 10, \"inspection_count\": 87, \"avg_inspection_score\": 12.07, \"median_inspection_score\": 9.0}, {\"category\": \"Caterer\", \"establishment_count\": 19, \"inspection_count\": 164, \"avg_inspection_score\": 11.51, \"median_inspection_score\": 9.0}, {\"category\": \"Breakfast restaurant\", \"establishment_count\": 11, \"inspection_count\": 81, \"avg_inspection_score\": 10.25, \"median_inspection_score\": 7.0}, {\"category\": \"Bar\", \"establishment_count\": 12, \"inspection_count\": 55, \"avg_inspection_score\": 10.22, \"median_inspection_score\": 4.0}, {\"category\": \"Asian restaurant\", \"establishment_count\": 10, \"inspection_count\": 91, \"avg_inspection_score\": 7.58, \"median_inspection_score\": 8.0}]}\n\nAction: run_sql({'query': 'SELECT \\n    it.description as inspection_type,\\n    COUNT(*) as total_inspections,\\n    ROUND(AVG(i.inspection_score), 2) as avg_score,\\n    MEDIAN(i.inspection_score) as median_score,\\n    MIN(i.inspection_score) as min_score,\\n    MAX(i.inspection_score) as max_score\\nFROM inspections i\\nJOIN inspection_types it ON i.inspection_type_id = it.inspection_type_id\\nWHERE i.inspection_score IS NOT NULL\\nGROUP BY it.description\\nORDER BY total_inspections DESC'})\n\nObservation: {\"row_count\": 4, \"truncated\": false, \"rows\": [{\"inspection_type\": \"Routine\", \"total_inspections\": 7380, \"avg_score\": 10.45, \"median_score\": 8.0, \"min_score\": 0, \"max_score\": 297}, {\"inspection_type\": \"Followup\", \"total_inspections\": 211, \"avg_score\": 6.19, \"median_score\": 3.0, \"min_score\": 0, \"max_score\": 68}, {\"inspection_type\": \"Critical Item\", \"total_inspections\": 202, \"avg_score\": 9.02, \"median_score\": 3.0, \"min_score\": 0, \"max_score\": 186}, {\"inspection_type\": \"Complaint Investigation\", \"total_inspections\": 5, \"avg_score\": 1.8, \"median_score\": 0.0, \"min_score\": 0, \"max_score\": 6}]}\n\nAction: run_sql({'query': 'SELECT \\n    CAST(YEAR(inspection_date) AS VARCHAR) as year,\\n    COUNT(*) as total_inspections,\\n    ROUND(AVG(inspection_score), 2) as avg_score,\\n    ROUND(MEDIAN(inspection_score), 2) as median_score\\nFROM inspections\\nWHERE YEAR(inspection_date) BETWEEN 2015 AND 2025\\nGROUP BY year\\nORDER BY year'})\n\nObservation: {\"row_count\": 11, \"truncated\": false, \"rows\": [{\"year\": \"2015\", \"total_inspections\": 82, \"avg_score\": 13.0, \"median_score\": 11.0}, {\"year\": \"2016\", \"total_inspections\": 161, \"avg_score\": 12.25, \"median_score\": 8.0}, {\"year\": \"2017\", \"total_inspections\": 244, \"avg_score\": 11.41, \"median_score\": 8.0}, {\"year\": \"2018\", \"total_inspections\": 461, \"avg_score\": 11.09, \"median_score\": 9.0}, {\"year\": \"2019\", \"total_inspections\": 611, \"avg_score\": 10.19, \"median_score\": 8.0}, {\"year\": \"2020\", \"total_inspections\": 375, \"avg_score\": 9.8, \"median_score\": 7.0}, {\"year\": \"2021\", \"total_inspections\": 621, \"avg_score\": 10.4, \"median_score\": 8.0}, {\"year\": \"2022\", \"total_inspections\": 898, \"avg_score\": 12.08, \"median_score\": 9.0}, {\"year\": \"2023\", \"total_inspections\": 908, \"avg_score\": 12.01, \"median_score\": 8.0}, {\"year\": \"2024\", \"total_inspections\": 1258, \"avg_score\": 11.49, \"median_score\": 8.0}, {\"year\": \"2025\", \"total_inspections\": 1387, \"avg_score\": 8.9, \"median_score\": 6.0}]}\n\nAction: run_sql({'query': \"SELECT \\n    CASE \\n        WHEN inspection_score = 0 THEN '01. Perfect Score (0)'\\n        WHEN inspection_score BETWEEN 1 AND 5 THEN '02. Low (1-5)'\\n        WHEN inspection_score BETWEEN 6 AND 10 THEN '03. Moderate (6-10)'\\n        WHEN inspection_score BETWEEN 11 AND 20 THEN '04. High (11-20)'\\n        WHEN inspection_score BETWEEN 21 AND 30 THEN '05. Very High (21-30)'\\n        WHEN inspection_score BETWEEN 31 AND 50 THEN '06. Severe (31-50)'\\n        ELSE '07. Critical (51+)' \\n    END as score_bracket,\\n    COUNT(*) as inspection_count\\nFROM inspections\\nWHERE inspection_score IS NOT NULL\\nGROUP BY score_bracket\\nORDER BY score_bracket\"})\n\nObservation: {\"row_count\": 7, \"truncated\": false, \"rows\": [{\"score_bracket\": \"01. Perfect Score (0)\", \"inspection_count\": 710}, {\"score_bracket\": \"02. Low (1-5)\", \"inspection_count\": 2363}, {\"score_bracket\": \"03. Moderate (6-10)\", \"inspection_count\": 1938}, {\"score_bracket\": \"04. High (11-20)\", \"inspection_count\": 1802}, {\"score_bracket\": \"05. Very High (21-30)\", \"inspection_count\": 604}, {\"score_bracket\": \"06. Severe (31-50)\", \"inspection_count\": 308}, {\"score_bracket\": \"07. Critical (51+)\", \"inspection_count\": 73}]}\n\nAction: run_sql({'query': 'SELECT \\n    CAST(YEAR(inspection_date) AS VARCHAR) as inspection_year,\\n    ROUND(AVG(inspection_score), 2) as avg_score\\nFROM inspections\\nWHERE YEAR(inspection_date) BETWEEN 2015 AND 2025\\nGROUP BY inspection_year\\nORDER BY inspection_year'})\n\nObservation: {\"row_count\": 11, \"truncated\": false, \"rows\": [{\"inspection_year\": \"2015\", \"avg_score\": 13.0}, {\"inspection_year\": \"2016\", \"avg_score\": 12.25}, {\"inspection_year\": \"2017\", \"avg_score\": 11.41}, {\"inspection_year\": \"2018\", \"avg_score\": 11.09}, {\"inspection_year\": \"2019\", \"avg_score\": 10.19}, {\"inspection_year\": \"2020\", \"avg_score\": 9.8}, {\"inspection_year\": \"2021\", \"avg_score\": 10.4}, {\"inspection_year\": \"2022\", \"avg_score\": 12.08}, {\"inspection_year\": \"2023\", \"avg_score\": 12.01}, {\"inspection_year\": \"2024\", \"avg_score\": 11.49}, {\"inspection_year\": \"2025\", \"avg_score\": 8.9}]}\n\nAction: run_sql({'query': 'SELECT \\n    it.description as inspection_type,\\n    ROUND(AVG(i.inspection_score), 2) as avg_inspection_score\\nFROM inspections i\\nJOIN inspection_types it ON i.inspection_type_id = it.inspection_type_id\\nWHERE i.inspection_score IS NOT NULL\\nGROUP BY it.description\\nORDER BY avg_inspection_score DESC'})\n\nObservation: {\"row_count\": 4, \"truncated\": false, \"rows\": [{\"inspection_type\": \"Routine\", \"avg_inspection_score\": 10.45}, {\"inspection_type\": \"Critical Item\", \"avg_inspection_score\": 9.02}, {\"inspection_type\": \"Followup\", \"avg_inspection_score\": 6.19}, {\"inspection_type\": \"Complaint Investigation\", \"avg_inspection_score\": 1.8}]}\n\nAction: run_sql({'query': 'SELECT \\n    c.category as restaurant_category,\\n    ROUND(AVG(i.inspection_score), 2) as avg_score\\nFROM inspections i\\nJOIN establishment_keys ek ON i.slchd_establishment_key = ek.slchd_establishment_key\\nJOIN establishments e ON e.slchd_establishment_key = ek.slchd_establishment_key\\nJOIN establishment_categories ec ON e.gmap_id = ec.gmap_id\\nJOIN category c ON ec.category_id = c.category_id\\nGROUP BY c.category\\nHAVING COUNT(DISTINCT e.gmap_id) >= 10\\nORDER BY avg_score DESC'})\n\nObservation: {\"row_count\": 13, \"truncated\": false, \"rows\": [{\"restaurant_category\": \"American restaurant\", \"avg_score\": 15.28}, {\"restaurant_category\": \"Family restaurant\", \"avg_score\": 15.03}, {\"restaurant_category\": \"Takeout Restaurant\", \"avg_score\": 14.88}, {\"restaurant_category\": \"Sandwich shop\", \"avg_score\": 14.76}, {\"restaurant_category\": \"Mexican restaurant\", \"avg_score\": 13.73}, {\"restaurant_category\": \"Restaurant\", \"avg_score\": 13.67}, {\"restaurant_category\": \"Hamburger restaurant\", \"avg_score\": 13.58}, {\"restaurant_category\": \"Fast food restaurant\", \"avg_score\": 13.27}, {\"restaurant_category\": \"Cafe\", \"avg_score\": 12.07}, {\"restaurant_category\": \"Caterer\", \"avg_score\": 11.51}, {\"restaurant_category\": \"Breakfast restaurant\", \"avg_score\": 10.25}, {\"restaurant_category\": \"Bar\", \"avg_score\": 10.22}, {\"restaurant_category\": \"Asian restaurant\", \"avg_score\": 7.58}]}\n\nAction: run_sql({'query': 'SELECT \\n    COUNT(*) as total_establishments,\\n    COUNT(slchd_establishment_key) as matched_establishments,\\n    ROUND(100.0 * COUNT(slchd_establishment_key) / COUNT(*), 2) as pct_matched,\\n    ROUND(100.0 * (COUNT(*) - COUNT(slchd_establishment_key)) / COUNT(*), 2) as pct_unmatched\\nFROM establishments'})\n\nObservation: {\"row_count\": 1, \"truncated\": false, \"rows\": [{\"total_establishments\": 8592, \"matched_establishments\": 139, \"pct_matched\": 1.62, \"pct_unmatched\": 98.38}]}\n\nAction: plot_chart({'x': 'score_bracket', 'chart_type': 'bar', 'y': 'inspection_count', 'title': 'Distribution of Inspection Scores Across All Visits', 'query': \"SELECT \\n    CASE \\n        WHEN inspection_score = 0 THEN '01. Perfect Score (0)'\\n        WHEN inspection_score BETWEEN 1 AND 5 THEN '02. Low (1-5)'\\n        WHEN inspection_score BETWEEN 6 AND 10 THEN '03. Moderate (6-10)'\\n        WHEN inspection_score BETWEEN 11 AND 20 THEN '04. High (11-20)'\\n        WHEN inspection_score BETWEEN 21 AND 30 THEN '05. Very High (21-30)'\\n        WHEN inspection_score BETWEEN 31 AND 50 THEN '06. Severe (31-50)'\\n        ELSE '07. Critical (51+)' \\n    END as score_bracket,\\n    COUNT(*) as inspection_count\\nFROM inspections\\nWHERE inspection_score IS NOT NULL\\nGROUP BY score_bracket\\nORDER BY score_bracket\"})\n\nObservation: Chart created: 'Distribution of Inspection Scores Across All Visits' (bar, 7 rows). It will be shown to the user below your answer.\n\nAction: plot_chart({'chart_type': 'line', 'y': 'avg_score', 'query': 'SELECT \\n    CAST(YEAR(inspection_date) AS VARCHAR) as inspection_year,\\n    ROUND(AVG(inspection_score), 2) as avg_score\\nFROM inspections\\nWHERE YEAR(inspection_date) BETWEEN 2015 AND 2025\\nGROUP BY inspection_year\\nORDER BY inspection_year', 'title': 'Annual Trend of Average Inspection Scores (2015\u20132025)', 'x': 'inspection_year'})\n\nObservation: Chart created: 'Annual Trend of Average Inspection Scores (2015\u20132025)' (line, 11 rows). It will be shown to the user below your answer.\n\nAction: plot_chart({'y': 'avg_inspection_score', 'title': 'Average Inspection Score by Visit Type', 'query': 'SELECT \\n    it.description as inspection_type,\\n    ROUND(AVG(i.inspection_score), 2) as avg_inspection_score\\nFROM inspections i\\nJOIN inspection_types it ON i.inspection_type_id = it.inspection_type_id\\nWHERE i.inspection_score IS NOT NULL\\nGROUP BY it.description\\nORDER BY avg_inspection_score DESC', 'x': 'inspection_type', 'chart_type': 'bar'})\n\nObservation: Chart created: 'Average Inspection Score by Visit Type' (bar, 4 rows). It will be shown to the user below your answer.\n\nAction: plot_chart({'chart_type': 'bar', 'query': 'SELECT \\n    c.category as restaurant_category,\\n    ROUND(AVG(i.inspection_score), 2) as avg_score\\nFROM inspections i\\nJOIN establishment_keys ek ON i.slchd_establishment_key = ek.slchd_establishment_key\\nJOIN establishments e ON e.slchd_establishment_key = ek.slchd_establishment_key\\nJOIN establishment_categories ec ON e.gmap_id = ec.gmap_id\\nJOIN category c ON ec.category_id = c.category_id\\nGROUP BY c.category\\nHAVING COUNT(DISTINCT e.gmap_id) >= 10\\nORDER BY avg_score DESC', 'y': 'avg_score', 'x': 'restaurant_category', 'title': 'Average Inspection Score by Restaurant Category (Min. 10 Establishments)'})\n\nObservation: Chart created: 'Average Inspection Score by Restaurant Category (Min. 10 Establishments)' (bar, 13 rows). It will be shown to the user below your answer.",
+  "timeline": [],
+  "messages": [
+    {
+      "type": "HumanMessage",
+      "content": "Show me detailed visual analytics and statistics of inspection scores across all establishments."
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "get_schema",
+          "args": {},
+          "id": "call_972579",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 2006,
+        "output_tokens": 257,
+        "total_tokens": 2263,
+        "input_token_details": {
+          "cache_read": 0
+        },
+        "output_token_details": {
+          "reasoning": 247
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "Project food_health_viz {\n  database_type: 'DuckDB'\n}\n\nTable establishment_keys {\n  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']\n  name varchar [not null]\n  address varchar [not null]\n  city varchar [not null]\n  city_state_zip varchar\n  establishment_type varchar\n  source varchar [note: 'friend_slc | own_scrape']\n  slchd_lat double\n  slchd_lon double\n  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']\n\n  Note: 'SLCHD establishment list, one row per portal listing.'\n}\n\nTable category {\n  category_id integer [pk]\n  category varchar\n}\n\nTable establishments {\n  gmap_id varchar [pk]\n  name varchar\n  address varchar\n  description varchar\n  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']\n  avg_rating double\n  num_of_reviews integer\n  price varchar\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']\n\n  Note: 'One row per Google Local place \u2014 all restaurants, not just SLCHD-matched.'\n}\n\nTable establishment_attributes {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  attribute varchar [not null]\n\n  indexes { (gmap_id, attribute) [pk] }\n\n  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. \"Service options\") dropped.'\n}\n\nTable establishment_categories {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  category_id integer [ref: > category.category_id, not null]\n\n  indexes { (gmap_id, category_id) [pk] }\n}\n\nTable gmap_hours {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  day integer [not null, note: '0=Sun \u2026 6=Sat']\n  open_min bigint\n  open_max bigint\n\n  indexes { (gmap_id, day) [pk] }\n\n  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'\n}\n\nTable review {\n  user_id varchar\n  name varchar\n  time bigint\n  rating double\n  text varchar\n  resp varchar\n  gmap_id varchar [ref: > establishments.gmap_id]\n}\n\nTable inspection_types {\n  inspection_type_id integer [pk, note: 'parsed leading number, e.g. \"01 - Routine\" -> 1']\n  description varchar [note: 'e.g. \"Routine\"']\n}\n\nTable inspections {\n  inspection_id bigint [pk, increment]\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]\n  inspection_date date [not null]\n  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable \u2014 27 rows have no type']\n  inspection_score integer\n\n  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'\n}\n\nTable violation_codes {\n  violation_code_id integer [pk, increment]\n  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. \"4.5.18\"']\n  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']\n  critical boolean [not null]\n}\n\nTable violations {\n  violation_id bigint [pk, increment]\n  inspection_id bigint [ref: > inspections.inspection_id, not null]\n  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]\n  violation_description varchar [note: 'per-occurrence free text']\n  violation_occurrences integer\n  violation_cos boolean [note: 'corrected on site']\n  violation_phr varchar [note: 'public health rationale']\n\n  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'\n}\n",
+      "tool_call_id": "call_972579",
+      "name": "get_schema"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "SELECT \n    COUNT(*) as total_inspections,\n    COUNT(inspection_score) as non_null_scores,\n    MIN(inspection_score) as min_score,\n    MAX(inspection_score) as max_score,\n    AVG(inspection_score) as avg_score,\n    MEDIAN(inspection_score) as median_score,\n    STDDEV(inspection_score) as stddev_score\nFROM inspections"
+          },
+          "id": "call_513979",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 3292,
+        "output_tokens": 171,
+        "total_tokens": 3463,
+        "input_token_details": {
+          "cache_read": 0
+        },
+        "output_token_details": {
+          "reasoning": 58
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 1, \"truncated\": false, \"rows\": [{\"total_inspections\": 8020, \"non_null_scores\": 7798, \"min_score\": 0, \"max_score\": 297, \"avg_score\": 10.288022569889716, \"median_score\": 7.0, \"stddev_score\": 12.069595869540299}]}",
+      "tool_call_id": "call_513979",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "SELECT \n    it.description as inspection_type,\n    COUNT(i.inspection_id) as count,\n    ROUND(AVG(i.inspection_score), 2) as avg_score,\n    MEDIAN(i.inspection_score) as median_score,\n    MAX(i.inspection_score) as max_score\nFROM inspections i\nLEFT JOIN inspection_types it ON i.inspection_type_id = it.inspection_type_id\nGROUP BY it.description\nORDER BY count DESC"
+          },
+          "id": "call_988774",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 3569,
+        "output_tokens": 241,
+        "total_tokens": 3810,
+        "input_token_details": {
+          "cache_read": 0
+        },
+        "output_token_details": {
+          "reasoning": 113
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 4, \"truncated\": false, \"rows\": [{\"inspection_type\": \"Routine\", \"count\": 7543, \"avg_score\": 10.45, \"median_score\": 8.0, \"max_score\": 297}, {\"inspection_type\": \"Followup\", \"count\": 254, \"avg_score\": 6.19, \"median_score\": 3.0, \"max_score\": 68}, {\"inspection_type\": \"Critical Item\", \"count\": 216, \"avg_score\": 9.02, \"median_score\": 3.0, \"max_score\": 186}, {\"inspection_type\": \"Complaint Investigation\", \"count\": 7, \"avg_score\": 1.8, \"median_score\": 0.0, \"max_score\": 6}]}",
+      "tool_call_id": "call_988774",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "SELECT \n    YEAR(inspection_date) as year,\n    COUNT(*) as num_inspections,\n    ROUND(AVG(inspection_score), 2) as avg_score,\n    MEDIAN(inspection_score) as median_score\nFROM inspections\nWHERE inspection_score IS NOT NULL\nGROUP BY year\nORDER BY year"
+          },
+          "id": "call_1025080",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 3978,
+        "output_tokens": 102,
+        "total_tokens": 4080,
+        "input_token_details": {
+          "cache_read": 0
+        },
+        "output_token_details": {
+          "reasoning": 13
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 18, \"truncated\": false, \"rows\": [{\"year\": 2009, \"num_inspections\": 3, \"avg_score\": 7.0, \"median_score\": 4.0}, {\"year\": 2010, \"num_inspections\": 5, \"avg_score\": 4.8, \"median_score\": 3.0}, {\"year\": 2011, \"num_inspections\": 7, \"avg_score\": 6.71, \"median_score\": 7.0}, {\"year\": 2012, \"num_inspections\": 10, \"avg_score\": 6.0, \"median_score\": 5.5}, {\"year\": 2013, \"num_inspections\": 22, \"avg_score\": 8.91, \"median_score\": 8.5}, {\"year\": 2014, \"num_inspections\": 70, \"avg_score\": 8.73, \"median_score\": 6.0}, {\"year\": 2015, \"num_inspections\": 77, \"avg_score\": 13.0, \"median_score\": 11.0}, {\"year\": 2016, \"num_inspections\": 158, \"avg_score\": 12.25, \"median_score\": 8.0}, {\"year\": 2017, \"num_inspections\": 239, \"avg_score\": 11.41, \"median_score\": 8.0}, {\"year\": 2018, \"num_inspections\": 456, \"avg_score\": 11.09, \"median_score\": 9.0}, {\"year\": 2019, \"num_inspections\": 601, \"avg_score\": 10.19, \"median_score\": 8.0}, {\"year\": 2020, \"num_inspections\": 362, \"avg_score\": 9.8, \"median_score\": 7.0}, {\"year\": 2021, \"num_inspections\": 605, \"avg_score\": 10.4, \"median_score\": 8.0}, {\"year\": 2022, \"num_inspections\": 869, \"avg_score\": 12.08, \"median_score\": 9.0}, {\"year\": 2023, \"num_inspections\": 879, \"avg_score\": 12.01, \"median_score\": 8.0}, {\"year\": 2024, \"num_inspections\": 1227, \"avg_score\": 11.49, \"median_score\": 8.0}, {\"year\": 2025, \"num_inspections\": 1343, \"avg_score\": 8.9, \"median_score\": 6.0}, {\"year\": 2026, \"num_inspections\": 865, \"avg_score\": 6.33, \"median_score\": 5.0}]}",
+      "tool_call_id": "call_1025080",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "SELECT MIN(inspection_date), MAX(inspection_date) FROM inspections"
+          },
+          "id": "call_659118",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 4671,
+        "output_tokens": 69,
+        "total_tokens": 4740,
+        "input_token_details": {
+          "cache_read": 0
+        },
+        "output_token_details": {
+          "reasoning": 39
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 1, \"truncated\": false, \"rows\": [{\"min(inspection_date)\": \"2009-01-09 00:00:00\", \"max(inspection_date)\": \"2026-07-17 00:00:00\"}]}",
+      "tool_call_id": "call_659118",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "SELECT \n    CASE \n        WHEN inspection_score = 0 THEN '0 (Clean)'\n        WHEN inspection_score BETWEEN 1 AND 5 THEN '1-5'\n        WHEN inspection_score BETWEEN 6 AND 10 THEN '6-10'\n        WHEN inspection_score BETWEEN 11 AND 20 THEN '11-20'\n        WHEN inspection_score BETWEEN 21 AND 30 THEN '21-30'\n        WHEN inspection_score BETWEEN 31 AND 50 THEN '31-50'\n        ELSE '51+' \n    END as score_range,\n    COUNT(*) as inspection_count,\n    ROUND(100.0 * COUNT(*) / (SELECT COUNT(*) FROM inspections WHERE inspection_score IS NOT NULL), 1) as percentage\nFROM inspections\nWHERE inspection_score IS NOT NULL\nGROUP BY score_range\nORDER BY MIN(inspection_score)"
+          },
+          "id": "call_945713",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 4817,
+        "output_tokens": 305,
+        "total_tokens": 5122,
+        "input_token_details": {
+          "cache_read": 0
+        },
+        "output_token_details": {
+          "reasoning": 82
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 7, \"truncated\": false, \"rows\": [{\"score_range\": \"0 (Clean)\", \"inspection_count\": 710, \"percentage\": 9.1}, {\"score_range\": \"1-5\", \"inspection_count\": 2363, \"percentage\": 30.3}, {\"score_range\": \"6-10\", \"inspection_count\": 1938, \"percentage\": 24.9}, {\"score_range\": \"11-20\", \"inspection_count\": 1802, \"percentage\": 23.1}, {\"score_range\": \"21-30\", \"inspection_count\": 604, \"percentage\": 7.7}, {\"score_range\": \"31-50\", \"inspection_count\": 308, \"percentage\": 3.9}, {\"score_range\": \"51+\", \"inspection_count\": 73, \"percentage\": 0.9}]}",
+      "tool_call_id": "call_945713",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "SELECT \n    c.category,\n    COUNT(DISTINCT e.gmap_id) as establishment_count,\n    COUNT(i.inspection_id) as inspection_count,\n    ROUND(AVG(i.inspection_score), 2) as avg_inspection_score,\n    ROUND(MEDIAN(i.inspection_score), 1) as median_inspection_score\nFROM inspections i\nJOIN establishment_keys ek ON i.slchd_establishment_key = ek.slchd_establishment_key\nJOIN establishments e ON e.slchd_establishment_key = ek.slchd_establishment_key\nJOIN establishment_categories ec ON e.gmap_id = ec.gmap_id\nJOIN category c ON ec.category_id = c.category_id\nGROUP BY c.category\nHAVING COUNT(i.inspection_id) >= 20\nORDER BY avg_inspection_score DESC\nLIMIT 15"
+          },
+          "id": "call_933197",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 5324,
+        "output_tokens": 282,
+        "total_tokens": 5606,
+        "input_token_details": {
+          "cache_read": 0
+        },
+        "output_token_details": {
+          "reasoning": 57
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 15, \"truncated\": false, \"rows\": [{\"category\": \"Bakery\", \"establishment_count\": 3, \"inspection_count\": 20, \"avg_inspection_score\": 26.4, \"median_inspection_score\": 20.0}, {\"category\": \"Bar & grill\", \"establishment_count\": 4, \"inspection_count\": 30, \"avg_inspection_score\": 26.23, \"median_inspection_score\": 21.0}, {\"category\": \"Steak house\", \"establishment_count\": 2, \"inspection_count\": 20, \"avg_inspection_score\": 25.1, \"median_inspection_score\": 24.5}, {\"category\": \"Ice cream shop\", \"establishment_count\": 9, \"inspection_count\": 81, \"avg_inspection_score\": 21.83, \"median_inspection_score\": 19.0}, {\"category\": \"Tex-Mex restaurant\", \"establishment_count\": 2, \"inspection_count\": 20, \"avg_inspection_score\": 17.1, \"median_inspection_score\": 15.5}, {\"category\": \"Burrito restaurant\", \"establishment_count\": 2, \"inspection_count\": 20, \"avg_inspection_score\": 17.1, \"median_inspection_score\": 15.5}, {\"category\": \"New American restaurant\", \"establishment_count\": 6, \"inspection_count\": 48, \"avg_inspection_score\": 16.25, \"median_inspection_score\": 13.0}, {\"category\": \"Chicken restaurant\", \"establishment_count\": 8, \"inspection_count\": 62, \"avg_inspection_score\": 15.55, \"median_inspection_score\": 10.5}, {\"category\": \"American restaurant\", \"establishment_count\": 29, \"inspection_count\": 270, \"avg_inspection_score\": 15.28, \"median_inspection_score\": 11.0}, {\"category\": \"Family restaurant\", \"establishment_count\": 14, \"inspection_count\": 118, \"avg_inspection_score\": 15.03, \"median_inspection_score\": 11.0}, {\"category\": \"Cake shop\", \"establishment_count\": 2, \"inspection_count\": 20, \"avg_inspection_score\": 14.95, \"median_inspection_score\": 12.5}, {\"category\": \"Takeout Restaurant\", \"establishment_count\": 25, \"inspection_count\": 240, \"avg_inspection_score\": 14.88, \"median_inspection_score\": 12.0}, {\"category\": \"Sandwich shop\", \"establishment_count\": 17, \"inspection_count\": 152, \"avg_inspection_score\": 14.76, \"median_inspection_score\": 11.5}, {\"category\": \"Mexican restaurant\", \"establishment_count\": 13, \"inspection_count\": 120, \"avg_inspection_score\": 13.73, \"median_inspection_score\": 12.5}, {\"category\": \"Restaurant\", \"establishment_count\": 74, \"inspection_count\": 620, \"avg_inspection_score\": 13.67, \"median_inspection_score\": 9.0}]}",
+      "tool_call_id": "call_933197",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "SELECT \n    c.category,\n    COUNT(DISTINCT e.gmap_id) as establishment_count,\n    COUNT(i.inspection_id) as inspection_count,\n    ROUND(AVG(i.inspection_score), 2) as avg_inspection_score,\n    ROUND(MEDIAN(i.inspection_score), 1) as median_inspection_score\nFROM inspections i\nJOIN establishment_keys ek ON i.slchd_establishment_key = ek.slchd_establishment_key\nJOIN establishments e ON e.slchd_establishment_key = ek.slchd_establishment_key\nJOIN establishment_categories ec ON e.gmap_id = ec.gmap_id\nJOIN category c ON ec.category_id = c.category_id\nGROUP BY c.category\nHAVING COUNT(DISTINCT e.gmap_id) >= 10\nORDER BY avg_inspection_score DESC"
+          },
+          "id": "call_847678",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 6272,
+        "output_tokens": 254,
+        "total_tokens": 6526,
+        "input_token_details": {
+          "cache_read": 0
+        },
+        "output_token_details": {
+          "reasoning": 31
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 13, \"truncated\": false, \"rows\": [{\"category\": \"American restaurant\", \"establishment_count\": 29, \"inspection_count\": 270, \"avg_inspection_score\": 15.28, \"median_inspection_score\": 11.0}, {\"category\": \"Family restaurant\", \"establishment_count\": 14, \"inspection_count\": 118, \"avg_inspection_score\": 15.03, \"median_inspection_score\": 11.0}, {\"category\": \"Takeout Restaurant\", \"establishment_count\": 25, \"inspection_count\": 240, \"avg_inspection_score\": 14.88, \"median_inspection_score\": 12.0}, {\"category\": \"Sandwich shop\", \"establishment_count\": 17, \"inspection_count\": 152, \"avg_inspection_score\": 14.76, \"median_inspection_score\": 11.5}, {\"category\": \"Mexican restaurant\", \"establishment_count\": 13, \"inspection_count\": 120, \"avg_inspection_score\": 13.73, \"median_inspection_score\": 12.5}, {\"category\": \"Restaurant\", \"establishment_count\": 74, \"inspection_count\": 620, \"avg_inspection_score\": 13.67, \"median_inspection_score\": 9.0}, {\"category\": \"Hamburger restaurant\", \"establishment_count\": 20, \"inspection_count\": 182, \"avg_inspection_score\": 13.58, \"median_inspection_score\": 9.0}, {\"category\": \"Fast food restaurant\", \"establishment_count\": 45, \"inspection_count\": 415, \"avg_inspection_score\": 13.27, \"median_inspection_score\": 10.0}, {\"category\": \"Cafe\", \"establishment_count\": 10, \"inspection_count\": 87, \"avg_inspection_score\": 12.07, \"median_inspection_score\": 9.0}, {\"category\": \"Caterer\", \"establishment_count\": 19, \"inspection_count\": 164, \"avg_inspection_score\": 11.51, \"median_inspection_score\": 9.0}, {\"category\": \"Breakfast restaurant\", \"establishment_count\": 11, \"inspection_count\": 81, \"avg_inspection_score\": 10.25, \"median_inspection_score\": 7.0}, {\"category\": \"Bar\", \"establishment_count\": 12, \"inspection_count\": 55, \"avg_inspection_score\": 10.22, \"median_inspection_score\": 4.0}, {\"category\": \"Asian restaurant\", \"establishment_count\": 10, \"inspection_count\": 91, \"avg_inspection_score\": 7.58, \"median_inspection_score\": 8.0}]}",
+      "tool_call_id": "call_847678",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "SELECT \n    it.description as inspection_type,\n    COUNT(*) as total_inspections,\n    ROUND(AVG(i.inspection_score), 2) as avg_score,\n    MEDIAN(i.inspection_score) as median_score,\n    MIN(i.inspection_score) as min_score,\n    MAX(i.inspection_score) as max_score\nFROM inspections i\nJOIN inspection_types it ON i.inspection_type_id = it.inspection_type_id\nWHERE i.inspection_score IS NOT NULL\nGROUP BY it.description\nORDER BY total_inspections DESC"
+          },
+          "id": "call_930485",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 7100,
+        "output_tokens": 186,
+        "total_tokens": 7286,
+        "input_token_details": {
+          "cache_read": 0
+        },
+        "output_token_details": {
+          "reasoning": 32
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 4, \"truncated\": false, \"rows\": [{\"inspection_type\": \"Routine\", \"total_inspections\": 7380, \"avg_score\": 10.45, \"median_score\": 8.0, \"min_score\": 0, \"max_score\": 297}, {\"inspection_type\": \"Followup\", \"total_inspections\": 211, \"avg_score\": 6.19, \"median_score\": 3.0, \"min_score\": 0, \"max_score\": 68}, {\"inspection_type\": \"Critical Item\", \"total_inspections\": 202, \"avg_score\": 9.02, \"median_score\": 3.0, \"min_score\": 0, \"max_score\": 186}, {\"inspection_type\": \"Complaint Investigation\", \"total_inspections\": 5, \"avg_score\": 1.8, \"median_score\": 0.0, \"min_score\": 0, \"max_score\": 6}]}",
+      "tool_call_id": "call_930485",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "SELECT \n    CAST(YEAR(inspection_date) AS VARCHAR) as year,\n    COUNT(*) as total_inspections,\n    ROUND(AVG(inspection_score), 2) as avg_score,\n    ROUND(MEDIAN(inspection_score), 2) as median_score\nFROM inspections\nWHERE YEAR(inspection_date) BETWEEN 2015 AND 2025\nGROUP BY year\nORDER BY year"
+          },
+          "id": "call_852697",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 7494,
+        "output_tokens": 154,
+        "total_tokens": 7648,
+        "input_token_details": {
+          "cache_read": 0
+        },
+        "output_token_details": {
+          "reasoning": 43
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 11, \"truncated\": false, \"rows\": [{\"year\": \"2015\", \"total_inspections\": 82, \"avg_score\": 13.0, \"median_score\": 11.0}, {\"year\": \"2016\", \"total_inspections\": 161, \"avg_score\": 12.25, \"median_score\": 8.0}, {\"year\": \"2017\", \"total_inspections\": 244, \"avg_score\": 11.41, \"median_score\": 8.0}, {\"year\": \"2018\", \"total_inspections\": 461, \"avg_score\": 11.09, \"median_score\": 9.0}, {\"year\": \"2019\", \"total_inspections\": 611, \"avg_score\": 10.19, \"median_score\": 8.0}, {\"year\": \"2020\", \"total_inspections\": 375, \"avg_score\": 9.8, \"median_score\": 7.0}, {\"year\": \"2021\", \"total_inspections\": 621, \"avg_score\": 10.4, \"median_score\": 8.0}, {\"year\": \"2022\", \"total_inspections\": 898, \"avg_score\": 12.08, \"median_score\": 9.0}, {\"year\": \"2023\", \"total_inspections\": 908, \"avg_score\": 12.01, \"median_score\": 8.0}, {\"year\": \"2024\", \"total_inspections\": 1258, \"avg_score\": 11.49, \"median_score\": 8.0}, {\"year\": \"2025\", \"total_inspections\": 1387, \"avg_score\": 8.9, \"median_score\": 6.0}]}",
+      "tool_call_id": "call_852697",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "SELECT \n    CASE \n        WHEN inspection_score = 0 THEN '01. Perfect Score (0)'\n        WHEN inspection_score BETWEEN 1 AND 5 THEN '02. Low (1-5)'\n        WHEN inspection_score BETWEEN 6 AND 10 THEN '03. Moderate (6-10)'\n        WHEN inspection_score BETWEEN 11 AND 20 THEN '04. High (11-20)'\n        WHEN inspection_score BETWEEN 21 AND 30 THEN '05. Very High (21-30)'\n        WHEN inspection_score BETWEEN 31 AND 50 THEN '06. Severe (31-50)'\n        ELSE '07. Critical (51+)' \n    END as score_bracket,\n    COUNT(*) as inspection_count\nFROM inspections\nWHERE inspection_score IS NOT NULL\nGROUP BY score_bracket\nORDER BY score_bracket"
+          },
+          "id": "call_986292",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 8049,
+        "output_tokens": 783,
+        "total_tokens": 8832,
+        "input_token_details": {
+          "cache_read": 0
+        },
+        "output_token_details": {
+          "reasoning": 560
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 7, \"truncated\": false, \"rows\": [{\"score_bracket\": \"01. Perfect Score (0)\", \"inspection_count\": 710}, {\"score_bracket\": \"02. Low (1-5)\", \"inspection_count\": 2363}, {\"score_bracket\": \"03. Moderate (6-10)\", \"inspection_count\": 1938}, {\"score_bracket\": \"04. High (11-20)\", \"inspection_count\": 1802}, {\"score_bracket\": \"05. Very High (21-30)\", \"inspection_count\": 604}, {\"score_bracket\": \"06. Severe (31-50)\", \"inspection_count\": 308}, {\"score_bracket\": \"07. Critical (51+)\", \"inspection_count\": 73}]}",
+      "tool_call_id": "call_986292",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "SELECT \n    CAST(YEAR(inspection_date) AS VARCHAR) as inspection_year,\n    ROUND(AVG(inspection_score), 2) as avg_score\nFROM inspections\nWHERE YEAR(inspection_date) BETWEEN 2015 AND 2025\nGROUP BY inspection_year\nORDER BY inspection_year"
+          },
+          "id": "call_1041466",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 9029,
+        "output_tokens": 210,
+        "total_tokens": 9239,
+        "input_token_details": {
+          "cache_read": 0
+        },
+        "output_token_details": {
+          "reasoning": 123
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 11, \"truncated\": false, \"rows\": [{\"inspection_year\": \"2015\", \"avg_score\": 13.0}, {\"inspection_year\": \"2016\", \"avg_score\": 12.25}, {\"inspection_year\": \"2017\", \"avg_score\": 11.41}, {\"inspection_year\": \"2018\", \"avg_score\": 11.09}, {\"inspection_year\": \"2019\", \"avg_score\": 10.19}, {\"inspection_year\": \"2020\", \"avg_score\": 9.8}, {\"inspection_year\": \"2021\", \"avg_score\": 10.4}, {\"inspection_year\": \"2022\", \"avg_score\": 12.08}, {\"inspection_year\": \"2023\", \"avg_score\": 12.01}, {\"inspection_year\": \"2024\", \"avg_score\": 11.49}, {\"inspection_year\": \"2025\", \"avg_score\": 8.9}]}",
+      "tool_call_id": "call_1041466",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "SELECT \n    it.description as inspection_type,\n    ROUND(AVG(i.inspection_score), 2) as avg_inspection_score\nFROM inspections i\nJOIN inspection_types it ON i.inspection_type_id = it.inspection_type_id\nWHERE i.inspection_score IS NOT NULL\nGROUP BY it.description\nORDER BY avg_inspection_score DESC"
+          },
+          "id": "call_748056",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 9484,
+        "output_tokens": 224,
+        "total_tokens": 9708,
+        "input_token_details": {
+          "cache_read": 0
+        },
+        "output_token_details": {
+          "reasoning": 125
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 4, \"truncated\": false, \"rows\": [{\"inspection_type\": \"Routine\", \"avg_inspection_score\": 10.45}, {\"inspection_type\": \"Critical Item\", \"avg_inspection_score\": 9.02}, {\"inspection_type\": \"Followup\", \"avg_inspection_score\": 6.19}, {\"inspection_type\": \"Complaint Investigation\", \"avg_inspection_score\": 1.8}]}",
+      "tool_call_id": "call_748056",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "SELECT \n    c.category as restaurant_category,\n    ROUND(AVG(i.inspection_score), 2) as avg_score\nFROM inspections i\nJOIN establishment_keys ek ON i.slchd_establishment_key = ek.slchd_establishment_key\nJOIN establishments e ON e.slchd_establishment_key = ek.slchd_establishment_key\nJOIN establishment_categories ec ON e.gmap_id = ec.gmap_id\nJOIN category c ON ec.category_id = c.category_id\nGROUP BY c.category\nHAVING COUNT(DISTINCT e.gmap_id) >= 10\nORDER BY avg_score DESC"
+          },
+          "id": "call_809533",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 9808,
+        "output_tokens": 368,
+        "total_tokens": 10176,
+        "input_token_details": {
+          "cache_read": 0
+        },
+        "output_token_details": {
+          "reasoning": 201
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 13, \"truncated\": false, \"rows\": [{\"restaurant_category\": \"American restaurant\", \"avg_score\": 15.28}, {\"restaurant_category\": \"Family restaurant\", \"avg_score\": 15.03}, {\"restaurant_category\": \"Takeout Restaurant\", \"avg_score\": 14.88}, {\"restaurant_category\": \"Sandwich shop\", \"avg_score\": 14.76}, {\"restaurant_category\": \"Mexican restaurant\", \"avg_score\": 13.73}, {\"restaurant_category\": \"Restaurant\", \"avg_score\": 13.67}, {\"restaurant_category\": \"Hamburger restaurant\", \"avg_score\": 13.58}, {\"restaurant_category\": \"Fast food restaurant\", \"avg_score\": 13.27}, {\"restaurant_category\": \"Cafe\", \"avg_score\": 12.07}, {\"restaurant_category\": \"Caterer\", \"avg_score\": 11.51}, {\"restaurant_category\": \"Breakfast restaurant\", \"avg_score\": 10.25}, {\"restaurant_category\": \"Bar\", \"avg_score\": 10.22}, {\"restaurant_category\": \"Asian restaurant\", \"avg_score\": 7.58}]}",
+      "tool_call_id": "call_809533",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "SELECT \n    COUNT(*) as total_establishments,\n    COUNT(slchd_establishment_key) as matched_establishments,\n    ROUND(100.0 * COUNT(slchd_establishment_key) / COUNT(*), 2) as pct_matched,\n    ROUND(100.0 * (COUNT(*) - COUNT(slchd_establishment_key)) / COUNT(*), 2) as pct_unmatched\nFROM establishments"
+          },
+          "id": "call_961487",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 10445,
+        "output_tokens": 179,
+        "total_tokens": 10624,
+        "input_token_details": {
+          "cache_read": 8037
+        },
+        "output_token_details": {
+          "reasoning": 63
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 1, \"truncated\": false, \"rows\": [{\"total_establishments\": 8592, \"matched_establishments\": 139, \"pct_matched\": 1.62, \"pct_unmatched\": 98.38}]}",
+      "tool_call_id": "call_961487",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "plot_chart",
+          "args": {
+            "x": "score_bracket",
+            "chart_type": "bar",
+            "y": "inspection_count",
+            "title": "Distribution of Inspection Scores Across All Visits",
+            "query": "SELECT \n    CASE \n        WHEN inspection_score = 0 THEN '01. Perfect Score (0)'\n        WHEN inspection_score BETWEEN 1 AND 5 THEN '02. Low (1-5)'\n        WHEN inspection_score BETWEEN 6 AND 10 THEN '03. Moderate (6-10)'\n        WHEN inspection_score BETWEEN 11 AND 20 THEN '04. High (11-20)'\n        WHEN inspection_score BETWEEN 21 AND 30 THEN '05. Very High (21-30)'\n        WHEN inspection_score BETWEEN 31 AND 50 THEN '06. Severe (31-50)'\n        ELSE '07. Critical (51+)' \n    END as score_bracket,\n    COUNT(*) as inspection_count\nFROM inspections\nWHERE inspection_score IS NOT NULL\nGROUP BY score_bracket\nORDER BY score_bracket"
+          },
+          "id": "call_850049",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 10684,
+        "output_tokens": 389,
+        "total_tokens": 11073,
+        "input_token_details": {
+          "cache_read": 8033
+        },
+        "output_token_details": {
+          "reasoning": 130
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "Chart created: 'Distribution of Inspection Scores Across All Visits' (bar, 7 rows). It will be shown to the user below your answer.",
+      "tool_call_id": "call_850049",
+      "name": "plot_chart"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "plot_chart",
+          "args": {
+            "chart_type": "line",
+            "y": "avg_score",
+            "query": "SELECT \n    CAST(YEAR(inspection_date) AS VARCHAR) as inspection_year,\n    ROUND(AVG(inspection_score), 2) as avg_score\nFROM inspections\nWHERE YEAR(inspection_date) BETWEEN 2015 AND 2025\nGROUP BY inspection_year\nORDER BY inspection_year",
+            "title": "Annual Trend of Average Inspection Scores (2015\u20132025)",
+            "x": "inspection_year"
+          },
+          "id": "call_867865",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 11116,
+        "output_tokens": 149,
+        "total_tokens": 11265,
+        "input_token_details": {
+          "cache_read": 8032
+        },
+        "output_token_details": {
+          "reasoning": 16
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "Chart created: 'Annual Trend of Average Inspection Scores (2015\u20132025)' (line, 11 rows). It will be shown to the user below your answer.",
+      "tool_call_id": "call_867865",
+      "name": "plot_chart"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "plot_chart",
+          "args": {
+            "y": "avg_inspection_score",
+            "title": "Average Inspection Score by Visit Type",
+            "query": "SELECT \n    it.description as inspection_type,\n    ROUND(AVG(i.inspection_score), 2) as avg_inspection_score\nFROM inspections i\nJOIN inspection_types it ON i.inspection_type_id = it.inspection_type_id\nWHERE i.inspection_score IS NOT NULL\nGROUP BY it.description\nORDER BY avg_inspection_score DESC",
+            "x": "inspection_type",
+            "chart_type": "bar"
+          },
+          "id": "call_976342",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 11318,
+        "output_tokens": 153,
+        "total_tokens": 11471,
+        "input_token_details": {
+          "cache_read": 8028
+        },
+        "output_token_details": {
+          "reasoning": 17
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "Chart created: 'Average Inspection Score by Visit Type' (bar, 4 rows). It will be shown to the user below your answer.",
+      "tool_call_id": "call_976342",
+      "name": "plot_chart"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "plot_chart",
+          "args": {
+            "chart_type": "bar",
+            "query": "SELECT \n    c.category as restaurant_category,\n    ROUND(AVG(i.inspection_score), 2) as avg_score\nFROM inspections i\nJOIN establishment_keys ek ON i.slchd_establishment_key = ek.slchd_establishment_key\nJOIN establishments e ON e.slchd_establishment_key = ek.slchd_establishment_key\nJOIN establishment_categories ec ON e.gmap_id = ec.gmap_id\nJOIN category c ON ec.category_id = c.category_id\nGROUP BY c.category\nHAVING COUNT(DISTINCT e.gmap_id) >= 10\nORDER BY avg_score DESC",
+            "y": "avg_score",
+            "x": "restaurant_category",
+            "title": "Average Inspection Score by Restaurant Category (Min. 10 Establishments)"
+          },
+          "id": "call_951839",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 11513,
+        "output_tokens": 227,
+        "total_tokens": 11740,
+        "input_token_details": {
+          "cache_read": 8024
+        },
+        "output_token_details": {
+          "reasoning": 16
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "Chart created: 'Average Inspection Score by Restaurant Category (Min. 10 Establishments)' (bar, 13 rows). It will be shown to the user below your answer.",
+      "tool_call_id": "call_951839",
+      "name": "plot_chart"
+    },
+    {
+      "type": "AIMessage",
+      "content": "### Overall Summary Statistics\n\n* **Total Inspections Recorded**: 8,020 visits (7,798 with non-null numeric scores).\n* **Mean Inspection Score**: **10.29**\n* **Median Inspection Score**: **7.00**\n* **Standard Deviation**: 12.07\n* **Score Range**: **0** (clean visit) to **297** (worst score recorded).\n* **Database Coverage Note**: Only **139 out of 8,592** establishments in the local database (**1.62%**) have a matched Salt Lake County Health Department (SLCHD) inspection history. The vast majority (**98.38%**) have no matched SLCHD inspection history; this reflects unlinked dataset records rather than clean health records.\n\n---\n\n### Detailed Analytics Across Facets\n\n#### 1. Score Distribution (Histogram / Brackets)\n* **0 (Perfect / Clean Visit)**: 710 visits (9.1%)\n* **1 \u2013 5 (Low Violations)**: 2,363 visits (30.3%)\n* **6 \u2013 10 (Moderate Violations)**: 1,938 visits (24.9%)\n* **11 \u2013 20 (High Violations)**: 1,802 visits (23.1%)\n* **21 \u2013 30 (Very High Violations)**: 604 visits (7.7%)\n* **31 \u2013 50 (Severe Violations)**: 308 visits (3.9%)\n* **51+ (Critical Outliers)**: 73 visits (0.9%)\n\nOver **64%** of all inspections result in 10 or fewer violation points, while severe cases (score > 30) represent under 5% of visits.\n\n---\n\n#### 2. Yearly Trends (2015\u20132025)\n* **2015\u20132020**: Average scores dropped steadily from **13.00** in 2015 to a low of **9.80** in 2020.\n* **2021\u20132023**: Rebounded post-pandemic to **12.08** in 2022 and **12.01** in 2023.\n* **2024\u20132025**: Decreased again to **11.49** in 2024 and **8.90** in 2025.\n\n---\n\n#### 3. Breakdown by Inspection Visit Type\n* **Routine Inspections**: 7,380 visits | Avg Score: **10.45** (Median: 8)\n* **Critical Item Visits**: 202 visits | Avg Score: **9.02** (Median: 3)\n* **Follow-up Visits**: 211 visits | Avg Score: **6.19** (Median: 3)\n* **Complaint Investigations**: 5 visits | Avg Score: **1.80** (Median: 0)\n\nFollow-up visits reflect significant improvement compared to initial Routine inspections (averaging ~4.26 fewer points).\n\n---\n\n#### 4. Breakdown by Restaurant Category (\u226510 Matched Establishments)\n* **Highest Average Violation Scores**:\n  * American Restaurant: **15.28**\n  * Family Restaurant: **15.03**\n  * Takeout Restaurant: **14.88**\n  * Sandwich Shop: **14.76**\n* **Lowest Average Violation Scores**:\n  * Asian Restaurant: **7.58**\n  * Bar: **10.22**\n  * Breakfast Restaurant: **10.25**",
+      "raw_content": [
+        {
+          "type": "text",
+          "text": "### Overall Summary Statistics\n\n* **Total Inspections Recorded**: 8,020 visits (7,798 with non-null numeric scores).\n* **Mean Inspection Score**: **10.29**\n* **Median Inspection Score**: **7.00**\n* **Standard Deviation**: 12.07\n* **Score Range**: **0** (clean visit) to **297** (worst score recorded).\n* **Database Coverage Note**: Only **139 out of 8,592** establishments in the local database (**1.62%**) have a matched Salt Lake County Health Department (SLCHD) inspection history. The vast majority (**98.38%**) have no matched SLCHD inspection history; this reflects unlinked dataset records rather than clean health records.\n\n---\n\n### Detailed Analytics Across Facets\n\n#### 1. Score Distribution (Histogram / Brackets)\n* **0 (Perfect / Clean Visit)**: 710 visits (9.1%)\n* **1 \u2013 5 (Low Violations)**: 2,363 visits (30.3%)\n* **6 \u2013 10 (Moderate Violations)**: 1,938 visits (24.9%)\n* **11 \u2013 20 (High Violations)**: 1,802 visits (23.1%)\n* **21 \u2013 30 (Very High Violations)**: 604 visits (7.7%)\n* **31 \u2013 50 (Severe Violations)**: 308 visits (3.9%)\n* **51+ (Critical Outliers)**: 73 visits (0.9%)\n\nOver **64%** of all inspections result in 10 or fewer violation points, while severe cases (score > 30) represent under 5% of visits.\n\n---\n\n#### 2. Yearly Trends (2015\u20132025)\n* **2015\u20132020**: Average scores dropped steadily from **13.00** in 2015 to a low of **9.80** in 2020.\n* **2021\u20132023**: Rebounded post-pandemic to **12.08** in 2022 and **12.01** in 2023.\n* **2024\u20132025**: Decreased again to **11.49** in 2024 and **8.90** in 2025.\n\n---\n\n#### 3. Breakdown by Inspection Visit Type\n* **Routine Inspections**: 7,380 visits | Avg Score: **10.45** (Median: 8)\n* **Critical Item Visits**: 202 visits | Avg Score: **9.02** (Median: 3)\n* **Follow-up Visits**: 211 visits | Avg Score: **6.19** (Median: 3)\n* **Complaint Investigations**: 5 visits | Avg Score: **1.80** (Median: 0)\n\nFollow-up visits reflect significant improvement compared to initial Routine inspections (averaging ~4.26 fewer points).\n\n---\n\n#### 4. Breakdown by Restaurant Category (\u226510 Matched Establishments)\n* **Highest Average Violation Scores**:\n  * American Restaurant: **15.28**\n  * Family Restaurant: **15.03**\n  * Takeout Restaurant: **14.88**\n  * Sandwich Shop: **14.76**\n* **Lowest Average Violation Scores**:\n  * Asian Restaurant: **7.58**\n  * Bar: **10.22**\n  * Breakfast Restaurant: **10.25**",
+          "extras": {
+            "signature": "EpURCpIRARFNMg83iSjwMlBXi8anQDfjlpLP6n9zSUGEYkiE4lXsnyAe/vpk2RUy3fHn5Ysmxwd8YwX3kJuXatiCux06yO+T9p+ud6FW5x3w6r1u7UiOQZqE/LlXRto/F2R9rdScizv4mSONCLfq4OjnHzut51YsZhOsKYc92tL7qr8SypZM7JR3P/JV5aQFdUJNMIU/AgjpcnBYxHdGdMsA1IJn1KXN+JVGLwGQxwJmcY4Qj99FkoVonOtXMBw/JaRn3oORS4iKegxqQr36vw/y1AKeAJaU3U5FFCGrKgGJQCU2KxCghDrCF5zhARXQPj3ypt5SdI4V5VU5cy21IfSCTgEn00R1QSYxp4usQDMvQc2H0Fz0iYv4Ruau93kQ2nsCluqcYi96wPmcsmcC/DEv5uFN36GTM9nL0bmx2zU5ju/+azX4AXEWUqiOFmdaTSA2NprWaUmuQlMoX1WHmBPdlV3DzHdSwOuifCljZ+x7kFyJ+vmKjpVUWVjowqgzSEmvSpZoHl1TPIO1USdfTkcaPjKZ2oRYZbQz1LZ+IfXCvastdpstiTA6FpWuC5Q6mhZcaSRYMhc5FZ8hOqiS+/Gd2WKXd1wpmo960RFJ8LkQycbnm4ZeW1nRf/OIUPDjMRaDNpELz4NPgy13r3LqV6W0Jt8k4H5TeYGb8lb1yF6izXowLrcMyt48B9RPGW6QpqbNcSRhTmJbvMWTisbw4d5i4m85/f7uvDC5oQJl/mPyclAfvk9Ine3l9ZCrDGzobTLQ32gncavoeDLm8vwWM4uPrYfsGbzOGwVXXp4KTMeCMk97sYs+jGB2I/h+6mlvxqAQViQ6u8Q731nDOUNj/hZUTnRpm2OXaKeZynT4tjO2fAjIB0hfwNFFy3ZYeuE/LqLyDdWgJ1W/S1vdku/ZfCTpuwgUdA0NXWl6FfAG65qEBsgbdzWf9XRxxGXgANScKgksPVMRPtJvBcu5k9s1IhGoBzPcJN76k1Aljq/hDZ7Pszg98bGL4jWbGzIIBmH06iHWCo3qvetaf7/s45K01kuQi3anEqqjyNmfAkF6BUXEMHKzIm14PyxP7r9tKZcG4SNANtY+yO4I2fpnqmxcsdEBxWBFk+VQWGpvBFfPTjbwIGU8/F7wHg00hp27h351qmL2Q2hm+tuRY9Wy6TAE9JHusVNEY7n3pnekmePZw6VhMpuhqKFjvGNiNKKjv4NOEA64EVvdlfnUZRmDeZhLO+RtjEuVkvAm8DGjnJsfFsEs9Q2jeBt9buGnoIJSXNOzV0HsEH54kUSmdCAGwSdfNh9uCbnJS/kPzO4r9pRjiJdRH0QA9+kbDVX//e7NsxQfX2JZXNlQk4qAwzDpqDinrI8LHvTWYVDIQgUsZsdSnsDePlc0zNpK+Qn4GO67nngIbkhhwanmgg0QLfNDzOFKyqRs9aXX7EHYkIAEuP+fWIgqndObArrEpHSkMA/rqZDfCVp4JJU0Unh0k/9wGccXYoFEvkmipCCFqf31rrq3IcOxqLDdh5gsZ75wMf5FwEQGQG2Z3d0+65j8NQDgEsNfR81rt9J9rXWKbZpLodPTzJK7L9oNT6ynoFNcZ2brhf0pabIonIg8EbyynR+zL3BBBun4nxG9Nh24U/zoF5BA5JYvHPSTMR6P39gbIFlmtdJYJMirIoeY84t1S8e+LpfvkPsTGN6RqHSFHqbZaHFfgYqup97CuenYwb3IRr0BRmATbE0YQbESF3ojkmFYo8k6kn/KzYftnR9gv5V4Nzt7IQ5PkuLWWy9ccd6WEzANYfEhAv/XFHm89/vTBYEpKmtv1i1j4eQw9oI0gYyhBVCAwsx8RIk/5RjzZn+FuumT8YXhmZmZDk55UkL8OVI1NkecOLQCKaZZtnd7OSrcqjxFhME8o+xPislSFKl6yMq3Zq3zpEam4voMk78GEOoHnWkp5Lpr3ct5KMfquVsI193yrrd7bdELpC+llftnIesCguTTAPSgPUG/iOtKi1UgDs5WzEw3sAiGFQP8I+AYcxcU3deVkhTgFeQxKHlzVtAarWRKN407Rss1ygT6RXWGYT4FTAEm20ntaZCzgEdSwjguCOgqUODuIpKJlrYr16NrUJTCt+1jDcB5tgOEsgI7Y+Jrgnx3WNNoXR383MuNbDbML2AmSm8YGywXVJR/bqbcpNNHRVVOBsro606BpqhGNiENpbqZB8dDxDjeQHXjw8l+JK90xkUNoxHEsT5zo4SRoXa1+EX1eEsrwVvJraNo9pe9RjhA6qB9W4dSt2Cb56/OcCsO6SeqTrw31cK7qcR2JbL33K1xzk9jdm19idzfE+UbPXfhddVcFOjic5ukh3PtOx5KN6UxsVaqiBldCjimUkiGKiQSA6CKvUD2pBNlM4CCJo7Ffl0K76MfGGYvd4pyvcG/SpCYTh9cnzVMrUX2aTiL8A1Tv5R5U2gDAozgpSP0JVAVd2kZNSJqDOIrTC4/+QbD2J/nyFbNVGyUG1SEUYSSciImMtZKPU0K6Oh88kYQf/EoA80sQa5rj8+JcnKhBMDH17HB0J26z9fml+3DbHdgLzE8JLyWdgdglCQy8Ut+cE80elSWj/juzM4RU48YlINCCXOQ96lPYUqdjuGFksZP/WxFOiFZJ2TBkweGp52DJOJ2DSbDQj+B2oN75wVn3UzxgwqSyoZ/biojr2IxpyElvsAgjttO3QA2jQIbapM5cljSwitmyCcpWfr0kUSMdmTBoomz2QgonebW7rJYjtIAh7qR2XXmq1XC1DAadIvgIv+yf0jf7NbW10MS67kNu9PlaYmuqC7QWHcqP6rU0Sc8QJTNc+5oze25+Tzf3HQuhJB8KLgKUbBEdQR44+lda7M+lHH6qajoLK81YehRsKGgTBW03m/0Z7EUPiZMX36XlPCry0KGfyqVf78USglJDBgXyii1IOzyqg=="
+          }
+        }
+      ],
+      "tool_calls": [],
+      "usage_metadata": {
+        "input_tokens": 11791,
+        "output_tokens": 1564,
+        "total_tokens": 13355,
+        "input_token_details": {
+          "cache_read": 8021
+        },
+        "output_token_details": {
+          "reasoning": 722
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    }
+  ],
+  "charts": [
+    {
+      "data": [
+        {
+          "hovertemplate": "score_bracket=%{x}<br>inspection_count=%{y}<extra></extra>",
+          "legendgroup": "",
+          "marker": {
+            "color": "#000001",
+            "pattern": {
+              "shape": ""
+            }
+          },
+          "name": "",
+          "orientation": "v",
+          "showlegend": false,
+          "textposition": "auto",
+          "x": [
+            "01. Perfect Score (0)",
+            "02. Low (1-5)",
+            "03. Moderate (6-10)",
+            "04. High (11-20)",
+            "05. Very High (21-30)",
+            "06. Severe (31-50)",
+            "07. Critical (51+)"
+          ],
+          "xaxis": "x",
+          "y": {
+            "dtype": "i2",
+            "bdata": "xgI7CZIHCgdcAjQBSQA="
+          },
+          "yaxis": "y",
+          "type": "bar"
+        }
+      ],
+      "layout": {
+        "template": {
+          "data": {
+            "candlestick": [
+              {
+                "decreasing": {
+                  "line": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "line": {
+                    "color": "#000032"
+                  }
+                },
+                "type": "candlestick"
+              }
+            ],
+            "contourcarpet": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contourcarpet"
+              }
+            ],
+            "contour": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contour"
+              }
+            ],
+            "heatmap": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "heatmap"
+              }
+            ],
+            "histogram2d": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "histogram2d"
+              }
+            ],
+            "icicle": [
+              {
+                "textfont": {
+                  "color": "white"
+                },
+                "type": "icicle"
+              }
+            ],
+            "sankey": [
+              {
+                "textfont": {
+                  "color": "#000036"
+                },
+                "type": "sankey"
+              }
+            ],
+            "scatter": [
+              {
+                "marker": {
+                  "line": {
+                    "width": 0
+                  }
+                },
+                "type": "scatter"
+              }
+            ],
+            "table": [
+              {
+                "cells": {
+                  "fill": {
+                    "color": "#000038"
+                  },
+                  "font": {
+                    "color": "#000037"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "header": {
+                  "fill": {
+                    "color": "#000040"
+                  },
+                  "font": {
+                    "color": "#000036"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "type": "table"
+              }
+            ],
+            "waterfall": [
+              {
+                "connector": {
+                  "line": {
+                    "color": "#000036",
+                    "width": 2
+                  }
+                },
+                "decreasing": {
+                  "marker": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "marker": {
+                    "color": "#000032"
+                  }
+                },
+                "totals": {
+                  "marker": {
+                    "color": "#000034"
+                  }
+                },
+                "type": "waterfall"
+              }
+            ]
+          },
+          "layout": {
+            "coloraxis": {
+              "colorscale": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorscale": {
+              "diverging": [
+                [
+                  0.0,
+                  "#000021"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000022"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000023"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000024"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000025"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000026"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000027"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000028"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000029"
+                ],
+                [
+                  1.0,
+                  "#000030"
+                ]
+              ],
+              "sequential": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ],
+              "sequentialminus": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorway": [
+              "#000001",
+              "#000002",
+              "#000003",
+              "#000004",
+              "#000005",
+              "#000006",
+              "#000007",
+              "#000008",
+              "#000009",
+              "#000010"
+            ]
+          }
+        },
+        "xaxis": {
+          "anchor": "y",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "score_bracket"
+          }
+        },
+        "yaxis": {
+          "anchor": "x",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "inspection_count"
+          }
+        },
+        "legend": {
+          "tracegroupgap": 0
+        },
+        "title": {
+          "text": "Distribution of Inspection Scores Across All Visits"
+        },
+        "barmode": "relative"
+      }
+    },
+    {
+      "data": [
+        {
+          "hovertemplate": "inspection_year=%{x}<br>avg_score=%{y}<extra></extra>",
+          "legendgroup": "",
+          "line": {
+            "color": "#000001",
+            "dash": "solid"
+          },
+          "marker": {
+            "symbol": "circle"
+          },
+          "mode": "lines",
+          "name": "",
+          "orientation": "v",
+          "showlegend": false,
+          "x": [
+            "2015",
+            "2016",
+            "2017",
+            "2018",
+            "2019",
+            "2020",
+            "2021",
+            "2022",
+            "2023",
+            "2024",
+            "2025"
+          ],
+          "xaxis": "x",
+          "y": {
+            "dtype": "f8",
+            "bdata": "AAAAAAAAKkAAAAAAAIAoQFK4HoXr0SZArkfhehQuJkDhehSuR2EkQJqZmZmZmSNAzczMzMzMJEApXI/C9SgoQIXrUbgeBShAexSuR+H6JkDNzMzMzMwhQA=="
+          },
+          "yaxis": "y",
+          "type": "scatter"
+        }
+      ],
+      "layout": {
+        "template": {
+          "data": {
+            "candlestick": [
+              {
+                "decreasing": {
+                  "line": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "line": {
+                    "color": "#000032"
+                  }
+                },
+                "type": "candlestick"
+              }
+            ],
+            "contourcarpet": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contourcarpet"
+              }
+            ],
+            "contour": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contour"
+              }
+            ],
+            "heatmap": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "heatmap"
+              }
+            ],
+            "histogram2d": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "histogram2d"
+              }
+            ],
+            "icicle": [
+              {
+                "textfont": {
+                  "color": "white"
+                },
+                "type": "icicle"
+              }
+            ],
+            "sankey": [
+              {
+                "textfont": {
+                  "color": "#000036"
+                },
+                "type": "sankey"
+              }
+            ],
+            "scatter": [
+              {
+                "marker": {
+                  "line": {
+                    "width": 0
+                  }
+                },
+                "type": "scatter"
+              }
+            ],
+            "table": [
+              {
+                "cells": {
+                  "fill": {
+                    "color": "#000038"
+                  },
+                  "font": {
+                    "color": "#000037"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "header": {
+                  "fill": {
+                    "color": "#000040"
+                  },
+                  "font": {
+                    "color": "#000036"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "type": "table"
+              }
+            ],
+            "waterfall": [
+              {
+                "connector": {
+                  "line": {
+                    "color": "#000036",
+                    "width": 2
+                  }
+                },
+                "decreasing": {
+                  "marker": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "marker": {
+                    "color": "#000032"
+                  }
+                },
+                "totals": {
+                  "marker": {
+                    "color": "#000034"
+                  }
+                },
+                "type": "waterfall"
+              }
+            ]
+          },
+          "layout": {
+            "coloraxis": {
+              "colorscale": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorscale": {
+              "diverging": [
+                [
+                  0.0,
+                  "#000021"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000022"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000023"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000024"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000025"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000026"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000027"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000028"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000029"
+                ],
+                [
+                  1.0,
+                  "#000030"
+                ]
+              ],
+              "sequential": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ],
+              "sequentialminus": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorway": [
+              "#000001",
+              "#000002",
+              "#000003",
+              "#000004",
+              "#000005",
+              "#000006",
+              "#000007",
+              "#000008",
+              "#000009",
+              "#000010"
+            ]
+          }
+        },
+        "xaxis": {
+          "anchor": "y",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "inspection_year"
+          }
+        },
+        "yaxis": {
+          "anchor": "x",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "avg_score"
+          }
+        },
+        "legend": {
+          "tracegroupgap": 0
+        },
+        "title": {
+          "text": "Annual Trend of Average Inspection Scores (2015\u20132025)"
+        }
+      }
+    },
+    {
+      "data": [
+        {
+          "hovertemplate": "inspection_type=%{x}<br>avg_inspection_score=%{y}<extra></extra>",
+          "legendgroup": "",
+          "marker": {
+            "color": "#000001",
+            "pattern": {
+              "shape": ""
+            }
+          },
+          "name": "",
+          "orientation": "v",
+          "showlegend": false,
+          "textposition": "auto",
+          "x": [
+            "Routine",
+            "Critical Item",
+            "Followup",
+            "Complaint Investigation"
+          ],
+          "xaxis": "x",
+          "y": {
+            "dtype": "f8",
+            "bdata": "ZmZmZmbmJEAK16NwPQoiQMP1KFyPwhhAzczMzMzM/D8="
+          },
+          "yaxis": "y",
+          "type": "bar"
+        }
+      ],
+      "layout": {
+        "template": {
+          "data": {
+            "candlestick": [
+              {
+                "decreasing": {
+                  "line": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "line": {
+                    "color": "#000032"
+                  }
+                },
+                "type": "candlestick"
+              }
+            ],
+            "contourcarpet": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contourcarpet"
+              }
+            ],
+            "contour": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contour"
+              }
+            ],
+            "heatmap": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "heatmap"
+              }
+            ],
+            "histogram2d": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "histogram2d"
+              }
+            ],
+            "icicle": [
+              {
+                "textfont": {
+                  "color": "white"
+                },
+                "type": "icicle"
+              }
+            ],
+            "sankey": [
+              {
+                "textfont": {
+                  "color": "#000036"
+                },
+                "type": "sankey"
+              }
+            ],
+            "scatter": [
+              {
+                "marker": {
+                  "line": {
+                    "width": 0
+                  }
+                },
+                "type": "scatter"
+              }
+            ],
+            "table": [
+              {
+                "cells": {
+                  "fill": {
+                    "color": "#000038"
+                  },
+                  "font": {
+                    "color": "#000037"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "header": {
+                  "fill": {
+                    "color": "#000040"
+                  },
+                  "font": {
+                    "color": "#000036"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "type": "table"
+              }
+            ],
+            "waterfall": [
+              {
+                "connector": {
+                  "line": {
+                    "color": "#000036",
+                    "width": 2
+                  }
+                },
+                "decreasing": {
+                  "marker": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "marker": {
+                    "color": "#000032"
+                  }
+                },
+                "totals": {
+                  "marker": {
+                    "color": "#000034"
+                  }
+                },
+                "type": "waterfall"
+              }
+            ]
+          },
+          "layout": {
+            "coloraxis": {
+              "colorscale": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorscale": {
+              "diverging": [
+                [
+                  0.0,
+                  "#000021"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000022"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000023"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000024"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000025"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000026"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000027"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000028"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000029"
+                ],
+                [
+                  1.0,
+                  "#000030"
+                ]
+              ],
+              "sequential": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ],
+              "sequentialminus": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorway": [
+              "#000001",
+              "#000002",
+              "#000003",
+              "#000004",
+              "#000005",
+              "#000006",
+              "#000007",
+              "#000008",
+              "#000009",
+              "#000010"
+            ]
+          }
+        },
+        "xaxis": {
+          "anchor": "y",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "inspection_type"
+          }
+        },
+        "yaxis": {
+          "anchor": "x",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "avg_inspection_score"
+          }
+        },
+        "legend": {
+          "tracegroupgap": 0
+        },
+        "title": {
+          "text": "Average Inspection Score by Visit Type"
+        },
+        "barmode": "relative"
+      }
+    },
+    {
+      "data": [
+        {
+          "hovertemplate": "restaurant_category=%{x}<br>avg_score=%{y}<extra></extra>",
+          "legendgroup": "",
+          "marker": {
+            "color": "#000001",
+            "pattern": {
+              "shape": ""
+            }
+          },
+          "name": "",
+          "orientation": "v",
+          "showlegend": false,
+          "textposition": "auto",
+          "x": [
+            "American restaurant",
+            "Family restaurant",
+            "Takeout Restaurant",
+            "Sandwich shop",
+            "Mexican restaurant",
+            "Restaurant",
+            "Hamburger restaurant",
+            "Fast food restaurant",
+            "Cafe",
+            "Caterer",
+            "Breakfast restaurant",
+            "Bar",
+            "Asian restaurant"
+          ],
+          "xaxis": "x",
+          "y": {
+            "dtype": "f8",
+            "bdata": "j8L1KFyPLkCPwvUoXA8uQMP1KFyPwi1AhetRuB6FLUD2KFyPwnUrQNejcD0KVytAKVyPwvUoK0AK16NwPYoqQKRwPQrXIyhAhetRuB4FJ0AAAAAAAIAkQHE9CtejcCRAUrgehetRHkA="
+          },
+          "yaxis": "y",
+          "type": "bar"
+        }
+      ],
+      "layout": {
+        "template": {
+          "data": {
+            "candlestick": [
+              {
+                "decreasing": {
+                  "line": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "line": {
+                    "color": "#000032"
+                  }
+                },
+                "type": "candlestick"
+              }
+            ],
+            "contourcarpet": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contourcarpet"
+              }
+            ],
+            "contour": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contour"
+              }
+            ],
+            "heatmap": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "heatmap"
+              }
+            ],
+            "histogram2d": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "histogram2d"
+              }
+            ],
+            "icicle": [
+              {
+                "textfont": {
+                  "color": "white"
+                },
+                "type": "icicle"
+              }
+            ],
+            "sankey": [
+              {
+                "textfont": {
+                  "color": "#000036"
+                },
+                "type": "sankey"
+              }
+            ],
+            "scatter": [
+              {
+                "marker": {
+                  "line": {
+                    "width": 0
+                  }
+                },
+                "type": "scatter"
+              }
+            ],
+            "table": [
+              {
+                "cells": {
+                  "fill": {
+                    "color": "#000038"
+                  },
+                  "font": {
+                    "color": "#000037"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "header": {
+                  "fill": {
+                    "color": "#000040"
+                  },
+                  "font": {
+                    "color": "#000036"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "type": "table"
+              }
+            ],
+            "waterfall": [
+              {
+                "connector": {
+                  "line": {
+                    "color": "#000036",
+                    "width": 2
+                  }
+                },
+                "decreasing": {
+                  "marker": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "marker": {
+                    "color": "#000032"
+                  }
+                },
+                "totals": {
+                  "marker": {
+                    "color": "#000034"
+                  }
+                },
+                "type": "waterfall"
+              }
+            ]
+          },
+          "layout": {
+            "coloraxis": {
+              "colorscale": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorscale": {
+              "diverging": [
+                [
+                  0.0,
+                  "#000021"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000022"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000023"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000024"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000025"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000026"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000027"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000028"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000029"
+                ],
+                [
+                  1.0,
+                  "#000030"
+                ]
+              ],
+              "sequential": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ],
+              "sequentialminus": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorway": [
+              "#000001",
+              "#000002",
+              "#000003",
+              "#000004",
+              "#000005",
+              "#000006",
+              "#000007",
+              "#000008",
+              "#000009",
+              "#000010"
+            ]
+          }
+        },
+        "xaxis": {
+          "anchor": "y",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "restaurant_category"
+          }
+        },
+        "yaxis": {
+          "anchor": "x",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "avg_score"
+          }
+        },
+        "legend": {
+          "tracegroupgap": 0
+        },
+        "title": {
+          "text": "Average Inspection Score by Restaurant Category (Min. 10 Establishments)"
+        },
+        "barmode": "relative"
+      }
+    }
+  ],
+  "candidate_pool_raw": [],
+  "duration_seconds": 143.0,
+  "usage": {
+    "available": true,
+    "per_call": [
+      {
+        "input_tokens": 2006,
+        "output_tokens": 257,
+        "total_tokens": 2263
+      },
+      {
+        "input_tokens": 3292,
+        "output_tokens": 171,
+        "total_tokens": 3463
+      },
+      {
+        "input_tokens": 3569,
+        "output_tokens": 241,
+        "total_tokens": 3810
+      },
+      {
+        "input_tokens": 3978,
+        "output_tokens": 102,
+        "total_tokens": 4080
+      },
+      {
+        "input_tokens": 4671,
+        "output_tokens": 69,
+        "total_tokens": 4740
+      },
+      {
+        "input_tokens": 4817,
+        "output_tokens": 305,
+        "total_tokens": 5122
+      },
+      {
+        "input_tokens": 5324,
+        "output_tokens": 282,
+        "total_tokens": 5606
+      },
+      {
+        "input_tokens": 6272,
+        "output_tokens": 254,
+        "total_tokens": 6526
+      },
+      {
+        "input_tokens": 7100,
+        "output_tokens": 186,
+        "total_tokens": 7286
+      },
+      {
+        "input_tokens": 7494,
+        "output_tokens": 154,
+        "total_tokens": 7648
+      },
+      {
+        "input_tokens": 8049,
+        "output_tokens": 783,
+        "total_tokens": 8832
+      },
+      {
+        "input_tokens": 9029,
+        "output_tokens": 210,
+        "total_tokens": 9239
+      },
+      {
+        "input_tokens": 9484,
+        "output_tokens": 224,
+        "total_tokens": 9708
+      },
+      {
+        "input_tokens": 9808,
+        "output_tokens": 368,
+        "total_tokens": 10176
+      },
+      {
+        "input_tokens": 10445,
+        "output_tokens": 179,
+        "total_tokens": 10624
+      },
+      {
+        "input_tokens": 10684,
+        "output_tokens": 389,
+        "total_tokens": 11073
+      },
+      {
+        "input_tokens": 11116,
+        "output_tokens": 149,
+        "total_tokens": 11265
+      },
+      {
+        "input_tokens": 11318,
+        "output_tokens": 153,
+        "total_tokens": 11471
+      },
+      {
+        "input_tokens": 11513,
+        "output_tokens": 227,
+        "total_tokens": 11740
+      },
+      {
+        "input_tokens": 11791,
+        "output_tokens": 1564,
+        "total_tokens": 13355
+      }
+    ],
+    "input_tokens": 151760,
+    "output_tokens": 6267,
+    "total_tokens": 158027
+  },
+  "tokens_per_minute": 66304.1,
+  "estimated_cost_usd": 0.274643,
+  "success": true,
+  "error": null,
+  "chart_image_files": [
+    "2026-08-15T10-25-29.954647+00-00_v1_memory_0da33252_chart0.png",
+    "2026-08-15T10-25-29.954647+00-00_v1_memory_0da33252_chart1.png",
+    "2026-08-15T10-25-29.954647+00-00_v1_memory_0da33252_chart2.png",
+    "2026-08-15T10-25-29.954647+00-00_v1_memory_0da33252_chart3.png"
+  ]
+}

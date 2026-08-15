@@ -1,0 +1,1326 @@
+{
+  "source": "frontend",
+  "run_id": "7c6bbd70",
+  "timestamp": "2026-08-15T07:46:52.984014+00:00",
+  "variant": "v2_memory",
+  "provider": "google",
+  "model": "gemini-3.6-flash",
+  "question": "How many establishments have a Salt Lake County health inspection on record?",
+  "output_text": "Based on the Salt Lake County Health Department (SLCHD) inspection database and Google Local places records, here is the breakdown of establishments with inspection records:\n\n### Key Findings\n\n1. **SLCHD Health Inspection Listings (`establishment_keys`):**\n   * **1,315 establishments** have active health inspection records on file in the Salt Lake County Health Department dataset (covering **8,020 total inspection visits**).\n   * **26 establishments** exist as registered SLCHD listings but currently have no recorded inspection visits on file.\n   * Total SLCHD registered establishment listings: **1,341**.\n\n2. **Google Local Places Database (`establishments`):**\n   * Out of **8,592** total Google Local food & beverage listings in Salt Lake County:\n     * **139 establishments** (1.62%) are matched to an SLCHD health inspection record.\n     * **8,453 establishments** (98.38%) have **no matched SLCHD inspection history**. \n     * *Note: Lacking a matched SLCHD inspection record in this dataset does not imply a clean health record\u2014it simply means the Google Local listing has no linked inspection history.*\n\n---\n\n### Data Summary Table\n\n| Category / Perspective | Count | Percentage |\n| :--- | :--- | :--- |\n| **SLCHD Listings with Inspection Records** | **1,315** | **98.06%** of SLCHD listings |\n| SLCHD Listings without Inspection Records | 26 | 1.94% of SLCHD listings |\n| **Total SLCHD Portal Listings** | **1,341** | 100.0% |\n| | | |\n| **Google Places Matched to SLCHD Inspections** | **139** | **1.62%** of Google Places |\n| Google Places Unmatched (No Linked Inspection History) | 8,453 | 98.38% of Google Places |\n| **Total Google Places Establishments** | **8,592** | 100.0% |",
+  "structured_response": null,
+  "trace_text": "Action: get_schema({})\n\nObservation: Project food_health_viz {\n  database_type: 'DuckDB'\n}\n\nTable establishment_keys {\n  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']\n  name varchar [not null]\n  address varchar [not null]\n  city varchar [not null]\n  city_state_zip varchar\n  establishment_type varchar\n  source varchar [note: 'friend_slc | own_scrape']\n  slchd_lat double\n  slchd_lon double\n  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']\n\n  Note: 'SLCHD establishment list, one row per portal listing.'\n}\n\nTable category {\n  category_id integer [pk]\n  category varchar\n}\n\nTable establishments {\n  gmap_id varchar [pk]\n  name varchar\n  address varchar\n  description varchar\n  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']\n  avg_rating double\n  num_of_reviews integer\n  price varchar\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']\n\n  Note: 'One row per Google Local place \u2014 all restaurants, not just SLCHD-matched.'\n}\n\nTable establishment_attributes {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  attribute varchar [not null]\n\n  indexes { (gmap_id, attribute) [pk] }\n\n  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. \"Service options\") dropped.'\n}\n\nTable establishment_categories {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  category_id integer [ref: > category.category_id, not null]\n\n  indexes { (gmap_id, category_id) [pk] }\n}\n\nTable gmap_hours {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  day integer [not null, note: '0=Sun \u2026 6=Sat']\n  open_min bigint\n  open_max bigint\n\n  indexes { (gmap_id, day) [pk] }\n\n  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'\n}\n\nTable review {\n  user_id varchar\n  name varchar\n  time bigint\n  rating double\n  text varchar\n  resp varchar\n  gmap_id varchar [ref: > establishments.gmap_id]\n}\n\nTable inspection_types {\n  inspection_type_id integer [pk, note: 'parsed leading number, e.g. \"01 - Routine\" -> 1']\n  description varchar [note: 'e.g. \"Routine\"']\n}\n\nTable inspections {\n  inspection_id bigint [pk, increment]\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]\n  inspection_date date [not null]\n  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable \u2014 27 rows have no type']\n  inspection_score integer\n\n  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'\n}\n\nTable violation_codes {\n  violation_code_id integer [pk, increment]\n  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. \"4.5.18\"']\n  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']\n  critical boolean [not null]\n}\n\nTable violations {\n  violation_id bigint [pk, increment]\n  inspection_id bigint [ref: > inspections.inspection_id, not null]\n  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]\n  violation_description varchar [note: 'per-occurrence free text']\n  violation_occurrences integer\n  violation_cos boolean [note: 'corrected on site']\n  violation_phr varchar [note: 'public health rationale']\n\n  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'\n}\n\n\nAction: run_sql({'query': 'SELECT \\n  (SELECT COUNT(*) FROM establishments) AS total_gmap_establishments,\\n  (SELECT COUNT(*) FROM establishments WHERE slchd_establishment_key IS NOT NULL) AS gmap_matched_slchd,\\n  (SELECT COUNT(DISTINCT slchd_establishment_key) FROM establishments WHERE slchd_establishment_key IS NOT NULL) AS distinct_slchd_keys_in_gmap,\\n  (SELECT COUNT(*) FROM establishment_keys) AS total_slchd_establishment_keys,\\n  (SELECT COUNT(DISTINCT slchd_establishment_key) FROM inspections) AS slchd_keys_with_inspections,\\n  (SELECT COUNT(*) FROM inspections) AS total_inspections\\n'})\n\nObservation: {\"row_count\": 1, \"truncated\": false, \"rows\": [{\"total_gmap_establishments\": 8592, \"gmap_matched_slchd\": 139, \"distinct_slchd_keys_in_gmap\": 138, \"total_slchd_establishment_keys\": 1341, \"slchd_keys_with_inspections\": 1315, \"total_inspections\": 8020}]}\n\nAction: run_sql({'query': 'SELECT \\n  COUNT(DISTINCT e.gmap_id) as gmap_total,\\n  COUNT(DISTINCT CASE WHEN e.slchd_establishment_key IS NOT NULL THEN e.gmap_id END) as gmap_matched_key,\\n  COUNT(DISTINCT CASE WHEN i.slchd_establishment_key IS NOT NULL THEN e.gmap_id END) as gmap_with_inspections,\\n  (SELECT COUNT(*) FROM establishment_keys) as slchd_keys_total,\\n  (SELECT COUNT(DISTINCT slchd_establishment_key) FROM inspections) as slchd_keys_with_inspections,\\n  (SELECT COUNT(DISTINCT slchd_establishment_key) FROM establishment_keys WHERE slchd_establishment_key NOT IN (SELECT DISTINCT slchd_establishment_key FROM inspections)) as slchd_keys_without_inspections\\nFROM establishments e\\nLEFT JOIN inspections i ON e.slchd_establishment_key = i.slchd_establishment_key\\n'})\n\nObservation: {\"row_count\": 1, \"truncated\": false, \"rows\": [{\"gmap_total\": 8592, \"gmap_matched_key\": 139, \"gmap_with_inspections\": 139, \"slchd_keys_total\": 1341, \"slchd_keys_with_inspections\": 1315, \"slchd_keys_without_inspections\": 26}]}\n\nAction: plot_chart({'x': 'status', 'title': 'Salt Lake County Health Department (SLCHD) Listings by Inspection Record Status', 'query': \"SELECT \\n  'SLCHD Listings with Inspections' AS status,\\n  COUNT(DISTINCT slchd_establishment_key) AS count\\nFROM inspections\\nUNION ALL\\nSELECT \\n  'SLCHD Listings without Inspections' AS status,\\n  COUNT(*) - (SELECT COUNT(DISTINCT slchd_establishment_key) FROM inspections) AS count\\nFROM establishment_keys\\n\", 'chart_type': 'bar', 'y': 'count'})\n\nObservation: Chart created: 'Salt Lake County Health Department (SLCHD) Listings by Inspection Record Status' (bar, 2 rows). It will be shown to the user below your answer.\n\nAction: plot_chart({'y': 'count', 'x': 'status', 'chart_type': 'bar', 'query': \"SELECT \\n  'Matched SLCHD Health Inspection Record' AS status,\\n  COUNT(CASE WHEN slchd_establishment_key IS NOT NULL THEN 1 END) AS count\\nFROM establishments\\nUNION ALL\\nSELECT \\n  'No Matched SLCHD Record' AS status,\\n  COUNT(CASE WHEN slchd_establishment_key IS NULL THEN 1 END) AS count\\nFROM establishments\\n\", 'title': 'Google Local Establishments by SLCHD Inspection Match Status'})\n\nObservation: Chart created: 'Google Local Establishments by SLCHD Inspection Match Status' (bar, 2 rows). It will be shown to the user below your answer.",
+  "timeline": [],
+  "messages": [
+    {
+      "type": "HumanMessage",
+      "content": "How many establishments have a Salt Lake County health inspection on record?"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "get_schema",
+          "args": {},
+          "id": "call_514523",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 2146,
+        "output_tokens": 53,
+        "total_tokens": 2199,
+        "input_token_details": {
+          "cache_read": 0
+        },
+        "output_token_details": {
+          "reasoning": 43
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "Project food_health_viz {\n  database_type: 'DuckDB'\n}\n\nTable establishment_keys {\n  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']\n  name varchar [not null]\n  address varchar [not null]\n  city varchar [not null]\n  city_state_zip varchar\n  establishment_type varchar\n  source varchar [note: 'friend_slc | own_scrape']\n  slchd_lat double\n  slchd_lon double\n  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']\n\n  Note: 'SLCHD establishment list, one row per portal listing.'\n}\n\nTable category {\n  category_id integer [pk]\n  category varchar\n}\n\nTable establishments {\n  gmap_id varchar [pk]\n  name varchar\n  address varchar\n  description varchar\n  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']\n  avg_rating double\n  num_of_reviews integer\n  price varchar\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']\n\n  Note: 'One row per Google Local place \u2014 all restaurants, not just SLCHD-matched.'\n}\n\nTable establishment_attributes {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  attribute varchar [not null]\n\n  indexes { (gmap_id, attribute) [pk] }\n\n  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. \"Service options\") dropped.'\n}\n\nTable establishment_categories {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  category_id integer [ref: > category.category_id, not null]\n\n  indexes { (gmap_id, category_id) [pk] }\n}\n\nTable gmap_hours {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  day integer [not null, note: '0=Sun \u2026 6=Sat']\n  open_min bigint\n  open_max bigint\n\n  indexes { (gmap_id, day) [pk] }\n\n  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'\n}\n\nTable review {\n  user_id varchar\n  name varchar\n  time bigint\n  rating double\n  text varchar\n  resp varchar\n  gmap_id varchar [ref: > establishments.gmap_id]\n}\n\nTable inspection_types {\n  inspection_type_id integer [pk, note: 'parsed leading number, e.g. \"01 - Routine\" -> 1']\n  description varchar [note: 'e.g. \"Routine\"']\n}\n\nTable inspections {\n  inspection_id bigint [pk, increment]\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]\n  inspection_date date [not null]\n  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable \u2014 27 rows have no type']\n  inspection_score integer\n\n  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'\n}\n\nTable violation_codes {\n  violation_code_id integer [pk, increment]\n  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. \"4.5.18\"']\n  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']\n  critical boolean [not null]\n}\n\nTable violations {\n  violation_id bigint [pk, increment]\n  inspection_id bigint [ref: > inspections.inspection_id, not null]\n  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]\n  violation_description varchar [note: 'per-occurrence free text']\n  violation_occurrences integer\n  violation_cos boolean [note: 'corrected on site']\n  violation_phr varchar [note: 'public health rationale']\n\n  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'\n}\n",
+      "tool_call_id": "call_514523",
+      "name": "get_schema"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "SELECT \n  (SELECT COUNT(*) FROM establishments) AS total_gmap_establishments,\n  (SELECT COUNT(*) FROM establishments WHERE slchd_establishment_key IS NOT NULL) AS gmap_matched_slchd,\n  (SELECT COUNT(DISTINCT slchd_establishment_key) FROM establishments WHERE slchd_establishment_key IS NOT NULL) AS distinct_slchd_keys_in_gmap,\n  (SELECT COUNT(*) FROM establishment_keys) AS total_slchd_establishment_keys,\n  (SELECT COUNT(DISTINCT slchd_establishment_key) FROM inspections) AS slchd_keys_with_inspections,\n  (SELECT COUNT(*) FROM inspections) AS total_inspections\n"
+          },
+          "id": "call_709948",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 3228,
+        "output_tokens": 363,
+        "total_tokens": 3591,
+        "input_token_details": {
+          "cache_read": 0
+        },
+        "output_token_details": {
+          "reasoning": 184
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 1, \"truncated\": false, \"rows\": [{\"total_gmap_establishments\": 8592, \"gmap_matched_slchd\": 139, \"distinct_slchd_keys_in_gmap\": 138, \"total_slchd_establishment_keys\": 1341, \"slchd_keys_with_inspections\": 1315, \"total_inspections\": 8020}]}",
+      "tool_call_id": "call_709948",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "SELECT \n  COUNT(DISTINCT e.gmap_id) as gmap_total,\n  COUNT(DISTINCT CASE WHEN e.slchd_establishment_key IS NOT NULL THEN e.gmap_id END) as gmap_matched_key,\n  COUNT(DISTINCT CASE WHEN i.slchd_establishment_key IS NOT NULL THEN e.gmap_id END) as gmap_with_inspections,\n  (SELECT COUNT(*) FROM establishment_keys) as slchd_keys_total,\n  (SELECT COUNT(DISTINCT slchd_establishment_key) FROM inspections) as slchd_keys_with_inspections,\n  (SELECT COUNT(DISTINCT slchd_establishment_key) FROM establishment_keys WHERE slchd_establishment_key NOT IN (SELECT DISTINCT slchd_establishment_key FROM inspections)) as slchd_keys_without_inspections\nFROM establishments e\nLEFT JOIN inspections i ON e.slchd_establishment_key = i.slchd_establishment_key\n"
+          },
+          "id": "call_591482",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 3698,
+        "output_tokens": 562,
+        "total_tokens": 4260,
+        "input_token_details": {
+          "cache_read": 0
+        },
+        "output_token_details": {
+          "reasoning": 313
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 1, \"truncated\": false, \"rows\": [{\"gmap_total\": 8592, \"gmap_matched_key\": 139, \"gmap_with_inspections\": 139, \"slchd_keys_total\": 1341, \"slchd_keys_with_inspections\": 1315, \"slchd_keys_without_inspections\": 26}]}",
+      "tool_call_id": "call_591482",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "plot_chart",
+          "args": {
+            "x": "status",
+            "title": "Salt Lake County Health Department (SLCHD) Listings by Inspection Record Status",
+            "query": "SELECT \n  'SLCHD Listings with Inspections' AS status,\n  COUNT(DISTINCT slchd_establishment_key) AS count\nFROM inspections\nUNION ALL\nSELECT \n  'SLCHD Listings without Inspections' AS status,\n  COUNT(*) - (SELECT COUNT(DISTINCT slchd_establishment_key) FROM inspections) AS count\nFROM establishment_keys\n",
+            "chart_type": "bar",
+            "y": "count"
+          },
+          "id": "call_616844",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 4360,
+        "output_tokens": 916,
+        "total_tokens": 5276,
+        "input_token_details": {
+          "cache_read": 0
+        },
+        "output_token_details": {
+          "reasoning": 779
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "Chart created: 'Salt Lake County Health Department (SLCHD) Listings by Inspection Record Status' (bar, 2 rows). It will be shown to the user below your answer.",
+      "tool_call_id": "call_616844",
+      "name": "plot_chart"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "plot_chart",
+          "args": {
+            "y": "count",
+            "x": "status",
+            "chart_type": "bar",
+            "query": "SELECT \n  'Matched SLCHD Health Inspection Record' AS status,\n  COUNT(CASE WHEN slchd_establishment_key IS NOT NULL THEN 1 END) AS count\nFROM establishments\nUNION ALL\nSELECT \n  'No Matched SLCHD Record' AS status,\n  COUNT(CASE WHEN slchd_establishment_key IS NULL THEN 1 END) AS count\nFROM establishments\n",
+            "title": "Google Local Establishments by SLCHD Inspection Match Status"
+          },
+          "id": "call_685325",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 5326,
+        "output_tokens": 187,
+        "total_tokens": 5513,
+        "input_token_details": {
+          "cache_read": 0
+        },
+        "output_token_details": {
+          "reasoning": 51
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "Chart created: 'Google Local Establishments by SLCHD Inspection Match Status' (bar, 2 rows). It will be shown to the user below your answer.",
+      "tool_call_id": "call_685325",
+      "name": "plot_chart"
+    },
+    {
+      "type": "AIMessage",
+      "content": "Based on the Salt Lake County Health Department (SLCHD) inspection database and Google Local places records, here is the breakdown of establishments with inspection records:\n\n### Key Findings\n\n1. **SLCHD Health Inspection Listings (`establishment_keys`):**\n   * **1,315 establishments** have active health inspection records on file in the Salt Lake County Health Department dataset (covering **8,020 total inspection visits**).\n   * **26 establishments** exist as registered SLCHD listings but currently have no recorded inspection visits on file.\n   * Total SLCHD registered establishment listings: **1,341**.\n\n2. **Google Local Places Database (`establishments`):**\n   * Out of **8,592** total Google Local food & beverage listings in Salt Lake County:\n     * **139 establishments** (1.62%) are matched to an SLCHD health inspection record.\n     * **8,453 establishments** (98.38%) have **no matched SLCHD inspection history**. \n     * *Note: Lacking a matched SLCHD inspection record in this dataset does not imply a clean health record\u2014it simply means the Google Local listing has no linked inspection history.*\n\n---\n\n### Data Summary Table\n\n| Category / Perspective | Count | Percentage |\n| :--- | :--- | :--- |\n| **SLCHD Listings with Inspection Records** | **1,315** | **98.06%** of SLCHD listings |\n| SLCHD Listings without Inspection Records | 26 | 1.94% of SLCHD listings |\n| **Total SLCHD Portal Listings** | **1,341** | 100.0% |\n| | | |\n| **Google Places Matched to SLCHD Inspections** | **139** | **1.62%** of Google Places |\n| Google Places Unmatched (No Linked Inspection History) | 8,453 | 98.38% of Google Places |\n| **Total Google Places Establishments** | **8,592** | 100.0% |",
+      "raw_content": [
+        {
+          "type": "text",
+          "text": "Based on the Salt Lake County Health Department (SLCHD) inspection database and Google Local places records, here is the breakdown of establishments with inspection records:\n\n### Key Findings\n\n1. **SLCHD Health Inspection Listings (`establishment_keys`):**\n   * **1,315 establishments** have active health inspection records on file in the Salt Lake County Health Department dataset (covering **8,020 total inspection visits**).\n   * **26 establishments** exist as registered SLCHD listings but currently have no recorded inspection visits on file.\n   * Total SLCHD registered establishment listings: **1,341**.\n\n2. **Google Local Places Database (`establishments`):**\n   * Out of **8,592** total Google Local food & beverage listings in Salt Lake County:\n     * **139 establishments** (1.62%) are matched to an SLCHD health inspection record.\n     * **8,453 establishments** (98.38%) have **no matched SLCHD inspection history**. \n     * *Note: Lacking a matched SLCHD inspection record in this dataset does not imply a clean health record\u2014it simply means the Google Local listing has no linked inspection history.*\n\n---\n\n### Data Summary Table\n\n| Category / Perspective | Count | Percentage |\n| :--- | :--- | :--- |\n| **SLCHD Listings with Inspection Records** | **1,315** | **98.06%** of SLCHD listings |\n| SLCHD Listings without Inspection Records | 26 | 1.94% of SLCHD listings |\n| **Total SLCHD Portal Listings** | **1,341** | 100.0% |\n| | | |\n| **Google Places Matched to SLCHD Inspections** | **139** | **1.62%** of Google Places |\n| Google Places Unmatched (No Linked Inspection History) | 8,453 | 98.38% of Google Places |\n| **Total Google Places Establishments** | **8,592** | 100.0% |",
+          "extras": {
+            "signature": "EpMLCpALARFNMg+QIEGckUZ0cTR/vlRpYpkJn9egzjq1/3rINqd7Z0IeYMoSQnigPpqa+ZkCgdZxR6g5FUhhztb//qHLgObuLzdX9pBWRv0Qn5jsP0iutEZtRmRyczyReZFk42XVrJVoYZq6Y1cmYs5CMMV4zJULt6W/cZUBdzRapMQs6BZ0+EQegN6Jxx11UoiD3xdiDVqKhq/PWLQe0XVepvFqv6LQxVXdcFTpavTB1duoxiBQrGzAk2urN/KfU1RrvXoRa4ZbT2azajSw3Nsek0doNC38nPkGYAjZlJ5DX7eWqZCtR86CB2sU+5RIVFhpJnZBqzSIMZiuMmERMt6ou9gLLyFtDThyQw2M3tJ2n1w+DZZwp5GbtwwzKeMzFr0AJsEQwtqLTw2l6ak+2iVabw5qggHDsHnH5+OJuDmGUWjjWylySMDtMo8aTrDQBsFFv86HqifdBUI1dXro8ra1er9tHrbeSDqMUi37C8cTiYwH1FIIVWRBOZoLJOGa0o3Bj2hquos97qiK0A3ocDme1Jvs6x54abELRryzh11GVgyLSiCD+Np+D6OnDBrE7IJWOFBQJR6ezcJ7n7mJyxEZ8peCp680L1zV03MaT6vnJKn1i8BEni9vkekOzlj+eH3bO98Dsvee6oPENTUzIWf8XsZIAfxK+8uqcAAmPeICkQ5RKwDlYoBuwERIjKy7Cbdvqhp5L14sr5Trd64UI5uK7C98WGDoI+dr7IiE93sCMvuqiCr6jKzqwYkCzztuLwMafPZ42TZ4HEd5LrrBSTAnRIqeYF2L7POz3mjoqGSy5rOUNsWsWqFWSBbsvfZb3Glo5+FCzdKglABcK70jnu7uApOKy+EB8a/LTZnMFxkwVhWayYqEkuhlygh4ikC/VeqaQjzP0LUtKCmEUdtfuCLrTwnzfUFvapwuLUxb+SR+suAQoYdD36rI3iEu+N48E3e+7s9PnoeZnTKZoHjmpqe0sBdv++VFakcyJHEUx42tgtz6+Ge6SUOelPEAzmOnUUCTRh55rOA6d3Av/N55plEIDSjCdNVL2/ZFalnPAlo9hPb/qv9tpOoo0zgIN0y9m9mDIrhVHmh3GggdbCqZd5MTQu8VyYH7EaJ7KkbwasFCg04l6xjLcLA5t6sfBRFV/2v+2fKSBBMW/9wCKR5pBM/YsU92qMWkL/OQ8i+dF8//jPqwZBCb48DFxxqJ+dmdozgwx8lNDxQmfSYUXTeS1SAsCKJg9QB8bJyvC+GFiBx6PbGiYGgiyXzzQOriy3SCuYJkbDjM4bOampTjyT4gtford+9LElheQ73MW6er9feOXHjlSgCJ8VdGKHbK8ftkz5i/Yri/9NmveIZbOQ2ymDzTze6XQ8fj/qx4fQEz0G63PzdIhAjqna7koGQyuzCwL+twy8+hv6xUWqz1IS50RHSlYN5IdGVuMH0BEBdAgXiIvWD8eMlReFghe0KvOHpGWeJ+LuGuz8st1pCSIe7oY5jmFIL+wuseE2muXKXs/Ci96UACAK1y18NjW1Aa/bngiH/qFw1NvAHO4liadP2MdIUfu2OTAwh7MkyZgo3fHWlUpyICJ8UHU6av5VzHjGMPLC4IrBRcBOsQodTSzypfJwFMj4wK+gfHabIixpIQry9DGD3RS238R8TQ5ZIyfWBl9EPBn1JnpI7AK4u8Bb84vW3E2j/P33L0c29YWFLcfCxQml2sHOA4JfuwB/h53rQCnvPEMABFiP9z8uCFigR2R+p3wPk5fLq0tOJrIAMGBVoRj+eA8h3plVoU6AMW4RR2aZznx97DCLd4uuiPUZ5JN6NoJArjgfxRvDx++4YjABHF/G0Qinr1gCsBgEFRGDodQEmVSd8SjviRYbLhM6Ct/fG7xUknh68D1upNqFVF1mTVZRxhV7s="
+          }
+        }
+      ],
+      "tool_calls": [],
+      "usage_metadata": {
+        "input_tokens": 5559,
+        "output_tokens": 791,
+        "total_tokens": 6350,
+        "input_token_details": {
+          "cache_read": 0
+        },
+        "output_token_details": {
+          "reasoning": 329
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    }
+  ],
+  "charts": [
+    {
+      "data": [
+        {
+          "hovertemplate": "status=%{x}<br>count=%{y}<extra></extra>",
+          "legendgroup": "",
+          "marker": {
+            "color": "#000001",
+            "pattern": {
+              "shape": ""
+            }
+          },
+          "name": "",
+          "orientation": "v",
+          "showlegend": false,
+          "textposition": "auto",
+          "x": [
+            "SLCHD Listings with Inspections",
+            "SLCHD Listings without Inspections"
+          ],
+          "xaxis": "x",
+          "y": {
+            "dtype": "i2",
+            "bdata": "IwUaAA=="
+          },
+          "yaxis": "y",
+          "type": "bar"
+        }
+      ],
+      "layout": {
+        "template": {
+          "data": {
+            "candlestick": [
+              {
+                "decreasing": {
+                  "line": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "line": {
+                    "color": "#000032"
+                  }
+                },
+                "type": "candlestick"
+              }
+            ],
+            "contourcarpet": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contourcarpet"
+              }
+            ],
+            "contour": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contour"
+              }
+            ],
+            "heatmap": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "heatmap"
+              }
+            ],
+            "histogram2d": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "histogram2d"
+              }
+            ],
+            "icicle": [
+              {
+                "textfont": {
+                  "color": "white"
+                },
+                "type": "icicle"
+              }
+            ],
+            "sankey": [
+              {
+                "textfont": {
+                  "color": "#000036"
+                },
+                "type": "sankey"
+              }
+            ],
+            "scatter": [
+              {
+                "marker": {
+                  "line": {
+                    "width": 0
+                  }
+                },
+                "type": "scatter"
+              }
+            ],
+            "table": [
+              {
+                "cells": {
+                  "fill": {
+                    "color": "#000038"
+                  },
+                  "font": {
+                    "color": "#000037"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "header": {
+                  "fill": {
+                    "color": "#000040"
+                  },
+                  "font": {
+                    "color": "#000036"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "type": "table"
+              }
+            ],
+            "waterfall": [
+              {
+                "connector": {
+                  "line": {
+                    "color": "#000036",
+                    "width": 2
+                  }
+                },
+                "decreasing": {
+                  "marker": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "marker": {
+                    "color": "#000032"
+                  }
+                },
+                "totals": {
+                  "marker": {
+                    "color": "#000034"
+                  }
+                },
+                "type": "waterfall"
+              }
+            ]
+          },
+          "layout": {
+            "coloraxis": {
+              "colorscale": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorscale": {
+              "diverging": [
+                [
+                  0.0,
+                  "#000021"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000022"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000023"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000024"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000025"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000026"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000027"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000028"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000029"
+                ],
+                [
+                  1.0,
+                  "#000030"
+                ]
+              ],
+              "sequential": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ],
+              "sequentialminus": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorway": [
+              "#000001",
+              "#000002",
+              "#000003",
+              "#000004",
+              "#000005",
+              "#000006",
+              "#000007",
+              "#000008",
+              "#000009",
+              "#000010"
+            ]
+          }
+        },
+        "xaxis": {
+          "anchor": "y",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "status"
+          }
+        },
+        "yaxis": {
+          "anchor": "x",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "count"
+          }
+        },
+        "legend": {
+          "tracegroupgap": 0
+        },
+        "title": {
+          "text": "Salt Lake County Health Department (SLCHD) Listings by Inspection Record Status"
+        },
+        "barmode": "relative"
+      }
+    },
+    {
+      "data": [
+        {
+          "hovertemplate": "status=%{x}<br>count=%{y}<extra></extra>",
+          "legendgroup": "",
+          "marker": {
+            "color": "#000001",
+            "pattern": {
+              "shape": ""
+            }
+          },
+          "name": "",
+          "orientation": "v",
+          "showlegend": false,
+          "textposition": "auto",
+          "x": [
+            "Matched SLCHD Health Inspection Record",
+            "No Matched SLCHD Record"
+          ],
+          "xaxis": "x",
+          "y": {
+            "dtype": "i2",
+            "bdata": "iwAFIQ=="
+          },
+          "yaxis": "y",
+          "type": "bar"
+        }
+      ],
+      "layout": {
+        "template": {
+          "data": {
+            "candlestick": [
+              {
+                "decreasing": {
+                  "line": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "line": {
+                    "color": "#000032"
+                  }
+                },
+                "type": "candlestick"
+              }
+            ],
+            "contourcarpet": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contourcarpet"
+              }
+            ],
+            "contour": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contour"
+              }
+            ],
+            "heatmap": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "heatmap"
+              }
+            ],
+            "histogram2d": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "histogram2d"
+              }
+            ],
+            "icicle": [
+              {
+                "textfont": {
+                  "color": "white"
+                },
+                "type": "icicle"
+              }
+            ],
+            "sankey": [
+              {
+                "textfont": {
+                  "color": "#000036"
+                },
+                "type": "sankey"
+              }
+            ],
+            "scatter": [
+              {
+                "marker": {
+                  "line": {
+                    "width": 0
+                  }
+                },
+                "type": "scatter"
+              }
+            ],
+            "table": [
+              {
+                "cells": {
+                  "fill": {
+                    "color": "#000038"
+                  },
+                  "font": {
+                    "color": "#000037"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "header": {
+                  "fill": {
+                    "color": "#000040"
+                  },
+                  "font": {
+                    "color": "#000036"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "type": "table"
+              }
+            ],
+            "waterfall": [
+              {
+                "connector": {
+                  "line": {
+                    "color": "#000036",
+                    "width": 2
+                  }
+                },
+                "decreasing": {
+                  "marker": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "marker": {
+                    "color": "#000032"
+                  }
+                },
+                "totals": {
+                  "marker": {
+                    "color": "#000034"
+                  }
+                },
+                "type": "waterfall"
+              }
+            ]
+          },
+          "layout": {
+            "coloraxis": {
+              "colorscale": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorscale": {
+              "diverging": [
+                [
+                  0.0,
+                  "#000021"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000022"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000023"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000024"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000025"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000026"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000027"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000028"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000029"
+                ],
+                [
+                  1.0,
+                  "#000030"
+                ]
+              ],
+              "sequential": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ],
+              "sequentialminus": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorway": [
+              "#000001",
+              "#000002",
+              "#000003",
+              "#000004",
+              "#000005",
+              "#000006",
+              "#000007",
+              "#000008",
+              "#000009",
+              "#000010"
+            ]
+          }
+        },
+        "xaxis": {
+          "anchor": "y",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "status"
+          }
+        },
+        "yaxis": {
+          "anchor": "x",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "count"
+          }
+        },
+        "legend": {
+          "tracegroupgap": 0
+        },
+        "title": {
+          "text": "Google Local Establishments by SLCHD Inspection Match Status"
+        },
+        "barmode": "relative"
+      }
+    }
+  ],
+  "candidate_pool_raw": [],
+  "duration_seconds": 17.13,
+  "usage": {
+    "available": true,
+    "per_call": [
+      {
+        "input_tokens": 2146,
+        "output_tokens": 53,
+        "total_tokens": 2199
+      },
+      {
+        "input_tokens": 3228,
+        "output_tokens": 363,
+        "total_tokens": 3591
+      },
+      {
+        "input_tokens": 3698,
+        "output_tokens": 562,
+        "total_tokens": 4260
+      },
+      {
+        "input_tokens": 4360,
+        "output_tokens": 916,
+        "total_tokens": 5276
+      },
+      {
+        "input_tokens": 5326,
+        "output_tokens": 187,
+        "total_tokens": 5513
+      },
+      {
+        "input_tokens": 5559,
+        "output_tokens": 791,
+        "total_tokens": 6350
+      }
+    ],
+    "input_tokens": 24317,
+    "output_tokens": 2872,
+    "total_tokens": 27189
+  },
+  "tokens_per_minute": 95220.0,
+  "estimated_cost_usd": 0.058015,
+  "success": true,
+  "error": null,
+  "chart_image_files": [
+    "2026-08-15T07-46-52.984014+00-00_v2_memory_7c6bbd70_chart0.png",
+    "2026-08-15T07-46-52.984014+00-00_v2_memory_7c6bbd70_chart1.png"
+  ]
+}

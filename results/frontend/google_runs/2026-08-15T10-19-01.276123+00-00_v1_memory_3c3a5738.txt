@@ -1,0 +1,209 @@
+Question: What does the issue category "cold holding" mean?
+
+Variant: v1_memory | Provider: google | Model: gemini-3.6-flash
+Timestamp: 2026-08-15T10:19:01.276123+00:00 | Duration: 136.65s
+
+--- Answer ---
+### What Does "Cold Holding" Mean?
+
+In food safety regulation and health inspections, **Cold Holding** refers to the requirement that perishable **Time/Temperature Control for Safety (TCS)** foods—such as meats, dairy, cut tomatoes, cooked pasta, cheeses, cut leafy greens, and salsas—must be held cold at **41°F (5°C) or below**.
+
+---
+
+### Key Concepts & Regulatory Meaning
+
+1. **The Temperature Danger Zone (41°F to 135°F):**
+   * Pathogenic bacteria (such as *Listeria monocytogenes*, *Salmonella*, *E. coli*, and *Staphylococcus aureus*) multiply rapidly when food temperatures rise above 41°F.
+   * Proper cold holding keeps food outside this danger zone to prevent bacterial proliferation and foodborne illness.
+
+2. **Critical Violation Status:**
+   * Under Salt Lake County Health Department (SLCHD) regulations and the Utah Health Code (FDA Food Code standards), **Cold Holding** (Code `4.3.59`) is classified as a **Critical Violation**. 
+   * Critical violations are directly linked to an increased risk of foodborne illness and typically require immediate corrective action on site (e.g., rapid chilling, moving food to a working unit, or discarding product held out of temperature too long).
+
+---
+
+### Cold Holding in Salt Lake County Inspection Data
+
+Analysis of the Salt Lake County inspection records reveals the following key metrics:
+
+* **Prevalence:** Cold holding violations have been cited **727 times** across **714 health inspections**.
+* **Rank among Critical Violations:** It is the **3rd most frequent critical violation** overall in Salt Lake County (behind equipment contact surface sanitation and staff eating/drinking in prep areas).
+* **Primary Temperature Hazard:** It is the **#1 temperature-related violation**, cited nearly **2.5 times as often as Hot Holding** (296 citations).
+
+#### Distribution of Observed Temperatures in Cited Violations
+
+By extracting temperature readings from inspector violation notes across Salt Lake County, the actual food temperatures recorded during violations break down as follows:
+
+| Temperature Range | Citation Count | Risk / Severity Level |
+| :--- | :--- | :--- |
+| **42°F – 45°F** | **137** | Slightly elevated (often door left open or minor calibration drift) |
+| **46°F – 50°F** | **384** | Moderate risk (most frequent range; typical of prep table issues) |
+| **51°F – 60°F** | **254** | High risk for rapid bacterial multiplication |
+| **> 60°F** | **86** | Severe danger zone (food left at room temperature or unit failure) |
+
+---
+
+*The charts below visualize the top critical health violations in Salt Lake County and the breakdown of recorded food temperatures for cold holding violations.*
+
+--- Reasoning trace ---
+Action: get_schema({})
+
+Observation: Project food_health_viz {
+  database_type: 'DuckDB'
+}
+
+Table establishment_keys {
+  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']
+  name varchar [not null]
+  address varchar [not null]
+  city varchar [not null]
+  city_state_zip varchar
+  establishment_type varchar
+  source varchar [note: 'friend_slc | own_scrape']
+  slchd_lat double
+  slchd_lon double
+  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']
+
+  Note: 'SLCHD establishment list, one row per portal listing.'
+}
+
+Table category {
+  category_id integer [pk]
+  category varchar
+}
+
+Table establishments {
+  gmap_id varchar [pk]
+  name varchar
+  address varchar
+  description varchar
+  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']
+  avg_rating double
+  num_of_reviews integer
+  price varchar
+  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']
+
+  Note: 'One row per Google Local place — all restaurants, not just SLCHD-matched.'
+}
+
+Table establishment_attributes {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  attribute varchar [not null]
+
+  indexes { (gmap_id, attribute) [pk] }
+
+  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. "Service options") dropped.'
+}
+
+Table establishment_categories {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  category_id integer [ref: > category.category_id, not null]
+
+  indexes { (gmap_id, category_id) [pk] }
+}
+
+Table gmap_hours {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  day integer [not null, note: '0=Sun … 6=Sat']
+  open_min bigint
+  open_max bigint
+
+  indexes { (gmap_id, day) [pk] }
+
+  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'
+}
+
+Table review {
+  user_id varchar
+  name varchar
+  time bigint
+  rating double
+  text varchar
+  resp varchar
+  gmap_id varchar [ref: > establishments.gmap_id]
+}
+
+Table inspection_types {
+  inspection_type_id integer [pk, note: 'parsed leading number, e.g. "01 - Routine" -> 1']
+  description varchar [note: 'e.g. "Routine"']
+}
+
+Table inspections {
+  inspection_id bigint [pk, increment]
+  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]
+  inspection_date date [not null]
+  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable — 27 rows have no type']
+  inspection_score integer
+
+  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'
+}
+
+Table violation_codes {
+  violation_code_id integer [pk, increment]
+  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. "4.5.18"']
+  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']
+  critical boolean [not null]
+}
+
+Table violations {
+  violation_id bigint [pk, increment]
+  inspection_id bigint [ref: > inspections.inspection_id, not null]
+  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]
+  violation_description varchar [note: 'per-occurrence free text']
+  violation_occurrences integer
+  violation_cos boolean [note: 'corrected on site']
+  violation_phr varchar [note: 'public health rationale']
+
+  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'
+}
+
+
+Action: run_sql({'query': "SELECT * FROM violations WHERE lower(violation_description) LIKE '%cold holding%' OR lower(violation_phr) LIKE '%cold holding%' LIMIT 5;"})
+
+Observation: {"row_count": 5, "truncated": false, "rows": [{"violation_id": 23, "inspection_id": 8, "violation_code_id": 55, "violation_description": "Cooked pasta is being held at 50\u00b0F in the make table next to the grill.\nCheese is being held at 49\u00b0F in reach in cooler drawers beneath the grill.", "violation_occurrences": 2, "violation_cos": false, "violation_phr": "Cold Holding*"}, {"violation_id": 89, "inspection_id": 25, "violation_code_id": 55, "violation_description": "Pork skin is being held at  53\u00b0F in the make table.", "violation_occurrences": 1, "violation_cos": false, "violation_phr": "Cold Holding*"}, {"violation_id": 117, "inspection_id": 39, "violation_code_id": 55, "violation_description": "Hard boiled eggs are being held at  47\u00b0F in a reach in cooler.", "violation_occurrences": 1, "violation_cos": false, "violation_phr": "Cold Holding*"}, {"violation_id": 130, "inspection_id": 42, "violation_code_id": 55, "violation_description": "Diced tomatoes are being held at  46\u00b0F in the make table.", "violation_occurrences": 1, "violation_cos": false, "violation_phr": "Cold Holding*"}, {"violation_id": 236, "inspection_id": 58, "violation_code_id": 88, "violation_description": "Cold holding unit lacks an internal ambient thermometer.", "violation_occurrences": 1, "violation_cos": false, "violation_phr": "Temperature Measuring Devices"}]}
+
+Action: get_column_glossary({'table_dot_column': 'violations.violation_phr'})
+
+Observation: {"description": "Public health rationale / rubric label (raw portal category text). 1:1 with violation_code_id for 234/237 codes; 3 codes have more than one observed phr. Join to semantic/violation_map.csv on this column to get the normalized violation_type bucket used for agent reasoning.", "reference": "slchd_portal"}
+
+Action: run_sql({'query': "SELECT \n    vc.code_text, \n    vc.critical, \n    vc.asterisk_count, \n    v.violation_phr, \n    COUNT(*) as total_occurrences,\n    COUNT(DISTINCT v.inspection_id) as total_inspections\nFROM violations v\nJOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\nWHERE v.violation_phr ILIKE '%cold holding%'\nGROUP BY vc.code_text, vc.critical, vc.asterisk_count, v.violation_phr\nORDER BY total_occurrences DESC;"})
+
+Observation: {"row_count": 2, "truncated": false, "rows": [{"code_text": "4.3.59", "critical": true, "asterisk_count": 1, "violation_phr": "Cold Holding*", "total_occurrences": 726, "total_inspections": 713}, {"code_text": "4.3.59* (i) b", "critical": true, "asterisk_count": 0, "violation_phr": "Cold Holding*", "total_occurrences": 1, "total_inspections": 1}]}
+
+Action: run_sql({'query': "SELECT \n    COUNT(*) as total_cold_holding_violations,\n    COUNT(DISTINCT inspection_id) as total_inspections_with_cold_holding,\n    SUM(CASE WHEN violation_cos THEN 1 ELSE 0 END) as corrected_on_site_count,\n    AVG(violation_occurrences) as avg_occurrences\nFROM violations\nWHERE violation_phr ILIKE '%cold holding%';"})
+
+Observation: {"row_count": 1, "truncated": false, "rows": [{"total_cold_holding_violations": 727, "total_inspections_with_cold_holding": 714, "corrected_on_site_count": 48.0, "avg_occurrences": 1.2118294360385145}]}
+
+Action: run_sql({'query': "SELECT violation_description \nFROM violations \nWHERE violation_phr ILIKE '%cold holding%' AND violation_description IS NOT NULL\nLIMIT 15;"})
+
+Observation: {"row_count": 15, "truncated": false, "rows": [{"violation_description": "Cooked pasta is being held at 50\u00b0F in the make table next to the grill.\nCheese is being held at 49\u00b0F in reach in cooler drawers beneath the grill."}, {"violation_description": "Pork skin is being held at  53\u00b0F in the make table."}, {"violation_description": "Hard boiled eggs are being held at  47\u00b0F in a reach in cooler."}, {"violation_description": "Diced tomatoes are being held at  46\u00b0F in the make table."}, {"violation_description": "Asparagus is being held at  50\u00b0F in the make table."}, {"violation_description": "Cut tomatoes is being held at 48\u00b0F in the make table."}, {"violation_description": "Cut tomatoes are being held at 50 \u00b0F in the make table."}, {"violation_description": "Shredded chicken is being held at 46 \u00b0F in a reach in cooler."}, {"violation_description": "Menudo is being held at 52 \u00b0F in the walk in cooler."}, {"violation_description": "In house made salsa is being held at  44\u00b0F in a reach in cooler."}, {"violation_description": "Cut tomatoes are being held at 45 \u00b0F in the make table.\nMenudo is being held at 50 \u00b0F in the walk in cooler."}, {"violation_description": "Misc. pork is being held out of temperature control at  77\u00b0F on a counter."}, {"violation_description": "Impossible burger patties are being held at  45\u00b0F in a reach in cooler below the grill."}, {"violation_description": "Milk and rice pudding are being held at 52 \u00b0F in a reach in cooler near the drive thru window.\nCheese, raw chicken, cut leafy greens etc. are being held at 51 \u00b0F on the grill."}, {"violation_description": "Cut tomatoes is being held at 52 \u00b0F in the make table. \nGyro meat is being held at 47 \u00b0F in a reach in cooler."}]}
+
+Action: run_sql({'query': 'SELECT \n    v.violation_phr, \n    vc.critical, \n    COUNT(*) as total_count\nFROM violations v\nJOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\nGROUP BY v.violation_phr, vc.critical\nORDER BY total_count DESC\nLIMIT 15;'})
+
+Observation: {"row_count": 15, "truncated": false, "rows": [{"violation_phr": "Nonfood-Contact Surfaces-Cleaning", "critical": false, "total_count": 2176}, {"violation_phr": "Equipment, Food-Contact Surfaces, Nonfood-Contact Surfaces, and Utensils-Cleaning*", "critical": true, "total_count": 2112}, {"violation_phr": "Repairing-Physical Facilities", "critical": false, "total_count": 2109}, {"violation_phr": "Cleaning-Frequency and Restrictions", "critical": false, "total_count": 1975}, {"violation_phr": "Good Repair and Proper Adjustment", "critical": false, "total_count": 1661}, {"violation_phr": "System Maintained in Good Repair Non-critical", "critical": false, "total_count": 1044}, {"violation_phr": "Fixed Equipment-Spacing or Sealing", "critical": false, "total_count": 996}, {"violation_phr": "Cleaning Ventilation Systems-Nuisance and Discharge Prohibition", "critical": false, "total_count": 863}, {"violation_phr": "Eating, Drinking, or Using Tobacco**", "critical": true, "total_count": 757}, {"violation_phr": "Cold Holding*", "critical": true, "total_count": 727}, {"violation_phr": "Food Handler Training", "critical": false, "total_count": 713}, {"violation_phr": "Using a Handwashing Sink.**", "critical": true, "total_count": 680}, {"violation_phr": "In-Use Utensils - Between-Use Storage.", "critical": false, "total_count": 667}, {"violation_phr": "Equipment, Utensils, Linens, and Single-Service and Single-Use Articles-Storage", "critical": false, "total_count": 644}, {"violation_phr": "Food Storage Containers - Identified with Common Name of Food.", "critical": false, "total_count": 634}]}
+
+Action: run_sql({'query': "SELECT \n    regexp_extract_all(violation_description, '(\\d+)\\s*°?\\s*[Ff]') as temps\nFROM violations \nWHERE violation_phr ILIKE '%cold holding%' AND violation_description IS NOT NULL\nLIMIT 10;"})
+
+Observation: {"row_count": 10, "truncated": false, "rows": [{"temps": "['50\u00b0F' '49\u00b0F']"}, {"temps": "['53\u00b0F']"}, {"temps": "['47\u00b0F']"}, {"temps": "['46\u00b0F']"}, {"temps": "['50\u00b0F']"}, {"temps": "['48\u00b0F']"}, {"temps": "['50 \u00b0F']"}, {"temps": "['46 \u00b0F']"}, {"temps": "['52 \u00b0F']"}, {"temps": "['44\u00b0F']"}]}
+
+Action: run_sql({'query': "WITH extracted_temps AS (\n    SELECT \n        CAST(regexp_extract(t.val, '(\\d+)', 1) AS INT) as temp_f\n    FROM violations,\n    UNNEST(regexp_extract_all(violation_description, '(\\d+)\\s*°?\\s*[Ff]')) AS t(val)\n    WHERE violation_phr ILIKE '%cold holding%' AND violation_description IS NOT NULL\n)\nSELECT \n    CASE \n        WHEN temp_f BETWEEN 42 AND 45 THEN '42°F - 45°F (Slightly elevated)'\n        WHEN temp_f BETWEEN 46 AND 50 THEN '46°F - 50°F (Moderate risk)'\n        WHEN temp_f BETWEEN 51 AND 60 THEN '51°F - 60°F (High risk)'\n        WHEN temp_f > 60 THEN '> 60°F (Severe danger zone)'\n        ELSE '41°F or below / Other'\n    END AS temperature_range,\n    COUNT(*) as citation_count\nFROM extracted_temps\nWHERE temp_f >= 40 AND temp_f < 100\nGROUP BY temperature_range\nORDER BY MIN(temp_f);"})
+
+Observation: {"row_count": 4, "truncated": false, "rows": [{"temperature_range": "42\u00b0F - 45\u00b0F (Slightly elevated)", "citation_count": 137}, {"temperature_range": "46\u00b0F - 50\u00b0F (Moderate risk)", "citation_count": 384}, {"temperature_range": "51\u00b0F - 60\u00b0F (High risk)", "citation_count": 254}, {"temperature_range": "> 60\u00b0F (Severe danger zone)", "citation_count": 86}]}
+
+Action: run_sql({'query': 'SELECT \n    v.violation_phr AS critical_violation_category, \n    COUNT(*) as citation_count\nFROM violations v\nJOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\nWHERE vc.critical = true\nGROUP BY v.violation_phr\nORDER BY citation_count DESC\nLIMIT 10;'})
+
+Observation: {"row_count": 10, "truncated": false, "rows": [{"critical_violation_category": "Equipment, Food-Contact Surfaces, Nonfood-Contact Surfaces, and Utensils-Cleaning*", "citation_count": 2112}, {"critical_violation_category": "Eating, Drinking, or Using Tobacco**", "citation_count": 757}, {"critical_violation_category": "Cold Holding*", "citation_count": 727}, {"critical_violation_category": "Using a Handwashing Sink.**", "citation_count": 680}, {"critical_violation_category": "Manual and Mechanical Warewashing Equipment-Chemical Sanitization, Temperature, pH, Concentration and Hardness*", "citation_count": 593}, {"critical_violation_category": "Hand Drying Provision**", "citation_count": 424}, {"critical_violation_category": "Working Containers-Common Name**", "citation_count": 338}, {"critical_violation_category": "Food Safety Manager Certification", "citation_count": 313}, {"critical_violation_category": "Hot Holding.*", "citation_count": 296}, {"critical_violation_category": "Ready-to-Eat, Potentially hazardous food (time/temperature control for safety food) - Date Marking.**", "citation_count": 265}]}
+
+Action: run_sql({'query': "WITH extracted_temps AS (\n    SELECT \n        CAST(regexp_extract(t.val, '(\\d+)', 1) AS INT) as temp_f\n    FROM violations,\n    UNNEST(regexp_extract_all(violation_description, '(\\d+)\\s*°?\\s*[Ff]')) AS t(val)\n    WHERE violation_phr ILIKE '%cold holding%' AND violation_description IS NOT NULL\n)\nSELECT \n    CASE \n        WHEN temp_f BETWEEN 42 AND 45 THEN '42-45°F (Slightly elevated)'\n        WHEN temp_f BETWEEN 46 AND 50 THEN '46-50°F (Moderate risk)'\n        WHEN temp_f BETWEEN 51 AND 60 THEN '51-60°F (High risk)'\n        WHEN temp_f > 60 THEN '> 60°F (Severe danger zone)'\n    END AS temp_range,\n    COUNT(*) as citation_count\nFROM extracted_temps\nWHERE temp_f >= 42 AND temp_f < 100\nGROUP BY temp_range\nORDER BY MIN(temp_f);"})
+
+Observation: {"row_count": 4, "truncated": false, "rows": [{"temp_range": "42-45\u00b0F (Slightly elevated)", "citation_count": 137}, {"temp_range": "46-50\u00b0F (Moderate risk)", "citation_count": 384}, {"temp_range": "51-60\u00b0F (High risk)", "citation_count": 254}, {"temp_range": "> 60\u00b0F (Severe danger zone)", "citation_count": 86}]}
+
+Action: plot_chart({'x': 'violation_category', 'query': 'SELECT \n    v.violation_phr AS violation_category, \n    COUNT(*) as total_citations\nFROM violations v\nJOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\nWHERE vc.critical = true\nGROUP BY v.violation_phr\nORDER BY total_citations DESC\nLIMIT 8;', 'title': 'Top Critical Violation Categories in Salt Lake County Health Inspections', 'y': 'total_citations', 'chart_type': 'bar'})
+
+Observation: Chart created: 'Top Critical Violation Categories in Salt Lake County Health Inspections' (bar, 8 rows). It will be shown to the user below your answer.
+
+Action: plot_chart({'y': 'citation_count', 'title': 'Observed Temperatures in Cold Holding Violations', 'x': 'temperature_range', 'chart_type': 'bar', 'query': "WITH extracted_temps AS (\n    SELECT \n        CAST(regexp_extract(t.val, '(\\d+)', 1) AS INT) as temp_f\n    FROM violations,\n    UNNEST(regexp_extract_all(violation_description, '(\\d+)\\s*°?\\s*[Ff]')) AS t(val)\n    WHERE violation_phr ILIKE '%cold holding%' AND violation_description IS NOT NULL\n)\nSELECT \n    CASE \n        WHEN temp_f BETWEEN 42 AND 45 THEN '42-45°F (Slightly elevated)'\n        WHEN temp_f BETWEEN 46 AND 50 THEN '46-50°F (Moderate risk)'\n        WHEN temp_f BETWEEN 51 AND 60 THEN '51-60°F (High risk)'\n        WHEN temp_f > 60 THEN '> 60°F (Severe danger zone)'\n    END AS temperature_range,\n    COUNT(*) as citation_count\nFROM extracted_temps\nWHERE temp_f >= 42 AND temp_f < 100\nGROUP BY temperature_range\nORDER BY MIN(temp_f);"})
+
+Observation: Chart created: 'Observed Temperatures in Cold Holding Violations' (bar, 4 rows). It will be shown to the user below your answer.
+
+--- Usage: 83325 tokens, ~$0.1538 ---

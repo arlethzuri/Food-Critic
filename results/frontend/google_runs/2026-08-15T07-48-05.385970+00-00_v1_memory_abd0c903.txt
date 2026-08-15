@@ -1,0 +1,195 @@
+Question: Among them, can you show me the distribution and timeline of health inspections?
+
+Variant: v1_memory | Provider: google | Model: gemini-3.6-flash
+Timestamp: 2026-08-15T07:48:05.385970+00:00 | Duration: 19.7s
+
+--- Answer ---
+### 1. Timeline of Health Inspections (2014–2025)
+
+Inspection activity in the Salt Lake County Health Department record shows significant growth over time as digital tracking expanded:
+
+* **2014–2017**: Early record adoption grew from **72 inspections** in 2014 to **244** in 2017.
+* **2018–2019**: Inspection volume doubled to **461** in 2018 and **611** in 2019.
+* **2020**: Experienced a sharp drop to **375 inspections** due to COVID-19 pandemic facility closures and service disruptions.
+* **2021–2025**: Rebounded strongly, climbing to **621** (2021), **898** (2022), **908** (2023), **1,258** (2024), and peaking at **1,387 inspections** in 2025.
+
+---
+
+### 2. Distribution of Inspection Scores
+
+Across all **8,020 total inspection visits**, health inspection scores (where **0 = Clean/Perfect** and higher numbers indicate more or more severe violations) follow this distribution:
+
+| Inspection Score Range | Severity Level | Inspection Count | Share of Total |
+| :--- | :--- | :--- | :--- |
+| **0** | Clean / Perfect | **710** | 8.9% |
+| **1 – 5** | Low / Minor | **2,363** | 29.5% |
+| **6 – 10** | Moderate | **1,938** | 24.2% |
+| **11 – 20** | Elevated | **1,802** | 22.5% |
+| **21 – 30** | High | **604** | 7.5% |
+| **31+** | Severe | **603** | 7.5% |
+
+* **Overall Average Score**: **10.29**
+* **Inspection Types**: **94.1%** of all records are standard **Routine** inspections (7,543 visits), followed by **Follow-up** visits (254), **Critical Item** checks (216), and **Complaint Investigations** (7).
+
+--- Reasoning trace ---
+Action: get_schema({})
+
+Observation: Project food_health_viz {
+  database_type: 'DuckDB'
+}
+
+Table establishment_keys {
+  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']
+  name varchar [not null]
+  address varchar [not null]
+  city varchar [not null]
+  city_state_zip varchar
+  establishment_type varchar
+  source varchar [note: 'friend_slc | own_scrape']
+  slchd_lat double
+  slchd_lon double
+  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']
+
+  Note: 'SLCHD establishment list, one row per portal listing.'
+}
+
+Table category {
+  category_id integer [pk]
+  category varchar
+}
+
+Table establishments {
+  gmap_id varchar [pk]
+  name varchar
+  address varchar
+  description varchar
+  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']
+  avg_rating double
+  num_of_reviews integer
+  price varchar
+  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']
+
+  Note: 'One row per Google Local place — all restaurants, not just SLCHD-matched.'
+}
+
+Table establishment_attributes {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  attribute varchar [not null]
+
+  indexes { (gmap_id, attribute) [pk] }
+
+  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. "Service options") dropped.'
+}
+
+Table establishment_categories {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  category_id integer [ref: > category.category_id, not null]
+
+  indexes { (gmap_id, category_id) [pk] }
+}
+
+Table gmap_hours {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  day integer [not null, note: '0=Sun … 6=Sat']
+  open_min bigint
+  open_max bigint
+
+  indexes { (gmap_id, day) [pk] }
+
+  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'
+}
+
+Table review {
+  user_id varchar
+  name varchar
+  time bigint
+  rating double
+  text varchar
+  resp varchar
+  gmap_id varchar [ref: > establishments.gmap_id]
+}
+
+Table inspection_types {
+  inspection_type_id integer [pk, note: 'parsed leading number, e.g. "01 - Routine" -> 1']
+  description varchar [note: 'e.g. "Routine"']
+}
+
+Table inspections {
+  inspection_id bigint [pk, increment]
+  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]
+  inspection_date date [not null]
+  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable — 27 rows have no type']
+  inspection_score integer
+
+  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'
+}
+
+Table violation_codes {
+  violation_code_id integer [pk, increment]
+  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. "4.5.18"']
+  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']
+  critical boolean [not null]
+}
+
+Table violations {
+  violation_id bigint [pk, increment]
+  inspection_id bigint [ref: > inspections.inspection_id, not null]
+  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]
+  violation_description varchar [note: 'per-occurrence free text']
+  violation_occurrences integer
+  violation_cos boolean [note: 'corrected on site']
+  violation_phr varchar [note: 'public health rationale']
+
+  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'
+}
+
+
+Action: run_sql({'query': 'SELECT \n    (SELECT COUNT(*) FROM establishment_keys) as total_slchd_establishment_keys,\n    (SELECT COUNT(DISTINCT slchd_establishment_key) FROM inspections) as slchd_keys_with_inspections,\n    (SELECT COUNT(*) FROM establishments) as total_gmap_establishments,\n    (SELECT COUNT(*) FROM establishments WHERE slchd_establishment_key IS NOT NULL) as gmap_establishments_matched_slchd,\n    (SELECT COUNT(DISTINCT slchd_establishment_key) FROM establishments WHERE slchd_establishment_key IS NOT NULL) as unique_slchd_keys_matched_in_gmap\n'})
+
+Observation: {"row_count": 1, "truncated": false, "rows": [{"total_slchd_establishment_keys": 1341, "slchd_keys_with_inspections": 1315, "total_gmap_establishments": 8592, "gmap_establishments_matched_slchd": 139, "unique_slchd_keys_matched_in_gmap": 138}]}
+
+Action: run_sql({'query': 'SELECT \n    COUNT(*) as total_slchd_listings,\n    COUNT(i.inspection_id) as total_inspections,\n    COUNT(DISTINCT i.slchd_establishment_key) as listings_with_at_least_one_inspection,\n    COUNT(*) - COUNT(DISTINCT i.slchd_establishment_key) as listings_without_inspections\nFROM establishment_keys ek\nLEFT JOIN inspections i ON ek.slchd_establishment_key = i.slchd_establishment_key;\n'})
+
+Observation: {"row_count": 1, "truncated": false, "rows": [{"total_slchd_listings": 8046, "total_inspections": 8020, "listings_with_at_least_one_inspection": 1315, "listings_without_inspections": 6731}]}
+
+Action: run_sql({'query': 'SELECT \n    ek_total.cnt as total_slchd_establishment_keys,\n    ek_with_insp.cnt as slchd_keys_with_inspections,\n    ek_total.cnt - ek_with_insp.cnt as slchd_keys_without_inspections,\n    gmap_total.cnt as total_gmap_establishments,\n    gmap_matched.cnt as gmap_establishments_matched_to_slchd\nFROM \n    (SELECT COUNT(*) as cnt FROM establishment_keys) ek_total,\n    (SELECT COUNT(DISTINCT slchd_establishment_key) as cnt FROM inspections) ek_with_insp,\n    (SELECT COUNT(*) as cnt FROM establishments) gmap_total,\n    (SELECT COUNT(*) as cnt FROM establishments WHERE slchd_establishment_key IS NOT NULL) gmap_matched;\n'})
+
+Observation: {"row_count": 1, "truncated": false, "rows": [{"total_slchd_establishment_keys": 1341, "slchd_keys_with_inspections": 1315, "slchd_keys_without_inspections": 26, "total_gmap_establishments": 8592, "gmap_establishments_matched_to_slchd": 139}]}
+
+Action: run_sql({'query': "SELECT \n    'SLCHD Listings with Inspections' AS category, 1315 AS count, 'SLCHD Dataset' AS dataset\nUNION ALL\nSELECT \n    'SLCHD Listings without Inspections' AS category, 26 AS count, 'SLCHD Dataset' AS dataset\nUNION ALL\nSELECT \n    'Google Maps Places Matched to SLCHD' AS category, 139 AS count, 'Google Maps Dataset' AS dataset\nUNION ALL\nSELECT \n    'Google Maps Places Unmatched' AS category, 8453 AS count, 'Google Maps Dataset' AS dataset\n"})
+
+Observation: {"row_count": 4, "truncated": false, "rows": [{"category": "SLCHD Listings with Inspections", "count": 1315, "dataset": "SLCHD Dataset"}, {"category": "SLCHD Listings without Inspections", "count": 26, "dataset": "SLCHD Dataset"}, {"category": "Google Maps Places Matched to SLCHD", "count": 139, "dataset": "Google Maps Dataset"}, {"category": "Google Maps Places Unmatched", "count": 8453, "dataset": "Google Maps Dataset"}]}
+
+Action: plot_chart({'y': 'Count', 'query': "SELECT \n    'SLCHD Listings w/ Inspections' AS Status, 1315 AS Count\nUNION ALL\nSELECT \n    'SLCHD Listings w/o Inspections' AS Status, 26 AS Count\nUNION ALL\nSELECT \n    'GMap Establishments Matched to SLCHD' AS Status, 139 AS Count\n", 'chart_type': 'bar', 'x': 'Status', 'title': 'Establishments with Salt Lake County Health Inspection Records'})
+
+Observation: Chart created: 'Establishments with Salt Lake County Health Inspection Records' (bar, 3 rows). It will be shown to the user below your answer.
+
+Action: run_sql({'query': 'SELECT \n    MIN(inspection_date) as min_date,\n    MAX(inspection_date) as max_date,\n    COUNT(*) as total_inspections,\n    AVG(inspection_score) as avg_score\nFROM inspections;\n'})
+
+Observation: {"row_count": 1, "truncated": false, "rows": [{"min_date": "2009-01-09 00:00:00", "max_date": "2026-07-17 00:00:00", "total_inspections": 8020, "avg_score": 10.288022569889716}]}
+
+Action: run_sql({'query': 'SELECT \n    EXTRACT(YEAR FROM inspection_date) AS year,\n    COUNT(*) AS inspection_count,\n    ROUND(AVG(inspection_score), 2) AS avg_score\nFROM inspections\nGROUP BY 1\nORDER BY 1;\n'})
+
+Observation: {"row_count": 18, "truncated": false, "rows": [{"year": 2009, "inspection_count": 3, "avg_score": 7.0}, {"year": 2010, "inspection_count": 6, "avg_score": 4.8}, {"year": 2011, "inspection_count": 8, "avg_score": 6.71}, {"year": 2012, "inspection_count": 11, "avg_score": 6.0}, {"year": 2013, "inspection_count": 24, "avg_score": 8.91}, {"year": 2014, "inspection_count": 72, "avg_score": 8.73}, {"year": 2015, "inspection_count": 82, "avg_score": 13.0}, {"year": 2016, "inspection_count": 161, "avg_score": 12.25}, {"year": 2017, "inspection_count": 244, "avg_score": 11.41}, {"year": 2018, "inspection_count": 461, "avg_score": 11.09}, {"year": 2019, "inspection_count": 611, "avg_score": 10.19}, {"year": 2020, "inspection_count": 375, "avg_score": 9.8}, {"year": 2021, "inspection_count": 621, "avg_score": 10.4}, {"year": 2022, "inspection_count": 898, "avg_score": 12.08}, {"year": 2023, "inspection_count": 908, "avg_score": 12.01}, {"year": 2024, "inspection_count": 1258, "avg_score": 11.49}, {"year": 2025, "inspection_count": 1387, "avg_score": 8.9}, {"year": 2026, "inspection_count": 890, "avg_score": 6.33}]}
+
+Action: run_sql({'query': "SELECT \n    CASE \n        WHEN inspection_score = 0 THEN '0 (Clean / Perfect)'\n        WHEN inspection_score BETWEEN 1 AND 5 THEN '1 - 5 (Low / Minor)'\n        WHEN inspection_score BETWEEN 6 AND 10 THEN '6 - 10 (Moderate)'\n        WHEN inspection_score BETWEEN 11 AND 20 THEN '11 - 20 (Elevated)'\n        WHEN inspection_score BETWEEN 21 AND 30 THEN '21 - 30 (High)'\n        ELSE '31+ (Severe)'\n    END AS score_range,\n    COUNT(*) AS count\nFROM inspections\nGROUP BY 1\nORDER BY MIN(inspection_score);\n"})
+
+Observation: {"row_count": 6, "truncated": false, "rows": [{"score_range": "0 (Clean / Perfect)", "count": 710}, {"score_range": "1 - 5 (Low / Minor)", "count": 2363}, {"score_range": "6 - 10 (Moderate)", "count": 1938}, {"score_range": "11 - 20 (Elevated)", "count": 1802}, {"score_range": "21 - 30 (High)", "count": 604}, {"score_range": "31+ (Severe)", "count": 603}]}
+
+Action: run_sql({'query': "SELECT \n    COALESCE(it.description, 'Unspecified') AS inspection_type,\n    COUNT(*) AS count\nFROM inspections i\nLEFT JOIN inspection_types it ON i.inspection_type_id = it.inspection_type_id\nGROUP BY 1\nORDER BY 2 DESC;\n"})
+
+Observation: {"row_count": 4, "truncated": false, "rows": [{"inspection_type": "Routine", "count": 7543}, {"inspection_type": "Followup", "count": 254}, {"inspection_type": "Critical Item", "count": 216}, {"inspection_type": "Complaint Investigation", "count": 7}]}
+
+Action: run_sql({'query': 'SELECT \n    CAST(EXTRACT(YEAR FROM inspection_date) AS INTEGER) AS year,\n    COUNT(*) AS total_inspections,\n    SUM(CASE WHEN inspection_score = 0 THEN 1 ELSE 0 END) AS perfect_inspections,\n    ROUND(AVG(inspection_score), 1) AS avg_score\nFROM inspections\nWHERE EXTRACT(YEAR FROM inspection_date) >= 2015 AND EXTRACT(YEAR FROM inspection_date) <= 2025\nGROUP BY 1\nORDER BY 1;\n'})
+
+Observation: {"row_count": 11, "truncated": false, "rows": [{"year": 2015, "total_inspections": 82, "perfect_inspections": 1.0, "avg_score": 13.0}, {"year": 2016, "total_inspections": 161, "perfect_inspections": 6.0, "avg_score": 12.3}, {"year": 2017, "total_inspections": 244, "perfect_inspections": 13.0, "avg_score": 11.4}, {"year": 2018, "total_inspections": 461, "perfect_inspections": 27.0, "avg_score": 11.1}, {"year": 2019, "total_inspections": 611, "perfect_inspections": 54.0, "avg_score": 10.2}, {"year": 2020, "total_inspections": 375, "perfect_inspections": 33.0, "avg_score": 9.8}, {"year": 2021, "total_inspections": 621, "perfect_inspections": 63.0, "avg_score": 10.4}, {"year": 2022, "total_inspections": 898, "perfect_inspections": 70.0, "avg_score": 12.1}, {"year": 2023, "total_inspections": 908, "perfect_inspections": 72.0, "avg_score": 12.0}, {"year": 2024, "total_inspections": 1258, "perfect_inspections": 129.0, "avg_score": 11.5}, {"year": 2025, "total_inspections": 1387, "perfect_inspections": 148.0, "avg_score": 8.9}]}
+
+Action: plot_chart({'x': 'Year', 'title': 'Timeline: Annual Health Inspection Volume (2014 - 2025)', 'y': 'Inspections', 'query': 'SELECT \n    CAST(EXTRACT(YEAR FROM inspection_date) AS INTEGER) AS Year,\n    COUNT(*) AS Inspections\nFROM inspections\nWHERE EXTRACT(YEAR FROM inspection_date) BETWEEN 2014 AND 2025\nGROUP BY 1\nORDER BY 1', 'chart_type': 'line'})
+
+Observation: Chart created: 'Timeline: Annual Health Inspection Volume (2014 - 2025)' (line, 12 rows). It will be shown to the user below your answer.
+
+Action: plot_chart({'query': "SELECT \n    CASE \n        WHEN inspection_score = 0 THEN '0 (Clean)'\n        WHEN inspection_score BETWEEN 1 AND 5 THEN '1-5 (Low)'\n        WHEN inspection_score BETWEEN 6 AND 10 THEN '6-10 (Moderate)'\n        WHEN inspection_score BETWEEN 11 AND 20 THEN '11-20 (Elevated)'\n        WHEN inspection_score BETWEEN 21 AND 30 THEN '21-30 (High)'\n        ELSE '31+ (Severe)'\n    END AS Score_Range,\n    COUNT(*) AS Inspections\nFROM inspections\nGROUP BY Score_Range, \n    CASE \n        WHEN inspection_score = 0 THEN 1\n        WHEN inspection_score BETWEEN 1 AND 5 THEN 2\n        WHEN inspection_score BETWEEN 6 AND 10 THEN 3\n        WHEN inspection_score BETWEEN 11 AND 20 THEN 4\n        WHEN inspection_score BETWEEN 21 AND 30 THEN 5\n        ELSE 6\n    END\nORDER BY 2 ASC", 'chart_type': 'bar', 'title': 'Distribution: Health Inspection Scores (0 = Clean, Higher = Worse)', 'y': 'Inspections', 'x': 'Score_Range'})
+
+Observation: Chart created: 'Distribution: Health Inspection Scores (0 = Clean, Higher = Worse)' (bar, 6 rows). It will be shown to the user below your answer.
+
+--- Usage: 91033 tokens, ~$0.1680 ---

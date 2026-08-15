@@ -1,0 +1,156 @@
+Question: How many establishments have a Salt Lake County health inspection on record?
+
+Variant: v3_memory | Provider: google | Model: gemini-3.6-flash
+Timestamp: 2026-08-15T07:46:57.287432+00:00 | Duration: 20.22s
+
+--- Answer ---
+In the dataset, the count of establishments with Salt Lake County Health Department (SLCHD) inspection records depends on whether you look at the Google Maps establishment database or the Salt Lake County inspection portal database:
+
+1. **Google Maps Establishments (`establishments` table):**
+   - **139** out of **8,592** total establishments (**1.62%**) have a matched SLCHD health inspection history on record. All 139 of these matched establishments have associated inspection records.
+   - **8,453** establishments (**98.38%**) do not have a matched SLCHD health inspection record in this database.
+
+2. **Salt Lake County Health Department Listings (`establishment_keys` table):**
+   - **1,315** out of **1,341** total SLCHD portal listings (**98.06%**) have at least one inspection recorded in the `inspections` table (totaling 8,020 individual inspection events).
+   - **26** SLCHD listings have no inspection entries recorded.
+
+Summary:
+- **139** Google Places establishments have matched SLCHD health inspection records.
+- **1,315** unique SLCHD establishment listings have health inspection records on file in the health department data.
+
+Hypothesis: none (confidence: high)
+
+--- Reasoning trace ---
+Action: get_schema({})
+
+Observation: Project food_health_viz {
+  database_type: 'DuckDB'
+}
+
+Table establishment_keys {
+  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']
+  name varchar [not null]
+  address varchar [not null]
+  city varchar [not null]
+  city_state_zip varchar
+  establishment_type varchar
+  source varchar [note: 'friend_slc | own_scrape']
+  slchd_lat double
+  slchd_lon double
+  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']
+
+  Note: 'SLCHD establishment list, one row per portal listing.'
+}
+
+Table category {
+  category_id integer [pk]
+  category varchar
+}
+
+Table establishments {
+  gmap_id varchar [pk]
+  name varchar
+  address varchar
+  description varchar
+  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']
+  avg_rating double
+  num_of_reviews integer
+  price varchar
+  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']
+
+  Note: 'One row per Google Local place — all restaurants, not just SLCHD-matched.'
+}
+
+Table establishment_attributes {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  attribute varchar [not null]
+
+  indexes { (gmap_id, attribute) [pk] }
+
+  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. "Service options") dropped.'
+}
+
+Table establishment_categories {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  category_id integer [ref: > category.category_id, not null]
+
+  indexes { (gmap_id, category_id) [pk] }
+}
+
+Table gmap_hours {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  day integer [not null, note: '0=Sun … 6=Sat']
+  open_min bigint
+  open_max bigint
+
+  indexes { (gmap_id, day) [pk] }
+
+  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'
+}
+
+Table review {
+  user_id varchar
+  name varchar
+  time bigint
+  rating double
+  text varchar
+  resp varchar
+  gmap_id varchar [ref: > establishments.gmap_id]
+}
+
+Table inspection_types {
+  inspection_type_id integer [pk, note: 'parsed leading number, e.g. "01 - Routine" -> 1']
+  description varchar [note: 'e.g. "Routine"']
+}
+
+Table inspections {
+  inspection_id bigint [pk, increment]
+  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]
+  inspection_date date [not null]
+  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable — 27 rows have no type']
+  inspection_score integer
+
+  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'
+}
+
+Table violation_codes {
+  violation_code_id integer [pk, increment]
+  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. "4.5.18"']
+  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']
+  critical boolean [not null]
+}
+
+Table violations {
+  violation_id bigint [pk, increment]
+  inspection_id bigint [ref: > inspections.inspection_id, not null]
+  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]
+  violation_description varchar [note: 'per-occurrence free text']
+  violation_occurrences integer
+  violation_cos boolean [note: 'corrected on site']
+  violation_phr varchar [note: 'public health rationale']
+
+  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'
+}
+
+
+Action: run_sql({'query': 'SELECT \n    (SELECT COUNT(*) FROM establishments) AS total_gmap_establishments,\n    (SELECT COUNT(*) FROM establishments WHERE slchd_establishment_key IS NOT NULL) AS gmap_matched_to_slchd,\n    (SELECT COUNT(DISTINCT slchd_establishment_key) FROM establishment_keys) AS total_slchd_keys,\n    (SELECT COUNT(DISTINCT slchd_establishment_key) FROM inspections) AS slchd_keys_with_inspections,\n    (SELECT COUNT(*) FROM inspections) AS total_inspections,\n    (SELECT COUNT(DISTINCT e.gmap_id) FROM establishments e JOIN inspections i ON e.slchd_establishment_key = i.slchd_establishment_key) AS gmap_establishments_with_inspections\n'})
+
+Observation: {"row_count": 1, "truncated": false, "rows": [{"total_gmap_establishments": 8592, "gmap_matched_to_slchd": 139, "total_slchd_keys": 1341, "slchd_keys_with_inspections": 1315, "total_inspections": 8020, "gmap_establishments_with_inspections": 139}]}
+
+Action: run_sql({'query': 'SELECT \n    ek.source, \n    COUNT(ek.slchd_establishment_key) AS total_keys,\n    COUNT(DISTINCT i.slchd_establishment_key) AS keys_with_inspections\nFROM establishment_keys ek\nLEFT JOIN inspections i ON ek.slchd_establishment_key = i.slchd_establishment_key\nGROUP BY ek.source'})
+
+Observation: {"row_count": 2, "truncated": false, "rows": [{"source": "friend_slc", "total_keys": 7618, "keys_with_inspections": 1245}, {"source": "own_scrape", "total_keys": 428, "keys_with_inspections": 70}]}
+
+Action: run_sql({'query': 'SELECT \n    ek.source, \n    COUNT(DISTINCT ek.slchd_establishment_key) AS total_keys,\n    COUNT(DISTINCT i.slchd_establishment_key) AS keys_with_inspections\nFROM establishment_keys ek\nLEFT JOIN inspections i ON ek.slchd_establishment_key = i.slchd_establishment_key\nGROUP BY ek.source'})
+
+Observation: {"row_count": 2, "truncated": false, "rows": [{"source": "own_scrape", "total_keys": 96, "keys_with_inspections": 70}, {"source": "friend_slc", "total_keys": 1245, "keys_with_inspections": 1245}]}
+
+Action: plot_chart({'color': 'status', 'chart_type': 'bar', 'y': 'count', 'x': 'status', 'query': "SELECT \n    'Matched to SLCHD (Has Inspections)' AS status, 139 AS count\nUNION ALL\nSELECT \n    'No SLCHD Match (Unlinked)' AS status, 8453 AS count", 'title': 'Google Maps Establishments by SLCHD Inspection Record Availability'})
+
+Observation: Chart created: 'Google Maps Establishments by SLCHD Inspection Record Availability' (bar, 2 rows). It will be shown to the user below your answer.
+
+Action: plot_chart({'color': 'source_and_status', 'chart_type': 'bar', 'title': 'Salt Lake County Health Department (SLCHD) Portal Listings Breakdown', 'y': 'count', 'x': 'source_and_status', 'query': "SELECT \n    'Friend SLC (Has Inspections)' AS source_and_status, 1245 AS count\nUNION ALL\nSELECT \n    'Own Scrape (Has Inspections)' AS source_and_status, 70 AS count\nUNION ALL\nSELECT \n    'Own Scrape (No Inspections)' AS source_and_status, 26 AS count"})
+
+Observation: Chart created: 'Salt Lake County Health Department (SLCHD) Portal Listings Breakdown' (bar, 3 rows). It will be shown to the user below your answer.
+
+--- Usage: 39694 tokens, ~$0.0765 ---

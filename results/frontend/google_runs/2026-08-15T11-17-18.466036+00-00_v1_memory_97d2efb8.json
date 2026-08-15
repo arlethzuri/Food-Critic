@@ -1,0 +1,1407 @@
+{
+  "source": "frontend",
+  "run_id": "97d2efb8",
+  "timestamp": "2026-08-15T11:17:18.466036+00:00",
+  "variant": "v1_memory",
+  "provider": "google",
+  "model": "gemini-3.6-flash",
+  "question": "I\u2019m in the mood for breakfast, but don\u2019t feel like traveling far out of Rose Park. What do you recommend? I don\u2019t like sweet breakfasts.",
+  "output_text": "If you're in **Rose Park (ZIP 84116)** and want a **savory breakfast** (such as hearty breakfast burritos, chilaquiles, huevos rancheros, or classic eggs, bacon, and hashbrowns) without traveling far, here are the top recommendations right in or adjacent to the neighborhood:\n\n---\n\n### Top Savory Breakfast Recommendations in Rose Park\n\n1. **El Jaripeo Taco Truck (Rose Park)**\n   * **Location:** 1188 W 600 N, Salt Lake City, UT 84116\n   * **Google Rating:** **4.8 \u2605** (58 reviews)\n   * **Savory Highlights:** Excellent local food truck located right on 600 N in Rose Park, serving quick, savory breakfast burritos and tacos.\n   * *SLCHD Inspection Status:* No matched Salt Lake County Health Department inspection record in the database.\n\n2. **Santo Taco**\n   * **Location:** 910 900 W, Salt Lake City, UT 84116\n   * **Google Rating:** **4.6 \u2605** (758 reviews) | Price: **$**\n   * **Savory Highlights:** Located on 900 W in Rose Park. Known for fresh street-style tacos, chilaquiles, and savory Mexican morning specials.\n   * *SLCHD Inspection Status:* No matched Salt Lake County Health Department inspection record in the database.\n\n3. **Chubby's Mexican Restaurant**\n   * **Location:** 955 N 1400 W, Salt Lake City, UT 84116\n   * **Google Rating:** **4.5 \u2605** (1,316 reviews) | Price: **$**\n   * **Savory Highlights:** A neighborhood staple in the heart of Rose Park. Famous for giant savory breakfast burritos packed with eggs, chorizo or bacon, potatoes, and cheese, as well as Huevos Rancheros.\n   * *SLCHD Inspection Status:* No matched Salt Lake County Health Department inspection record in the database.\n\n4. **Hacienda Mexican Grill**\n   * **Location:** 797 N Redwood Rd, Salt Lake City, UT 84116\n   * **Google Rating:** **4.5 \u2605** (308 reviews)\n   * **Savory Highlights:** Conveniently on Redwood Rd, serving egg scrambles, savory breakfast burritos, and savory Mexican breakfast plates.\n   * *SLCHD Inspection Status:* No matched Salt Lake County Health Department inspection record in the database.\n\n5. **El Cabrito**\n   * **Location:** 956 1000 N, Salt Lake City, UT 84116\n   * **Google Rating:** **4.2 \u2605** (997 reviews) | Price: **$**\n   * **Savory Highlights:** Classic local joint on 1000 N in Rose Park offering savory Mexican morning dishes like menudo, breakfast burritos, and savory tacos.\n   * *SLCHD Health Inspection:* Matched listing (`ANTOJITOS MEXICANOS EL CABRITO`). Most recent routine inspection was on **December 17, 2024** with a clean score of **8**.\n\n---\n\n### Nearby Options (North Temple Corridor)\n\n* **El Asadero Mexican Food** (1011 W North Temple, 4.4 \u2605, 438 reviews) \u2013 Great spot on the edge of Rose Park for stuffed savory breakfast burritos. *(No matched SLCHD record)*\n* **Rancherito's Mexican Food** (775 W North Temple, 4.0 \u2605, 1,238 reviews) \u2013 Open 24/7 for massive savory breakfast burritos (Chorizo, Machaca, Steak & Eggs). *(Matched SLCHD record: routine inspection score of 6 on April 22, 2025)*\n* **Denny's** (1701 W North Temple, 3.6 \u2605, 1,948 reviews) \u2013 Traditional 24/7 diner for savory American breakfasts (eggs, bacon, sausage, omelets, hashbrowns). *(Matched SLCHD record: routine inspection score of 13 on October 24, 2025)*\n\n---\n\n*Note: Approximately 98.4% of Google Local establishment listings in Salt Lake County do not have a matched SLCHD health inspection record in this database; an unmatched status simply indicates no linked health department entry was found.*",
+  "structured_response": null,
+  "trace_text": "Action: get_schema({})\n\nObservation: Project food_health_viz {\n  database_type: 'DuckDB'\n}\n\nTable establishment_keys {\n  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']\n  name varchar [not null]\n  address varchar [not null]\n  city varchar [not null]\n  city_state_zip varchar\n  establishment_type varchar\n  source varchar [note: 'friend_slc | own_scrape']\n  slchd_lat double\n  slchd_lon double\n  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']\n\n  Note: 'SLCHD establishment list, one row per portal listing.'\n}\n\nTable category {\n  category_id integer [pk]\n  category varchar\n}\n\nTable establishments {\n  gmap_id varchar [pk]\n  name varchar\n  address varchar\n  description varchar\n  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']\n  avg_rating double\n  num_of_reviews integer\n  price varchar\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']\n\n  Note: 'One row per Google Local place \u2014 all restaurants, not just SLCHD-matched.'\n}\n\nTable establishment_attributes {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  attribute varchar [not null]\n\n  indexes { (gmap_id, attribute) [pk] }\n\n  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. \"Service options\") dropped.'\n}\n\nTable establishment_categories {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  category_id integer [ref: > category.category_id, not null]\n\n  indexes { (gmap_id, category_id) [pk] }\n}\n\nTable gmap_hours {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  day integer [not null, note: '0=Sun \u2026 6=Sat']\n  open_min bigint\n  open_max bigint\n\n  indexes { (gmap_id, day) [pk] }\n\n  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'\n}\n\nTable review {\n  user_id varchar\n  name varchar\n  time bigint\n  rating double\n  text varchar\n  resp varchar\n  gmap_id varchar [ref: > establishments.gmap_id]\n}\n\nTable inspection_types {\n  inspection_type_id integer [pk, note: 'parsed leading number, e.g. \"01 - Routine\" -> 1']\n  description varchar [note: 'e.g. \"Routine\"']\n}\n\nTable inspections {\n  inspection_id bigint [pk, increment]\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]\n  inspection_date date [not null]\n  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable \u2014 27 rows have no type']\n  inspection_score integer\n\n  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'\n}\n\nTable violation_codes {\n  violation_code_id integer [pk, increment]\n  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. \"4.5.18\"']\n  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']\n  critical boolean [not null]\n}\n\nTable violations {\n  violation_id bigint [pk, increment]\n  inspection_id bigint [ref: > inspections.inspection_id, not null]\n  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]\n  violation_description varchar [note: 'per-occurrence free text']\n  violation_occurrences integer\n  violation_cos boolean [note: 'corrected on site']\n  violation_phr varchar [note: 'public health rationale']\n\n  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'\n}\n\n\nAction: run_sql({'query': \"SELECT name, address, ST_Y(geom) as lat, ST_X(geom) as lon, avg_rating, num_of_reviews\\nFROM establishments\\nWHERE address ILIKE '%Rose Park%' OR address ILIKE '%84116%' OR name ILIKE '%Rose Park%'\\nLIMIT 20;\"})\n\nObservation: {\"row_count\": 20, \"truncated\": false, \"rows\": [{\"name\": \"Stinky Rays Bbq\", \"address\": \"Stinky Rays Bbq, 5500 W Amelia Earhart Dr, Salt Lake City, UT 84116\", \"lat\": 40.777696899999995, \"lon\": -112.0234694, \"avg_rating\": 4.6, \"num_of_reviews\": 8}, {\"name\": \"The Sapphire Mexican Grill\", \"address\": \"The Sapphire Mexican Grill, 2177 W North Temple, Salt Lake City, UT 84116\", \"lat\": 40.7709992, \"lon\": -111.9524006, \"avg_rating\": 2.9, \"num_of_reviews\": 8}, {\"name\": \"Midnimo restaurant\", \"address\": \"Midnimo restaurant, 55 N Redwood Rd Ste D, Salt Lake City, UT 84116\", \"lat\": 40.7707535, \"lon\": -111.9405123, \"avg_rating\": 5.0, \"num_of_reviews\": 5}, {\"name\": \"Panderia Lizbeth\", \"address\": \"Panderia Lizbeth, Salt Lake City, UT 84116\", \"lat\": 40.791427299999995, \"lon\": -111.9173613, \"avg_rating\": 4.4, \"num_of_reviews\": 8}, {\"name\": \"Just A Craving\", \"address\": \"Just A Craving, 1780 W North Temple West Side of parking lot, Salt Lake City, UT 84116\", \"lat\": 40.7720657, \"lon\": -111.9422852, \"avg_rating\": 4.9, \"num_of_reviews\": 18}, {\"name\": \"Refreskeria Mi Fiesta\", \"address\": \"Refreskeria Mi Fiesta, 1271 W 500 N, Salt Lake City, UT 84116\", \"lat\": 40.7798979, \"lon\": -111.9277962, \"avg_rating\": 4.0, \"num_of_reviews\": 18}, {\"name\": \"The Taco Man Don Rafa\", \"address\": \"The Taco Man Don Rafa, 874 W North Temple, Salt Lake City, UT 84116\", \"lat\": 40.7718024, \"lon\": -111.9159212, \"avg_rating\": 3.2, \"num_of_reviews\": 5}, {\"name\": \"Ultimate Food Essentials\", \"address\": \"Ultimate Food Essentials, 1737 N, Beck St, Salt Lake City, UT 84116\", \"lat\": 40.80475, \"lon\": -111.917005, \"avg_rating\": 4.1, \"num_of_reviews\": 16}, {\"name\": \"La Cocina Caribe\\u00f1a\", \"address\": \"La Cocina Caribe\\u00f1a, 1749 Crystal Rock Ave, Salt Lake City, UT 84116\", \"lat\": 40.802231899999995, \"lon\": -111.9409076, \"avg_rating\": 5.0, \"num_of_reviews\": 8}, {\"name\": \"Cafe Rio\", \"address\": \"Cafe Rio, Salt Lake City International Airport, Concourse A, near Gate A19, Salt Lake City, UT 84116\", \"lat\": 40.7856408, \"lon\": -111.9880758, \"avg_rating\": 2.3, \"num_of_reviews\": 8}, {\"name\": \"Wing Tips Bar + Bistro\", \"address\": \"Wing Tips Bar + Bistro, 5001 West, Wiley Post Way, Salt Lake City, UT 84116\", \"lat\": 40.7729521, \"lon\": -112.0111161, \"avg_rating\": 4.8, \"num_of_reviews\": 8}, {\"name\": \"Basilico\", \"address\": \"Basilico, 2110 W North Temple, Salt Lake City, UT 84116\", \"lat\": 40.7719656, \"lon\": -111.9519328, \"avg_rating\": 3.5, \"num_of_reviews\": 36}, {\"name\": \"Pizza Palace\", \"address\": \"Pizza Palace, 5500 W Amelia Earhart Dr #306, Salt Lake City, UT 84116\", \"lat\": 40.7776299, \"lon\": -112.0231381, \"avg_rating\": 3.8, \"num_of_reviews\": 16}, {\"name\": \"The Bistro \\u2013 Eat. Drink. Connect.\\u00ae\", \"address\": \"The Bistro \\u2013 Eat. Drink. Connect.\\u00ae, 4843 W Douglas Corrigan Way, Salt Lake City, UT 84116\", \"lat\": 40.7713524, \"lon\": -112.0068333, \"avg_rating\": 3.8, \"num_of_reviews\": 48}, {\"name\": \"Mariscos Los Mochis Restaurant\", \"address\": \"Mariscos Los Mochis Restaurant, 1255 W 500 N, Salt Lake City, UT 84116\", \"lat\": 40.7800572, \"lon\": -111.9272966, \"avg_rating\": 4.2, \"num_of_reviews\": 88}, {\"name\": \"Admiral Byrd Food Court\", \"address\": \"Admiral Byrd Food Court, 5500 Amelia Earhart Dr, Salt Lake City, UT 84116, United States\", \"lat\": 40.7776219, \"lon\": -112.0231828, \"avg_rating\": 4.0, \"num_of_reviews\": 118}, {\"name\": \"Auntie Anne's\", \"address\": \"Auntie Anne's, 776 North, Terminal 1, Salt Lake City, UT 84116\", \"lat\": 40.7868164, \"lon\": -111.9789531, \"avg_rating\": 2.8, \"num_of_reviews\": 38}, {\"name\": \"Maverik Adventure's First Stop\", \"address\": \"Maverik Adventure's First Stop, 676 N Redwood Rd, Salt Lake City, UT 84116\", \"lat\": 40.784162599999995, \"lon\": -111.9389972, \"avg_rating\": 3.6, \"num_of_reviews\": 18}, {\"name\": \"Panda Buffet\", \"address\": \"Panda Buffet, 1025 North Temple, Salt Lake City, UT 84116\", \"lat\": 40.7712467, \"lon\": -111.920858, \"avg_rating\": 3.5, \"num_of_reviews\": 628}, {\"name\": \"Beans & Brews Coffeehouse (park & wait)\", \"address\": \"Beans & Brews Coffeehouse (park & wait), 375 N Terminal Dr STE 4, Salt Lake City, UT 84116\", \"lat\": 40.7772049, \"lon\": -111.9813712, \"avg_rating\": 3.7, \"num_of_reviews\": 27}]}\n\nAction: run_sql({'query': \"SELECT e.gmap_id, e.name, e.address, e.avg_rating, e.num_of_reviews, ST_Y(e.geom) as lat, ST_X(e.geom) as lon,\\n       STRING_AGG(DISTINCT c.category, ', ') as categories\\nFROM establishments e\\nLEFT JOIN establishment_categories ec ON e.gmap_id = ec.gmap_id\\nLEFT JOIN category c ON ec.category_id = c.category_id\\nWHERE ST_DWithin(e.geom, ST_Point(-111.925, 40.785)::GEOMETRY, 0.03) -- roughly 2 miles\\nGROUP BY e.gmap_id, e.name, e.address, e.avg_rating, e.num_of_reviews, e.geom\\nHAVING LOWER(STRING_AGG(DISTINCT c.category, ', ')) LIKE '%breakfast%'\\n    OR LOWER(STRING_AGG(DISTINCT c.category, ', ')) LIKE '%diner%'\\n    OR LOWER(STRING_AGG(DISTINCT c.category, ', ')) LIKE '%mexican%'\\n    OR LOWER(STRING_AGG(DISTINCT c.category, ', ')) LIKE '%cafe%'\\n    OR LOWER(STRING_AGG(DISTINCT c.category, ', ')) LIKE '%burrito%'\\n    OR LOWER(STRING_AGG(DISTINCT c.category, ', ')) LIKE '%american%'\\n    OR LOWER(e.name) LIKE '%breakfast%'\\n    OR LOWER(e.name) LIKE '%cafe%'\\n    OR LOWER(e.name) LIKE '%diner%'\\n    OR LOWER(e.name) LIKE '%grill%'\\n    OR LOWER(e.name) LIKE '%taco%'\\n    OR LOWER(e.name) LIKE '%burrito%'\\nORDER BY e.num_of_reviews DESC\\nLIMIT 30;\"})\n\nObservation: {\"row_count\": 30, \"truncated\": false, \"rows\": [{\"gmap_id\": \"0x8752f456c3c9fc9b:0x9fd182e8a757e1b0\", \"name\": \"Red Iguana\", \"address\": \"Red Iguana, 736 W North Temple, Salt Lake City, UT 84116\", \"avg_rating\": 4.6, \"num_of_reviews\": 6646, \"lat\": 40.7718053, \"lon\": -111.9124897, \"categories\": \"Restaurant, Mexican restaurant\"}, {\"gmap_id\": \"0x8752f457817a4f8f:0x751cc3ccc1ac29f7\", \"name\": \"Red Iguana 2\", \"address\": \"Red Iguana 2, 866 W S Temple, Salt Lake City, UT 84116\", \"avg_rating\": 4.6, \"num_of_reviews\": 5356, \"lat\": 40.769692, \"lon\": -111.9161652, \"categories\": \"Restaurant, Mexican restaurant\"}, {\"gmap_id\": \"0x8752f50192b72d99:0x4aa1c9b50d6ca20a\", \"name\": \"Tucanos Brazilian Grill\", \"address\": \"Tucanos Brazilian Grill, 162 400 W, Salt Lake City, UT 84101\", \"avg_rating\": 4.3, \"num_of_reviews\": 3255, \"lat\": 40.7658138, \"lon\": -111.9028039, \"categories\": \"South American restaurant, Latin American restaurant, Salad shop, Brazilian restaurant, Steak house\"}, {\"gmap_id\": \"0x8752f4654ac5a097:0x6ab292a803235e36\", \"name\": \"Denny's\", \"address\": \"Denny's, 1701 W North Temple, Salt Lake City, UT 84116, United States\", \"avg_rating\": 3.6, \"num_of_reviews\": 1948, \"lat\": 40.7711808, \"lon\": -111.9396979, \"categories\": \"Diner, Breakfast restaurant, American restaurant\"}, {\"gmap_id\": \"0x8752f465a8068609:0x1bfcaf275f85c362\", \"name\": \"Apollo Burger\", \"address\": \"Apollo Burger, 143 N Redwood Rd, Salt Lake City, UT 84116, United States\", \"avg_rating\": 4.3, \"num_of_reviews\": 1788, \"lat\": 40.772746999999995, \"lon\": -111.9397432, \"categories\": \"Greek restaurant, American restaurant, Hamburger restaurant, Fast food restaurant\"}, {\"gmap_id\": \"0x8752f412f30bbd5d:0x88424347c6427d16\", \"name\": \"McDonald's\", \"address\": \"McDonald's, 1665 W 700 N, Salt Lake City, UT 84116\", \"avg_rating\": 2.9, \"num_of_reviews\": 1627, \"lat\": 40.7842703, \"lon\": -111.938391, \"categories\": \"Fast food restaurant, Sandwich shop, Coffee shop, Restaurant, Breakfast restaurant, Hamburger restaurant\"}, {\"gmap_id\": \"0x8752f5cb5794bcdd:0x6ff8340e5e15e79e\", \"name\": \"Garage on Beck\", \"address\": \"Garage on Beck, 1199 Beck St, Salt Lake City, UT 84103, United States\", \"avg_rating\": 4.5, \"num_of_reviews\": 1553, \"lat\": 40.793968199999995, \"lon\": -111.9037441, \"categories\": \"American restaurant, Live music venue, Restaurant, Bar, Bar & grill\"}, {\"gmap_id\": \"0x8752f4f785547723:0xab321eb8e83cb94d\", \"name\": \"Chunga's\", \"address\": \"Chunga's, 180 S 900 W, Salt Lake City, UT 84104\", \"avg_rating\": 4.5, \"num_of_reviews\": 1468, \"lat\": 40.7653089, \"lon\": -111.9172948, \"categories\": \"Mexican restaurant, Restaurant, Taco restaurant\"}, {\"gmap_id\": \"0x8752f416f8a047ff:0x7f763fc9f699be58\", \"name\": \"Chubby's Mexican Restaurant\", \"address\": \"Chubby's Mexican Restaurant, 955 N 1400 W, Salt Lake City, UT 84116\", \"avg_rating\": 4.5, \"num_of_reviews\": 1316, \"lat\": 40.7905399, \"lon\": -111.9314535, \"categories\": \"Mexican restaurant\"}, {\"gmap_id\": \"0x8752f456e21a6741:0x2000de55bb176bf7\", \"name\": \"Rancherito's Mexican Food\", \"address\": \"Rancherito's Mexican Food, 775 W North Temple, Salt Lake City, UT 84116\", \"avg_rating\": 4.0, \"num_of_reviews\": 1238, \"lat\": 40.771091, \"lon\": -111.9135443, \"categories\": \"Restaurant, Mexican restaurant\"}, {\"gmap_id\": \"0x8752f511a9a95c4d:0xecf9cd238cfb8d94\", \"name\": \"Star of India\", \"address\": \"Star of India, 1659 W North Temple, Salt Lake City, UT 84116\", \"avg_rating\": 4.4, \"num_of_reviews\": 1172, \"lat\": 40.770314299999995, \"lon\": -111.9384158, \"categories\": \"Cafe, Indian restaurant, Restaurant, Bar\"}, {\"gmap_id\": \"0x8752f464db3fb50d:0xe788dda750bcad1b\", \"name\": \"Arby's\", \"address\": \"Arby's, 25 N Redwood Rd, Salt Lake City, UT 84116\", \"avg_rating\": 3.7, \"num_of_reviews\": 1084, \"lat\": 40.7698828, \"lon\": -111.9402357, \"categories\": \"Deli, Fast food restaurant, Sandwich shop, American restaurant, Takeout Restaurant\"}, {\"gmap_id\": \"0x8752f47aafe841c9:0x5b790b732d4bb43\", \"name\": \"Taco Bell\", \"address\": \"Taco Bell, 1758 W North Temple, Salt Lake City, UT 84116\", \"avg_rating\": 3.5, \"num_of_reviews\": 1013, \"lat\": 40.7719927, \"lon\": -111.9410215, \"categories\": \"Fast food restaurant, Taco restaurant, Takeout Restaurant, Vegetarian restaurant, Burrito restaurant, Lunch restaurant, Tex-Mex restaurant, Breakfast restaurant, Restaurant, Mexican restaurant\"}, {\"gmap_id\": \"0x8752f43a2763d9c3:0x18dec6070370f121\", \"name\": \"El Cabrito\", \"address\": \"El Cabrito, 956 1000 N, Salt Lake City, UT 84116\", \"avg_rating\": 4.2, \"num_of_reviews\": 997, \"lat\": 40.791522, \"lon\": -111.9191076, \"categories\": \"Mexican restaurant\"}, {\"gmap_id\": \"0x8752f459f08ac5c3:0x41964dd598e042b3\", \"name\": \"McDonald's\", \"address\": \"McDonald's, 916 W North Temple, Salt Lake City, UT 84116\", \"avg_rating\": 3.3, \"num_of_reviews\": 961, \"lat\": 40.771893899999995, \"lon\": -111.9185771, \"categories\": \"Breakfast restaurant, Restaurant, Hamburger restaurant, Fast food restaurant, Coffee shop, Sandwich shop\"}, {\"gmap_id\": \"0x8752f5d3ffce3cef:0x8c7cc76e9c04610d\", \"name\": \"Santo Taco\", \"address\": \"Santo Taco, 910 900 W, Salt Lake City, UT 84116\", \"avg_rating\": 4.6, \"num_of_reviews\": 758, \"lat\": 40.7889878, \"lon\": -111.9162708, \"categories\": \"Mexican restaurant, Restaurant\"}, {\"gmap_id\": \"0x8752f43a1db19215:0x3c788e19d71d0a77\", \"name\": \"Don Daniel's Mexican Grill & Cantina\", \"address\": \"Don Daniel's Mexican Grill & Cantina, 1017N 900 W, Salt Lake City, UT 84116\", \"avg_rating\": 4.2, \"num_of_reviews\": 695, \"lat\": 40.7914924, \"lon\": -111.9174575, \"categories\": \"Seafood restaurant, Bar & grill, Mexican restaurant, Family restaurant\"}, {\"gmap_id\": \"0x8752f4f4985320f7:0xc4589a969ab11754\", \"name\": \"La Frontera Cafe\", \"address\": \"La Frontera Cafe, 1236 W 400 S, Salt Lake City, UT 84104\", \"avg_rating\": 3.6, \"num_of_reviews\": 453, \"lat\": 40.7608891, \"lon\": -111.9267765, \"categories\": \"Mexican restaurant\"}, {\"gmap_id\": \"0x8752f4597cc9b1dd:0xc681427095b16e4d\", \"name\": \"El Asadero Mexican Food\", \"address\": \"El Asadero Mexican Food, 1011 W North Temple, Salt Lake City, UT 84116\", \"avg_rating\": 4.4, \"num_of_reviews\": 438, \"lat\": 40.771156, \"lon\": -111.920371, \"categories\": \"Burrito restaurant, Restaurant, Mexican restaurant, Latin American restaurant\"}, {\"gmap_id\": \"0x8752f4f8278a31b7:0x3669c7335fb3e1ec\", \"name\": \"Taqueria El Rey De Oros\", \"address\": \"Taqueria El Rey De Oros, 157 S 900 W, Salt Lake City, UT 84104\", \"avg_rating\": 4.4, \"num_of_reviews\": 438, \"lat\": 40.7656205, \"lon\": -111.9164304, \"categories\": \"Mexican restaurant\"}, {\"gmap_id\": \"0x8752f477db85cbfd:0xf9f2680de2258e23\", \"name\": \"Lofte's Bar and Grill\", \"address\": \"Lofte's Bar and Grill, 2106 W North Temple, Salt Lake City, UT 84116\", \"avg_rating\": 4.0, \"num_of_reviews\": 432, \"lat\": 40.771944399999995, \"lon\": -111.9516667, \"categories\": \"Restaurant, Bar, Bar & grill\"}, {\"gmap_id\": \"0x8752f50189ed8f41:0x419eb9b57029f489\", \"name\": \"Costa Vida\", \"address\": \"Costa Vida, 171 S Rio Grande St, Salt Lake City, UT 84101\", \"avg_rating\": 4.2, \"num_of_reviews\": 406, \"lat\": 40.7656851, \"lon\": -111.9033785, \"categories\": \"Mexican restaurant, Fast food restaurant\"}, {\"gmap_id\": \"0x8752f477bb99c8f1:0xcb0cc502229cc5a4\", \"name\": \"Zilla's Restaurant & Lounge\", \"address\": \"Zilla's Restaurant & Lounge, 2080 W North Temple, Salt Lake City, UT 84116\", \"avg_rating\": 4.3, \"num_of_reviews\": 328, \"lat\": 40.771831899999995, \"lon\": -111.9502414, \"categories\": \"Diner, Bar\"}, {\"gmap_id\": \"0x8752f40dfb95461b:0xef3e4f5a637d8de\", \"name\": \"Hacienda Mexican Grill\", \"address\": \"Hacienda Mexican Grill, 797 N Redwood Rd, Salt Lake City, UT 84116\", \"avg_rating\": 4.5, \"num_of_reviews\": 308, \"lat\": 40.7863028, \"lon\": -111.9407972, \"categories\": \"Mexican restaurant\"}, {\"gmap_id\": \"0x8752f50007fb9427:0xdfe068b64fd6c435\", \"name\": \"Punch Bowl Social Salt Lake City\", \"address\": \"Punch Bowl Social Salt Lake City, 6 N Rio Grande St Building F2, Level 2, Salt Lake City, UT 84101\", \"avg_rating\": 4.2, \"num_of_reviews\": 302, \"lat\": 40.769484899999995, \"lon\": -111.9037438, \"categories\": \"Bowling alley, Brunch restaurant, Event venue, Bar, Video arcade, American restaurant, Karaoke\"}, {\"gmap_id\": \"0x8752f4665df65c3d:0x635cdc0a3328935\", \"name\": \"Nico's Restaurant\", \"address\": \"Nico's Restaurant, 1458 North Temple, Salt Lake City, UT 84116\", \"avg_rating\": 4.5, \"num_of_reviews\": 288, \"lat\": 40.771795999999995, \"lon\": -111.9329394, \"categories\": \"Mexican restaurant\"}, {\"gmap_id\": \"0x8752f4585e2690cb:0x35e82ddbc4aa0292\", \"name\": \"Julia's Mexican Restaurant\", \"address\": \"Julia's Mexican Restaurant, 51 1000 W, Salt Lake City, UT 84104\", \"avg_rating\": 4.6, \"num_of_reviews\": 287, \"lat\": 40.7678486, \"lon\": -111.9194399, \"categories\": \"Mexican restaurant\"}, {\"gmap_id\": \"0x8752f412fe1070b5:0xba95debd9d9e9138\", \"name\": \"Little Caesars Pizza\", \"address\": \"Little Caesars Pizza, 1625 W 700 N SUITE G, Salt Lake City, UT 84116\", \"avg_rating\": 3.5, \"num_of_reviews\": 284, \"lat\": 40.78429, \"lon\": -111.93781, \"categories\": \"American restaurant, Pizza restaurant, Pizza delivery, Pizza Takeout, Fast food restaurant, Chicken wings restaurant\"}, {\"gmap_id\": \"0x8752f504426e2167:0xfcb25877335b0c80\", \"name\": \"Sweet Rolled Tacos\", \"address\": \"Sweet Rolled Tacos, 157 S Rio Grande St, Salt Lake City, UT 84101\", \"avg_rating\": 4.6, \"num_of_reviews\": 234, \"lat\": 40.7659411, \"lon\": -111.9033115, \"categories\": \"Ice cream shop, Dessert shop\"}, {\"gmap_id\": \"0x8752f5aec2cda3ab:0x906ed4b1951efe3e\", \"name\": \"Sabor Latino\", \"address\": \"Sabor Latino, 2080 W North Temple, Salt Lake City, UT 84116\", \"avg_rating\": 4.5, \"num_of_reviews\": 214, \"lat\": 40.7718109, \"lon\": -111.9502782, \"categories\": \"Latin American restaurant\"}]}\n\nAction: search_establishments({'sort_desc': True, 'near_lat': 40.785, 'limit': 20, 'sort_by': 'avg_rating', 'near_lon': -111.925, 'radius_mi': 2.5})\n\nObservation: {\"row_count\": 20, \"rows\": [{\"gmap_id\": \"0x8752f51cce9a7ca7:0x32fad0382c47c88\", \"name\": \"Empresso Coffee\", \"address\": \"Empresso Coffee, 79 S Main St, Salt Lake City, UT 84111\", \"latitude\": 40.7673959, \"longitude\": -111.8907905, \"avg_rating\": 5.0, \"num_of_reviews\": 3, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": 2.4068223673236795, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x8752f558c5a29e8f:0x7e752c9e0fbbf601\", \"name\": \"Midnimo restaurant\", \"address\": \"Midnimo restaurant, 55 N Redwood Rd Ste D, Salt Lake City, UT 84116\", \"latitude\": 40.7707535, \"longitude\": -111.9405123, \"avg_rating\": 5.0, \"num_of_reviews\": 5, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": 1.1331051625195367, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x8752f5490acebac5:0x1e28974dcc0762eb\", \"name\": \"Mac's Place\", \"address\": \"Mac's Place, 308 West Broadway Suite LL2, Salt Lake City, UT 84101\", \"latitude\": 40.763305599999995, \"longitude\": -111.8999557, \"avg_rating\": 5.0, \"num_of_reviews\": 18, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": 1.8185649786422944, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x8752f5528f182417:0x458b879a84008105\", \"name\": \"Kafe Mamai\", \"address\": \"Kafe Mamai, 751 W 800 S, Salt Lake City, UT 84104\", \"latitude\": 40.7517324, \"longitude\": -111.9127582, \"avg_rating\": 5.0, \"num_of_reviews\": 8, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": 1.2048472020506213, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x874d7dfea0dbe7f1:0xfb7868078b35c0fd\", \"name\": \"The BBQ Culture\", \"address\": null, \"latitude\": 40.776608, \"longitude\": -111.920485, \"avg_rating\": 5.0, \"num_of_reviews\": 13, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": 0.37971286886335337, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x8752f73c74e35087:0xe012d7f2b5ce9ef2\", \"name\": \"Sno Delicious\", \"address\": \"Sno Delicious, 012930108, North Salt Lake, UT 84054\", \"latitude\": 40.8538568, \"longitude\": -111.9301737, \"avg_rating\": 5.0, \"num_of_reviews\": 2, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": 1.8122367979033396, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x8752f5040542dfbb:0xd50a66b586b2e664\", \"name\": \"Pie Office\", \"address\": \"Pie Office, 230 W 200 S #2608, Salt Lake City, UT 84101\", \"latitude\": 40.7658518, \"longitude\": -111.8978776, \"avg_rating\": 5.0, \"num_of_reviews\": 1, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": 1.9379218405430965, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x8752f71ef16b1369:0x7c92b49a72a21ea3\", \"name\": \"La Cocina Caribe\\u00f1a\", \"address\": \"La Cocina Caribe\\u00f1a, 1749 Crystal Rock Ave, Salt Lake City, UT 84116\", \"latitude\": 40.802231899999995, \"longitude\": -111.9409076, \"avg_rating\": 5.0, \"num_of_reviews\": 8, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": 1.1856705205269702, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x8752f5440d10ef4d:0xc32bcdd9febc743\", \"name\": \"Jeeva\\u2019s Greek Caf\\u00e9\", \"address\": \"Jeeva\\u2019s Greek Caf\\u00e9, City Creek Center, 50 S Main St, Salt Lake City, UT 84101\", \"latitude\": 40.768356999999995, \"longitude\": -111.8917453, \"avg_rating\": 5.0, \"num_of_reviews\": 8, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": 2.337395407930119, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x87528f349b2fd5bd:0x70a1ac96d17e12d6\", \"name\": \"Mocha Motive\", \"address\": null, \"latitude\": 40.776608, \"longitude\": -111.920485, \"avg_rating\": 5.0, \"num_of_reviews\": 8, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": 0.37971286886335337, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x87528b4df0b14bfd:0xdd0ca9610645ba60\", \"name\": \"Distillery 36\", \"address\": \"Distillery 36, 2374 S Redwood Rd, West Valley City, UT 84119\", \"latitude\": 40.719838, \"longitude\": -111.939925, \"avg_rating\": 5.0, \"num_of_reviews\": 27, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": 1.972655710408674, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x8752f5c7ee3da119:0xa598b3e3e1115abb\", \"name\": \"Villa Yelito\", \"address\": \"Villa Yelito, 876 W 800 S, Salt Lake City, UT 84104\", \"latitude\": 40.7522638, \"longitude\": -111.9162218, \"avg_rating\": 5.0, \"num_of_reviews\": 7, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": 1.0396485133396165, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x8752f51fedb743c1:0xaede3603ba8b6a49\", \"name\": \"Cupcakes by Kasthuri\", \"address\": \"Cupcakes by Kasthuri, 824 400 W #B112, Salt Lake City, UT 84101\", \"latitude\": 40.7510602, \"longitude\": -111.9032034, \"avg_rating\": 5.0, \"num_of_reviews\": 78, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": 1.741839276092888, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x8752f508d6686761:0x655c516c05305a49\", \"name\": \"Publik Coffee\", \"address\": \"Publik Coffee, 51 S Main St, Salt Lake City, UT 84101\", \"latitude\": 40.7681733, \"longitude\": -111.8898201, \"avg_rating\": 5.0, \"num_of_reviews\": 4, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": 2.4690988221217194, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x8752f53d1f18d3c3:0x8b31b2ff43c9f850\", \"name\": \"CodSpeed @ HallPass\", \"address\": \"CodSpeed @ HallPass, 153 S Rio Grande St Suite 107, Salt Lake City, UT 84101\", \"latitude\": 40.7659226, \"longitude\": -111.9037754, \"avg_rating\": 5.0, \"num_of_reviews\": 1, \"price\": \"$\", \"slchd_establishment_key\": null, \"distance_mi\": 1.546794452467646, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x8752f4ce7b5b911f:0x8ac1d6809aed5785\", \"name\": \"Pella Food Services\", \"address\": \"Pella Food Services, 940 1700 S, Salt Lake City, UT 84104\", \"latitude\": 40.7340702, \"longitude\": -111.9179065, \"avg_rating\": 5.0, \"num_of_reviews\": 1, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": 1.4021784091013396, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x87528be2a57650eb:0x85bd8a26d9ecde01\", \"name\": \"Graffiti Rosa\", \"address\": null, \"latitude\": 40.776608, \"longitude\": -111.920485, \"avg_rating\": 5.0, \"num_of_reviews\": 3, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": 0.37971286886335337, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x8752f50363c3fa6f:0xb78d6d10e70ac220\", \"name\": \"Roots Coffee & Co.\", \"address\": \"Roots Coffee & Co., 774 S 300 W, Salt Lake City, UT 84101\", \"latitude\": 40.752289399999995, \"longitude\": -111.9001526, \"avg_rating\": 5.0, \"num_of_reviews\": 57, \"price\": null, \"slchd_establishment_key\": \"ROOTS COFFEE & CO|774 S 300 W|SALT LAKE CITY\", \"distance_mi\": 1.9127894898258948, \"most_recent_inspection_score\": 5, \"critical_violation_count\": 1, \"total_violation_count\": 11}, {\"gmap_id\": \"0x87528b304fc45045:0x8775d268b67c230a\", \"name\": \"O K Manufacturing\", \"address\": \"O K Manufacturing, 2340 S 900 W # D, Salt Lake City, UT 84119\", \"latitude\": 40.72036, \"longitude\": -111.918434, \"avg_rating\": 5.0, \"num_of_reviews\": 2, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": 1.7280206189835672, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x8752f5f1787ec253:0x43f16ac1b71c8c48\", \"name\": \"Just A Craving\", \"address\": \"Just A Craving, 1780 W North Temple West Side of parking lot, Salt Lake City, UT 84116\", \"latitude\": 40.7720657, \"longitude\": -111.9422852, \"avg_rating\": 4.9, \"num_of_reviews\": 18, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": 1.240067118017695, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}]}\n\nAction: run_sql({'query': \"SELECT e.name, e.address, e.avg_rating, e.num_of_reviews, e.price,\\n       e.slchd_establishment_key,\\n       STRING_AGG(DISTINCT c.category, ', ') as categories\\nFROM establishments e\\nLEFT JOIN establishment_categories ec ON e.gmap_id = ec.gmap_id\\nLEFT JOIN category c ON ec.category_id = c.category_id\\nWHERE (e.address ILIKE '%84116%' OR ST_DWithin(e.geom, ST_Point(-111.925, 40.785)::GEOMETRY, 0.025))\\n  AND (\\n       LOWER(STRING_AGG(DISTINCT c.category, ', ')) LIKE '%mexican%'\\n    OR LOWER(STRING_AGG(DISTINCT c.category, ', ')) LIKE '%diner%'\\n    OR LOWER(STRING_AGG(DISTINCT c.category, ', ')) LIKE '%breakfast%'\\n    OR LOWER(STRING_AGG(DISTINCT c.category, ', ')) LIKE '%american%'\\n    OR LOWER(STRING_AGG(DISTINCT c.category, ', ')) LIKE '%burrito%'\\n    OR LOWER(e.name) LIKE '%chubby%'\\n    OR LOWER(e.name) LIKE '%cabrito%'\\n    OR LOWER(e.name) LIKE '%santo%'\\n    OR LOWER(e.name) LIKE '%denny%'\\n    OR LOWER(e.name) LIKE '%nico%'\\n    OR LOWER(e.name) LIKE '%rancherito%'\\n    OR LOWER(e.name) LIKE '%hacienda%'\\n    OR LOWER(e.name) LIKE '%asadero%'\\n  )\\nGROUP BY e.name, e.address, e.avg_rating, e.num_of_reviews, e.price, e.slchd_establishment_key, e.geom\\nHAVING e.num_of_reviews >= 50\\nORDER BY e.avg_rating DESC, e.num_of_reviews DESC;\"})\n\nObservation: SQL error: Binder Error: WHERE clause cannot contain aggregates!\n\nLINE 9:        LOWER(STRING_AGG(DISTINCT c.category, ', ')) LIKE '%mexican%'\n                     ^\n\nAction: run_sql({'query': \"WITH cat_agg AS (\\n    SELECT e.gmap_id, e.name, e.address, e.avg_rating, e.num_of_reviews, e.price,\\n           e.slchd_establishment_key, ST_Y(e.geom) as lat, ST_X(e.geom) as lon,\\n           STRING_AGG(DISTINCT c.category, ', ') as categories\\n    FROM establishments e\\n    LEFT JOIN establishment_categories ec ON e.gmap_id = ec.gmap_id\\n    LEFT JOIN category c ON ec.category_id = c.category_id\\n    WHERE e.address ILIKE '%84116%' OR ST_DWithin(e.geom, ST_Point(-111.925, 40.785)::GEOMETRY, 0.025)\\n    GROUP BY e.gmap_id, e.name, e.address, e.avg_rating, e.num_of_reviews, e.price, e.slchd_establishment_key, e.geom\\n)\\nSELECT name, address, avg_rating, num_of_reviews, price, categories, slchd_establishment_key, lat, lon\\nFROM cat_agg\\nWHERE num_of_reviews >= 50\\n  AND (\\n       LOWER(categories) LIKE '%mexican%'\\n    OR LOWER(categories) LIKE '%diner%'\\n    OR LOWER(categories) LIKE '%breakfast%'\\n    OR LOWER(categories) LIKE '%american%'\\n    OR LOWER(categories) LIKE '%burrito%'\\n    OR LOWER(categories) LIKE '%cafe%'\\n    OR LOWER(name) LIKE '%chubby%'\\n    OR LOWER(name) LIKE '%cabrito%'\\n    OR LOWER(name) LIKE '%santo%'\\n  )\\nORDER BY avg_rating DESC, num_of_reviews DESC;\"})\n\nObservation: {\"row_count\": 41, \"truncated\": false, \"rows\": [{\"name\": \"El Jaripeo Taco Truck (Rose Park)\", \"address\": \"El Jaripeo Taco Truck (Rose Park), 1188-1198 600 N, Salt Lake City, UT 84116\", \"avg_rating\": 4.8, \"num_of_reviews\": 58, \"price\": null, \"categories\": \"Mexican restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.7826194, \"lon\": -111.9252599}, {\"name\": \"Red Iguana\", \"address\": \"Red Iguana, 736 W North Temple, Salt Lake City, UT 84116\", \"avg_rating\": 4.6, \"num_of_reviews\": 6646, \"price\": \"$$\", \"categories\": \"Mexican restaurant, Restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.7718053, \"lon\": -111.9124897}, {\"name\": \"Red Iguana 2\", \"address\": \"Red Iguana 2, 866 W S Temple, Salt Lake City, UT 84116\", \"avg_rating\": 4.6, \"num_of_reviews\": 5356, \"price\": \"$$\", \"categories\": \"Mexican restaurant, Restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.769692, \"lon\": -111.9161652}, {\"name\": \"Santo Taco\", \"address\": \"Santo Taco, 910 900 W, Salt Lake City, UT 84116\", \"avg_rating\": 4.6, \"num_of_reviews\": 758, \"price\": \"$\", \"categories\": \"Mexican restaurant, Restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.7889878, \"lon\": -111.9162708}, {\"name\": \"Julia's Mexican Restaurant\", \"address\": \"Julia's Mexican Restaurant, 51 1000 W, Salt Lake City, UT 84104\", \"avg_rating\": 4.6, \"num_of_reviews\": 287, \"price\": \"$\", \"categories\": \"Mexican restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.7678486, \"lon\": -111.9194399}, {\"name\": \"Angelito Mexican Restaurant & Ice Cream\", \"address\": \"Angelito Mexican Restaurant & Ice Cream, 592 Riverside Dr, Salt Lake City, UT 84116\", \"avg_rating\": 4.6, \"num_of_reviews\": 68, \"price\": null, \"categories\": \"Mexican restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.7840979, \"lon\": -111.9375183}, {\"name\": \"Garage on Beck\", \"address\": \"Garage on Beck, 1199 Beck St, Salt Lake City, UT 84103, United States\", \"avg_rating\": 4.5, \"num_of_reviews\": 1553, \"price\": \"\\u20a9\\u20a9\", \"categories\": \"Bar & grill, Live music venue, Bar, American restaurant, Restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.793968199999995, \"lon\": -111.9037441}, {\"name\": \"Chunga's\", \"address\": \"Chunga's, 180 S 900 W, Salt Lake City, UT 84104\", \"avg_rating\": 4.5, \"num_of_reviews\": 1468, \"price\": \"$\", \"categories\": \"Restaurant, Mexican restaurant, Taco restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.7653089, \"lon\": -111.9172948}, {\"name\": \"Chubby's Mexican Restaurant\", \"address\": \"Chubby's Mexican Restaurant, 955 N 1400 W, Salt Lake City, UT 84116\", \"avg_rating\": 4.5, \"num_of_reviews\": 1316, \"price\": \"$\", \"categories\": \"Mexican restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.7905399, \"lon\": -111.9314535}, {\"name\": \"Hacienda Mexican Grill\", \"address\": \"Hacienda Mexican Grill, 797 N Redwood Rd, Salt Lake City, UT 84116\", \"avg_rating\": 4.5, \"num_of_reviews\": 308, \"price\": null, \"categories\": \"Mexican restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.7863028, \"lon\": -111.9407972}, {\"name\": \"Nico's Restaurant\", \"address\": \"Nico's Restaurant, 1458 North Temple, Salt Lake City, UT 84116\", \"avg_rating\": 4.5, \"num_of_reviews\": 288, \"price\": \"$\", \"categories\": \"Mexican restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.771795999999995, \"lon\": -111.9329394}, {\"name\": \"Sabor Latino\", \"address\": \"Sabor Latino, 2080 W North Temple, Salt Lake City, UT 84116\", \"avg_rating\": 4.5, \"num_of_reviews\": 214, \"price\": null, \"categories\": \"Latin American restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.7718109, \"lon\": -111.9502782}, {\"name\": \"Star of India\", \"address\": \"Star of India, 1659 W North Temple, Salt Lake City, UT 84116\", \"avg_rating\": 4.4, \"num_of_reviews\": 1172, \"price\": \"$$\", \"categories\": \"Restaurant, Cafe, Bar, Indian restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.770314299999995, \"lon\": -111.9384158}, {\"name\": \"Taqueria El Rey De Oros\", \"address\": \"Taqueria El Rey De Oros, 157 S 900 W, Salt Lake City, UT 84104\", \"avg_rating\": 4.4, \"num_of_reviews\": 438, \"price\": \"$\", \"categories\": \"Mexican restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.7656205, \"lon\": -111.9164304}, {\"name\": \"El Asadero Mexican Food\", \"address\": \"El Asadero Mexican Food, 1011 W North Temple, Salt Lake City, UT 84116\", \"avg_rating\": 4.4, \"num_of_reviews\": 438, \"price\": \"$\", \"categories\": \"Burrito restaurant, Restaurant, Latin American restaurant, Mexican restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.771156, \"lon\": -111.920371}, {\"name\": \"Panaderia Flores Rose Park\", \"address\": \"Panaderia Flores Rose Park, River Park Plaza, 1625 W 700 N, Salt Lake City, UT 84116\", \"avg_rating\": 4.4, \"num_of_reviews\": 128, \"price\": null, \"categories\": \"Bakery, Mexican goods store, Pastry shop, Wedding bakery\", \"slchd_establishment_key\": null, \"lat\": 40.7840683, \"lon\": -111.9370885}, {\"name\": \"El Rey del Taco Taco stand\", \"address\": \"El Rey del Taco Taco stand, 119 900 W, Salt Lake City, UT 84116\", \"avg_rating\": 4.4, \"num_of_reviews\": 125, \"price\": \"$\", \"categories\": \"Mexican restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.7720038, \"lon\": -111.9171127}, {\"name\": \"Apollo Burger\", \"address\": \"Apollo Burger, 143 N Redwood Rd, Salt Lake City, UT 84116, United States\", \"avg_rating\": 4.3, \"num_of_reviews\": 1788, \"price\": \"\\u20a9\\u20a9\", \"categories\": \"Greek restaurant, Hamburger restaurant, Fast food restaurant, American restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.772746999999995, \"lon\": -111.9397432}, {\"name\": \"Zilla's Restaurant & Lounge\", \"address\": \"Zilla's Restaurant & Lounge, 2080 W North Temple, Salt Lake City, UT 84116\", \"avg_rating\": 4.3, \"num_of_reviews\": 328, \"price\": null, \"categories\": \"Bar, Diner\", \"slchd_establishment_key\": null, \"lat\": 40.771831899999995, \"lon\": -111.9502414}, {\"name\": \"Soup Kitchen\", \"address\": \"Soup Kitchen, 422 W 600 N, Salt Lake City, UT 84103\", \"avg_rating\": 4.3, \"num_of_reviews\": 188, \"price\": \"$\", \"categories\": \"Cafe\", \"slchd_establishment_key\": null, \"lat\": 40.782798, \"lon\": -111.903457}, {\"name\": \"El Cabrito\", \"address\": \"El Cabrito, 956 1000 N, Salt Lake City, UT 84116\", \"avg_rating\": 4.2, \"num_of_reviews\": 997, \"price\": \"$\", \"categories\": \"Mexican restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.791522, \"lon\": -111.9191076}, {\"name\": \"Don Daniel's Mexican Grill & Cantina\", \"address\": \"Don Daniel's Mexican Grill & Cantina, 1017N 900 W, Salt Lake City, UT 84116\", \"avg_rating\": 4.2, \"num_of_reviews\": 695, \"price\": \"$$\", \"categories\": \"Family restaurant, Seafood restaurant, Bar & grill, Mexican restaurant\", \"slchd_establishment_key\": \"DON DANIELS MEXICAN GRILL & CANTINA|1017 N 900 W|SALT LAKE CITY\", \"lat\": 40.7914924, \"lon\": -111.9174575}, {\"name\": \"ANGELITOS MEXICAN RESTAURANT & PALETERIA\", \"address\": \"ANGELITOS MEXICAN RESTAURANT & PALETERIA, 1625 W 700 N, Salt Lake City, UT 84116\", \"avg_rating\": 4.2, \"num_of_reviews\": 178, \"price\": \"$\", \"categories\": \"Candy store, Mexican restaurant, Sundae restaurant, Family restaurant, Taco restaurant, Snack bar\", \"slchd_establishment_key\": null, \"lat\": 40.784043, \"lon\": -111.93734}, {\"name\": \"Antojitos Do\\u00f1a Julia\", \"address\": \"Antojitos Do\\u00f1a Julia, 1447 W 1000 N, Salt Lake City, UT 84116\", \"avg_rating\": 4.2, \"num_of_reviews\": 157, \"price\": null, \"categories\": \"Mexican restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.790851499999995, \"lon\": -111.9320373}, {\"name\": \"Costa Vida\", \"address\": \"Costa Vida, 375 N Terminal Dr, Salt Lake City, UT 84116\", \"avg_rating\": 4.2, \"num_of_reviews\": 138, \"price\": \"$$\", \"categories\": \"Mexican restaurant, Fast food restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.7771207, \"lon\": -111.9814527}, {\"name\": \"Roberts Restaurant\", \"address\": \"Roberts Restaurant, 145 N Wright Brothers Dr, Salt Lake City, UT 84116\", \"avg_rating\": 4.1, \"num_of_reviews\": 774, \"price\": \"$\", \"categories\": \"American restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.772498899999995, \"lon\": -112.0066528}, {\"name\": \"Rancherito's Mexican Food\", \"address\": \"Rancherito's Mexican Food, 775 W North Temple, Salt Lake City, UT 84116\", \"avg_rating\": 4.0, \"num_of_reviews\": 1238, \"price\": \"$\", \"categories\": \"Restaurant, Mexican restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.771091, \"lon\": -111.9135443}, {\"name\": \"Admiral Byrd Food Court\", \"address\": \"Admiral Byrd Food Court, 5500 Amelia Earhart Dr, Salt Lake City, UT 84116, United States\", \"avg_rating\": 4.0, \"num_of_reviews\": 118, \"price\": null, \"categories\": \"Diner\", \"slchd_establishment_key\": null, \"lat\": 40.7776219, \"lon\": -112.0231828}, {\"name\": \"Perkins Restaurant & Bakery\", \"address\": \"Perkins Restaurant & Bakery, 230 North Admiral Byrd Rd, Salt Lake City, UT 84116\", \"avg_rating\": 3.8, \"num_of_reviews\": 618, \"price\": \"$$\", \"categories\": \"Bakery, Family restaurant, American restaurant, Breakfast restaurant, Restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.7733433, \"lon\": -112.0218214}, {\"name\": \"Arby's\", \"address\": \"Arby's, 25 N Redwood Rd, Salt Lake City, UT 84116\", \"avg_rating\": 3.7, \"num_of_reviews\": 1084, \"price\": \"$\", \"categories\": \"Deli, Fast food restaurant, American restaurant, Sandwich shop, Takeout Restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.7698828, \"lon\": -111.9402357}, {\"name\": \"Amelia\\u2019s Grill & Bar\", \"address\": \"Amelia\\u2019s Grill & Bar, 5575 W Amelia Earhart Dr, Salt Lake City, UT 84116\", \"avg_rating\": 3.7, \"num_of_reviews\": 478, \"price\": \"$$\", \"categories\": \"Restaurant, Pub, Bar & grill, Bar, American restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.775872, \"lon\": -112.0238546}, {\"name\": \"QDOBA Mexican Eats\", \"address\": \"QDOBA Mexican Eats, Intrnl Airport, 776 N Terminal Drive, HBFATG, Salt Lake City, UT 84116\", \"avg_rating\": 3.7, \"num_of_reviews\": 188, \"price\": \"$\", \"categories\": \"Tex-Mex restaurant, Fast food restaurant, Bar & grill, Mexican restaurant, Delivery service, Caterer, Restaurant, Brunch restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.7866133, \"lon\": -111.9818541}, {\"name\": \"Denny's\", \"address\": \"Denny's, 1701 W North Temple, Salt Lake City, UT 84116, United States\", \"avg_rating\": 3.6, \"num_of_reviews\": 1948, \"price\": \"\\u20a9\", \"categories\": \"Breakfast restaurant, Diner, American restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.7711808, \"lon\": -111.9396979}, {\"name\": \"La Frontera Cafe\", \"address\": \"La Frontera Cafe, 1236 W 400 S, Salt Lake City, UT 84104\", \"avg_rating\": 3.6, \"num_of_reviews\": 453, \"price\": \"$\", \"categories\": \"Mexican restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.7608891, \"lon\": -111.9267765}, {\"name\": \"Taco Bell\", \"address\": \"Taco Bell, 1758 W North Temple, Salt Lake City, UT 84116\", \"avg_rating\": 3.5, \"num_of_reviews\": 1013, \"price\": \"$\", \"categories\": \"Taco restaurant, Takeout Restaurant, Burrito restaurant, Lunch restaurant, Vegetarian restaurant, Breakfast restaurant, Restaurant, Mexican restaurant, Fast food restaurant, Tex-Mex restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.7719927, \"lon\": -111.9410215}, {\"name\": \"McDonald's\", \"address\": \"McDonald's, 776 N Terminal Dr, Salt Lake City, UT 84116\", \"avg_rating\": 3.5, \"num_of_reviews\": 585, \"price\": \"$\", \"categories\": \"Fast food restaurant, Breakfast restaurant, Restaurant, Coffee shop, Sandwich shop, Hamburger restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.7870637, \"lon\": -111.9825315}, {\"name\": \"Little Caesars Pizza\", \"address\": \"Little Caesars Pizza, 1625 W 700 N SUITE G, Salt Lake City, UT 84116\", \"avg_rating\": 3.5, \"num_of_reviews\": 284, \"price\": \"$\", \"categories\": \"Chicken wings restaurant, Pizza delivery, Fast food restaurant, Pizza restaurant, Pizza Takeout, American restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.78429, \"lon\": -111.93781}, {\"name\": \"A&W Restaurant\", \"address\": \"A&W Restaurant, 132 N Redwood Rd, Salt Lake City, UT 84116\", \"avg_rating\": 3.4, \"num_of_reviews\": 178, \"price\": \"$\", \"categories\": \"Fast food restaurant, American restaurant, Hamburger restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.772310399999995, \"lon\": -111.9389048}, {\"name\": \"McDonald's\", \"address\": \"McDonald's, 916 W North Temple, Salt Lake City, UT 84116\", \"avg_rating\": 3.3, \"num_of_reviews\": 961, \"price\": \"$\", \"categories\": \"Hamburger restaurant, Breakfast restaurant, Restaurant, Coffee shop, Sandwich shop, Fast food restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.771893899999995, \"lon\": -111.9185771}, {\"name\": \"French Meadow Bakery Caf\\u00e9\", \"address\": \"French Meadow Bakery Caf\\u00e9, Salt Lake City International Airport, 776 N Terminal Dr, Salt Lake City, UT 84116\", \"avg_rating\": 3.1, \"num_of_reviews\": 304, \"price\": null, \"categories\": \"Cafe, Takeout Restaurant, Bakery, Sandwich shop\", \"slchd_establishment_key\": null, \"lat\": 40.7867015, \"lon\": -111.9791109}, {\"name\": \"McDonald's\", \"address\": \"McDonald's, 1665 W 700 N, Salt Lake City, UT 84116\", \"avg_rating\": 2.9, \"num_of_reviews\": 1627, \"price\": \"$\", \"categories\": \"Fast food restaurant, Sandwich shop, Coffee shop, Hamburger restaurant, Restaurant, Breakfast restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.7842703, \"lon\": -111.938391}]}\n\nAction: run_sql({'query': \"SELECT name, address, slchd_establishment_key, avg_rating, num_of_reviews\\nFROM establishments\\nWHERE name ILIKE '%Chubby%' OR name ILIKE '%Santo Taco%' OR name ILIKE '%El Cabrito%'\\n   OR name ILIKE '%Hacienda Mexican%' OR name ILIKE '%El Asadero%' OR name ILIKE '%El Jaripeo%'\\n   OR name ILIKE '%Rancherito%' OR name ILIKE '%Denny%'\\n  AND address ILIKE '%84116%';\"})\n\nObservation: {\"row_count\": 40, \"truncated\": false, \"rows\": [{\"name\": \"El Jaripeo Tacos [Harmons Parking lot ]\", \"address\": \"El Jaripeo Tacos [Harmons Parking lot ], harmons parking lot, 3955 W 3500 S, West Valley City, UT 84120\", \"slchd_establishment_key\": null, \"avg_rating\": 3.8, \"num_of_reviews\": 38}, {\"name\": \"El JARIPEO TACOS (smith's parking 4000 west)\", \"address\": \"El JARIPEO TACOS (smith's parking 4000 west), 4643 4000 W, West Valley City, UT 84120\", \"slchd_establishment_key\": null, \"avg_rating\": 4.3, \"num_of_reviews\": 18}, {\"name\": \"El Asadero\", \"address\": \"El Asadero, 3205 State St, South Salt Lake, UT 84115\", \"slchd_establishment_key\": null, \"avg_rating\": 3.7, \"num_of_reviews\": 7}, {\"name\": \"El Jaripeo Grill Mexican Food\", \"address\": \"El Jaripeo Grill Mexican Food, 1259 S Redwood Rd, Salt Lake City, UT 84104\", \"slchd_establishment_key\": null, \"avg_rating\": 4.1, \"num_of_reviews\": 125}, {\"name\": \"Rancherito's Mexican Food\", \"address\": \"Rancherito's Mexican Food, 1860 Redwood Rd, Salt Lake City, UT 84104\", \"slchd_establishment_key\": null, \"avg_rating\": 4.1, \"num_of_reviews\": 913}, {\"name\": \"Denny's\", \"address\": \"Denny's, 1701 W North Temple, Salt Lake City, UT 84116, United States\", \"slchd_establishment_key\": null, \"avg_rating\": 3.6, \"num_of_reviews\": 1948}, {\"name\": \"Rancherito's\", \"address\": \"Rancherito's, 1230 N State St, Provo, UT 84604, United States\", \"slchd_establishment_key\": null, \"avg_rating\": 3.9, \"num_of_reviews\": 498}, {\"name\": \"Rancherito's Mexican Food\", \"address\": \"Rancherito's Mexican Food, 423 Main St, Layton, UT 84041, United States\", \"slchd_establishment_key\": null, \"avg_rating\": 4.2, \"num_of_reviews\": 1308}, {\"name\": \"El Jaripeo Taco Truck (Rose Park)\", \"address\": \"El Jaripeo Taco Truck (Rose Park), 1188-1198 600 N, Salt Lake City, UT 84116\", \"slchd_establishment_key\": null, \"avg_rating\": 4.8, \"num_of_reviews\": 58}, {\"name\": \"Mi Rancherito Mexican Restaurant\", \"address\": \"Mi Rancherito Mexican Restaurant, 540 Topaz Blvd, Delta, UT 84624\", \"slchd_establishment_key\": null, \"avg_rating\": 4.2, \"num_of_reviews\": 208}, {\"name\": \"El Asadero Mexican Food\", \"address\": \"El Asadero Mexican Food, 1011 W North Temple, Salt Lake City, UT 84116\", \"slchd_establishment_key\": null, \"avg_rating\": 4.4, \"num_of_reviews\": 438}, {\"name\": \"Chubby's Cafe\", \"address\": \"Chubby's Cafe, 855 Turf Farm Rd, Payson, UT 84651\", \"slchd_establishment_key\": null, \"avg_rating\": 4.8, \"num_of_reviews\": 168}, {\"name\": \"Hacienda Mexican Grill\", \"address\": \"Hacienda Mexican Grill, 797 N Redwood Rd, Salt Lake City, UT 84116\", \"slchd_establishment_key\": null, \"avg_rating\": 4.5, \"num_of_reviews\": 308}, {\"name\": \"Rancheritos Mexican Food\", \"address\": \"Rancheritos Mexican Food, 12642 S Redwood Rd, Riverton, UT 84065\", \"slchd_establishment_key\": null, \"avg_rating\": 3.8, \"num_of_reviews\": 86}, {\"name\": \"Mi Rancherito\", \"address\": \"Mi Rancherito, 242 N Main St, Spanish Fork, UT 84660\", \"slchd_establishment_key\": null, \"avg_rating\": 4.3, \"num_of_reviews\": 357}, {\"name\": \"Chubby's Cafe Vineyard\", \"address\": \"Chubby's Cafe Vineyard, 576 N Mill Rd, Vineyard, UT 84058\", \"slchd_establishment_key\": null, \"avg_rating\": 4.7, \"num_of_reviews\": 728}, {\"name\": \"Rancheritos Mexican Food\", \"address\": \"Rancheritos Mexican Food, 46 E 1230 N St, Provo, UT 84604\", \"slchd_establishment_key\": null, \"avg_rating\": 4.2, \"num_of_reviews\": 503}, {\"name\": \"Rancheritos Mexican Food\", \"address\": \"Rancheritos Mexican Food, 278 E State Rd, Pleasant Grove, UT 84062\", \"slchd_establishment_key\": null, \"avg_rating\": 4.2, \"num_of_reviews\": 603}, {\"name\": \"El Cabrito\", \"address\": \"El Cabrito, 956 1000 N, Salt Lake City, UT 84116\", \"slchd_establishment_key\": null, \"avg_rating\": 4.2, \"num_of_reviews\": 997}, {\"name\": \"Rancheritos Mexican Food\", \"address\": \"Rancheritos Mexican Food, 960 S University Ave, Provo, UT 84601\", \"slchd_establishment_key\": null, \"avg_rating\": 3.8, \"num_of_reviews\": 588}, {\"name\": \"Chubby's Cafe Saratoga Springs\", \"address\": \"Chubby's Cafe Saratoga Springs, 1284 N Redwood Rd, Saratoga Springs, UT 84045\", \"slchd_establishment_key\": null, \"avg_rating\": 4.6, \"num_of_reviews\": 1558}, {\"name\": \"Rancherito's Mexican Food\", \"address\": \"Rancherito's Mexican Food, 775 W North Temple, Salt Lake City, UT 84116\", \"slchd_establishment_key\": null, \"avg_rating\": 4.0, \"num_of_reviews\": 1238}, {\"name\": \"Chubby's Mexican Restaurant\", \"address\": \"Chubby's Mexican Restaurant, 955 N 1400 W, Salt Lake City, UT 84116\", \"slchd_establishment_key\": null, \"avg_rating\": 4.5, \"num_of_reviews\": 1316}, {\"name\": \"Santo Taco\", \"address\": \"Santo Taco, 910 900 W, Salt Lake City, UT 84116\", \"slchd_establishment_key\": null, \"avg_rating\": 4.6, \"num_of_reviews\": 758}, {\"name\": \"Rancheritos Mexican Food\", \"address\": \"Rancheritos Mexican Food, 3527 Washington Blvd, Ogden, UT 84403\", \"slchd_establishment_key\": null, \"avg_rating\": 4.0, \"num_of_reviews\": 1053}, {\"name\": \"Rancherito's Mexican Food\", \"address\": \"Rancherito's Mexican Food, 4735 Highland Dr, Holladay, UT 84117\", \"slchd_establishment_key\": null, \"avg_rating\": 4.2, \"num_of_reviews\": 1145}, {\"name\": \"Rancheritos Mexican Food\", \"address\": \"Rancheritos Mexican Food, 12250 State St, Draper, UT 84020\", \"slchd_establishment_key\": null, \"avg_rating\": 4.1, \"num_of_reviews\": 944}, {\"name\": \"Rancherito's Mexican Food\", \"address\": \"Rancherito's Mexican Food, 3455 S 5600 W, Salt Lake City, UT 84104\", \"slchd_establishment_key\": null, \"avg_rating\": 3.9, \"num_of_reviews\": 1408}, {\"name\": \"Rancherito's\", \"address\": \"Rancherito's, 7849 S Redwood Rd, West Jordan, UT 84088\", \"slchd_establishment_key\": null, \"avg_rating\": 4.0, \"num_of_reviews\": 846}, {\"name\": \"Rancherito's Mexican Food\", \"address\": \"Rancherito's Mexican Food, 3705 W 5400 S, Taylorsville, UT 84129\", \"slchd_establishment_key\": null, \"avg_rating\": 3.7, \"num_of_reviews\": 668}, {\"name\": \"Rancheritos Mexican Food\", \"address\": \"Rancheritos Mexican Food, 866 Antelope Dr, Clearfield, UT 84015\", \"slchd_establishment_key\": null, \"avg_rating\": 4.0, \"num_of_reviews\": 445}, {\"name\": \"MI Rancherito Mexican Restaurant\", \"address\": \"MI Rancherito Mexican Restaurant, 85 E Utah Ave, Payson, UT 84651\", \"slchd_establishment_key\": null, \"avg_rating\": 4.3, \"num_of_reviews\": 564}, {\"name\": \"Rancherito's Mexican Food\", \"address\": \"Rancherito's Mexican Food, 1147 Main St, Logan, UT 84341\", \"slchd_establishment_key\": null, \"avg_rating\": 4.1, \"num_of_reviews\": 892}, {\"name\": \"Chubby's Cafe Pleasant Grove\", \"address\": \"Chubby's Cafe Pleasant Grove, 336 S Main St, Pleasant Grove, UT 84062\", \"slchd_establishment_key\": null, \"avg_rating\": 4.7, \"num_of_reviews\": 2430}, {\"name\": \"Rancheritos Mexican Food\", \"address\": \"Rancheritos Mexican Food, 66 Center St, Orem, UT 84057\", \"slchd_establishment_key\": null, \"avg_rating\": 3.7, \"num_of_reviews\": 917}, {\"name\": \"Chubby's Cafe Tooele\", \"address\": \"Chubby's Cafe Tooele, 1211 N Main St, Tooele, UT 84074\", \"slchd_establishment_key\": null, \"avg_rating\": 4.6, \"num_of_reviews\": 661}, {\"name\": \"Rancherito's Mexican Food\", \"address\": \"Rancherito's Mexican Food, 343 Frontage Rd, Centerville, UT 84014\", \"slchd_establishment_key\": null, \"avg_rating\": 4.2, \"num_of_reviews\": 468}, {\"name\": \"Rancherito's Mexican Food\", \"address\": \"Rancherito's Mexican Food, 5650 S 1900 W, Roy, UT 84067\", \"slchd_establishment_key\": null, \"avg_rating\": 4.0, \"num_of_reviews\": 1143}, {\"name\": \"Rancheritos\", \"address\": \"Rancheritos, 735 E 9400 S, Sandy, UT 84094\", \"slchd_establishment_key\": null, \"avg_rating\": 3.4, \"num_of_reviews\": 538}, {\"name\": \"Rancherito's Mexican Food\", \"address\": \"Rancherito's Mexican Food, 3450 S State St, South Salt Lake, UT 84115\", \"slchd_establishment_key\": null, \"avg_rating\": 4.1, \"num_of_reviews\": 1383}]}\n\nAction: run_sql({'query': \"SELECT slchd_establishment_key, name, address, city\\nFROM establishment_keys\\nWHERE address ILIKE '%84116%' OR address ILIKE '%1400 W%' OR address ILIKE '%1000 N%' OR address ILIKE '%900 W%' OR address ILIKE '%North Temple%' OR address ILIKE '%600 N%';\"})\n\nObservation: {\"row_count\": 30, \"truncated\": false, \"rows\": [{\"slchd_establishment_key\": \"23 N 900 W SLC|23 N 900 W|SALT LAKE CITY\", \"name\": \"23 N 900 W SLC\", \"address\": \"23 N 900 W\", \"city\": \"SALT LAKE CITY\"}, {\"slchd_establishment_key\": \"ANTOJITOS DONA JULIA|1447 W 1000 N|SALT LAKE CITY\", \"name\": \"ANTOJITOS DONA JULIA\", \"address\": \"1447 W 1000 N\", \"city\": \"SALT LAKE CITY\"}, {\"slchd_establishment_key\": \"ANTOJITOS MEXICANOS EL CABRITO|956 W 1000 N|SALT LAKE CITY\", \"name\": \"ANTOJITOS MEXICANOS EL CABRITO\", \"address\": \"956 W 1000 N\", \"city\": \"SALT LAKE CITY\"}, {\"slchd_establishment_key\": \"BURGER KING 31574|1660 W NORTH TEMPLE ST|SALT LAKE CITY\", \"name\": \"BURGER KING 31574\", \"address\": \"1660 W NORTH TEMPLE ST\", \"city\": \"SALT LAKE CITY\"}, {\"slchd_establishment_key\": \"CARLS JR #21|1726 W NORTH TEMPLE|SALT LAKE CITY\", \"name\": \"CARLS JR #21\", \"address\": \"1726 W NORTH TEMPLE\", \"city\": \"SALT LAKE CITY\"}, {\"slchd_establishment_key\": \"CHURCH OFFICE BUILDING-BANQUET KITCHEN|50 E NORTH TEMPLE ST|SALT LAKE CITY\", \"name\": \"CHURCH OFFICE BUILDING-BANQUET KITCHEN\", \"address\": \"50 E NORTH TEMPLE ST\", \"city\": \"SALT LAKE CITY\"}, {\"slchd_establishment_key\": \"CULTURE COFFEE|285 N 900 W|SALT LAKE CITY\", \"name\": \"CULTURE COFFEE\", \"address\": \"285 N 900 W\", \"city\": \"SALT LAKE CITY\"}, {\"slchd_establishment_key\": \"DENNYS #7480|1701 W NORTH TEMPLE ST|SALT LAKE CITY\", \"name\": \"DENNYS #7480\", \"address\": \"1701 W NORTH TEMPLE ST\", \"city\": \"SALT LAKE CITY\"}, {\"slchd_establishment_key\": \"DOMINOS|1156 W 600 N|SALT LAKE CITY\", \"name\": \"DOMINOS\", \"address\": \"1156 W 600 N\", \"city\": \"SALT LAKE CITY\"}, {\"slchd_establishment_key\": \"DON DANIELS MEXICAN GRILL & CANTINA|1017 N 900 W|SALT LAKE CITY\", \"name\": \"DON DANIELS MEXICAN GRILL & CANTINA\", \"address\": \"1017 N 900 W\", \"city\": \"SALT LAKE CITY\"}, {\"slchd_establishment_key\": \"FLYING J TRAVEL CENTER #746|2025 S 900 W|SALT LAKE CITY\", \"name\": \"FLYING J TRAVEL CENTER #746\", \"address\": \"2025 S 900 W\", \"city\": \"SALT LAKE CITY\"}, {\"slchd_establishment_key\": \"HABANERO CHILE|1245 S 900 W|SALT LAKE CITY\", \"name\": \"HABANERO CHILE\", \"address\": \"1245 S 900 W\", \"city\": \"SALT LAKE CITY\"}, {\"slchd_establishment_key\": \"ICO FAIRBOURNE STATION - POOL|2900 W LEHMAN AVE|WEST VALLEY CITY\", \"name\": \"ICO FAIRBOURNE STATION - POOL\", \"address\": \"2900 W LEHMAN AVE\", \"city\": \"WEST VALLEY CITY\"}, {\"slchd_establishment_key\": \"ICO FAIRBOURNE STATION- W/P|2900 W LEHMAN AVE|WEST VALLEY CITY\", \"name\": \"ICO FAIRBOURNE STATION- W/P\", \"address\": \"2900 W LEHMAN AVE\", \"city\": \"WEST VALLEY CITY\"}, {\"slchd_establishment_key\": \"INDEPENDENCE DAY DRONE SHOW 2025|1060 S 900 W|SALT LAKE CITY\", \"name\": \"INDEPENDENCE DAY DRONE SHOW 2025\", \"address\": \"1060 S 900 W\", \"city\": \"SALT LAKE CITY\"}, {\"slchd_establishment_key\": \"INDEPENDENCE DAY DRONE SHOW 2026|1060 S 900 W|SALT LAKE CITY\", \"name\": \"INDEPENDENCE DAY DRONE SHOW 2026\", \"address\": \"1060 S 900 W\", \"city\": \"SALT LAKE CITY\"}, {\"slchd_establishment_key\": \"JACKSONS #150|1704 W NORTH TEMPLE ST|SALT LAKE CITY\", \"name\": \"JACKSONS #150\", \"address\": \"1704 W NORTH TEMPLE ST\", \"city\": \"SALT LAKE CITY\"}, {\"slchd_establishment_key\": \"MCDONALDS #5688|3900 W 5400 S|TAYLORSVILLE\", \"name\": \"MCDONALDS #5688\", \"address\": \"3900 W 5400 S\", \"city\": \"TAYLORSVILLE\"}, {\"slchd_establishment_key\": \"MCDONALDS #6396|916 W NORTH TEMPLE ST|SALT LAKE CITY\", \"name\": \"MCDONALDS #6396\", \"address\": \"916 W NORTH TEMPLE ST\", \"city\": \"SALT LAKE CITY\"}, {\"slchd_establishment_key\": \"NICOS RESTAURANT|1458 W NORTH TEMPLE ST|SALT LAKE CITY\", \"name\": \"NICOS RESTAURANT\", \"address\": \"1458 W NORTH TEMPLE ST\", \"city\": \"SALT LAKE CITY\"}, {\"slchd_establishment_key\": \"PAPA JOHNS PIZZA #2074|1230 W 600 N|SALT LAKE CITY\", \"name\": \"PAPA JOHNS PIZZA #2074\", \"address\": \"1230 W 600 N\", \"city\": \"SALT LAKE CITY\"}, {\"slchd_establishment_key\": \"QUALITY QUICK STOP|938 N 900 W|SALT LAKE CITY\", \"name\": \"QUALITY QUICK STOP\", \"address\": \"938 N 900 W\", \"city\": \"SALT LAKE CITY\"}, {\"slchd_establishment_key\": \"RANCHERITOS|775 W NORTH TEMPLE|SALT LAKE CITY\", \"name\": \"RANCHERITOS\", \"address\": \"775 W NORTH TEMPLE\", \"city\": \"SALT LAKE CITY\"}, {\"slchd_establishment_key\": \"RUNWAY CAFE|2211 W NORTH TEMPLE ST|SALT LAKE CITY\", \"name\": \"RUNWAY CAFE\", \"address\": \"2211 W NORTH TEMPLE ST\", \"city\": \"SALT LAKE CITY\"}, {\"slchd_establishment_key\": \"SALVATION ARMY #6E6YR|438 S 900 W|SALT LAKE CITY\", \"name\": \"SALVATION ARMY #6E6YR\", \"address\": \"438 S 900 W\", \"city\": \"SALT LAKE CITY\"}, {\"slchd_establishment_key\": \"SALVATION ARMY|438 S 900 W|SALT LAKE CITY\", \"name\": \"SALVATION ARMY\", \"address\": \"438 S 900 W\", \"city\": \"SALT LAKE CITY\"}, {\"slchd_establishment_key\": \"SHA MUU|23 N 900 W|SALT LAKE CITY\", \"name\": \"SHA MUU\", \"address\": \"23 N 900 W\", \"city\": \"SALT LAKE CITY\"}, {\"slchd_establishment_key\": \"UTAH CULTURAL CELEBRATION CENTER - KITCHEN|3100 S 1400 W|WEST VALLEY CITY\", \"name\": \"UTAH CULTURAL CELEBRATION CENTER - KITCHEN\", \"address\": \"3100 S 1400 W\", \"city\": \"WEST VALLEY CITY\"}, {\"slchd_establishment_key\": \"UTAH FOOD BANK|3150 S 900 W|SOUTH SALT LAKE\", \"name\": \"UTAH FOOD BANK\", \"address\": \"3150 S 900 W\", \"city\": \"SOUTH SALT LAKE\"}, {\"slchd_establishment_key\": \"XIMBO 28|422 W 600 N|SALT LAKE CITY\", \"name\": \"XIMBO 28\", \"address\": \"422 W 600 N\", \"city\": \"SALT LAKE CITY\"}]}\n\nAction: run_sql({'query': \"SELECT slchd_establishment_key, name, address, city\\nFROM establishment_keys\\nWHERE name ILIKE '%chubby%' OR name ILIKE '%santo%' OR name ILIKE '%jaripeo%' OR name ILIKE '%hacienda%';\"})\n\nObservation: {\"row_count\": 3, \"truncated\": false, \"rows\": [{\"slchd_establishment_key\": \"EL JARIPEO 8 #267390A|7235 W 3500 S|MAGNA\", \"name\": \"EL JARIPEO 8 #267390A\", \"address\": \"7235 W 3500 S\", \"city\": \"MAGNA\"}, {\"slchd_establishment_key\": \"EL JARIPEO GRILL ON THE WHEEL #3T7LA|1259 S REDWOOD RD|SALT LAKE CITY\", \"name\": \"EL JARIPEO GRILL ON THE WHEEL #3T7LA\", \"address\": \"1259 S REDWOOD RD\", \"city\": \"SALT LAKE CITY\"}, {\"slchd_establishment_key\": \"SANTORINIS AND SWIG|9256 S STATE ST|SANDY\", \"name\": \"SANTORINIS AND SWIG\", \"address\": \"9256 S STATE ST\", \"city\": \"SANDY\"}]}\n\nAction: run_sql({'query': \"SELECT i.inspection_date, i.inspection_score, it.description as inspection_type,\\n       e.slchd_establishment_key\\nFROM inspections i\\nLEFT JOIN inspection_types it ON i.inspection_type_id = it.inspection_type_id\\nJOIN establishment_keys e ON i.slchd_establishment_key = e.slchd_establishment_key\\nWHERE e.slchd_establishment_key IN (\\n    'ANTOJITOS MEXICANOS EL CABRITO|956 W 1000 N|SALT LAKE CITY',\\n    'RANCHERITOS|775 W NORTH TEMPLE|SALT LAKE CITY',\\n    'DENNYS #7480|1701 W NORTH TEMPLE ST|SALT LAKE CITY'\\n)\\nORDER BY i.inspection_date DESC\\nLIMIT 15;\"})\n\nObservation: {\"row_count\": 15, \"truncated\": false, \"rows\": [{\"inspection_date\": \"2025-10-24 00:00:00\", \"inspection_score\": 13, \"inspection_type\": \"Routine\", \"slchd_establishment_key\": \"DENNYS #7480|1701 W NORTH TEMPLE ST|SALT LAKE CITY\"}, {\"inspection_date\": \"2025-04-22 00:00:00\", \"inspection_score\": 6, \"inspection_type\": \"Routine\", \"slchd_establishment_key\": \"RANCHERITOS|775 W NORTH TEMPLE|SALT LAKE CITY\"}, {\"inspection_date\": \"2025-04-21 00:00:00\", \"inspection_score\": 22, \"inspection_type\": \"Critical Item\", \"slchd_establishment_key\": \"DENNYS #7480|1701 W NORTH TEMPLE ST|SALT LAKE CITY\"}, {\"inspection_date\": \"2025-01-03 00:00:00\", \"inspection_score\": 3, \"inspection_type\": \"Routine\", \"slchd_establishment_key\": \"DENNYS #7480|1701 W NORTH TEMPLE ST|SALT LAKE CITY\"}, {\"inspection_date\": \"2024-12-17 00:00:00\", \"inspection_score\": 8, \"inspection_type\": \"Routine\", \"slchd_establishment_key\": \"ANTOJITOS MEXICANOS EL CABRITO|956 W 1000 N|SALT LAKE CITY\"}, {\"inspection_date\": \"2024-12-02 00:00:00\", \"inspection_score\": 11, \"inspection_type\": \"Routine\", \"slchd_establishment_key\": \"RANCHERITOS|775 W NORTH TEMPLE|SALT LAKE CITY\"}, {\"inspection_date\": \"2024-11-14 00:00:00\", \"inspection_score\": 0, \"inspection_type\": \"Critical Item\", \"slchd_establishment_key\": \"DENNYS #7480|1701 W NORTH TEMPLE ST|SALT LAKE CITY\"}, {\"inspection_date\": \"2024-07-02 00:00:00\", \"inspection_score\": 2, \"inspection_type\": \"Routine\", \"slchd_establishment_key\": \"DENNYS #7480|1701 W NORTH TEMPLE ST|SALT LAKE CITY\"}, {\"inspection_date\": \"2024-06-07 00:00:00\", \"inspection_score\": 19, \"inspection_type\": \"Routine\", \"slchd_establishment_key\": \"RANCHERITOS|775 W NORTH TEMPLE|SALT LAKE CITY\"}, {\"inspection_date\": \"2024-02-21 00:00:00\", \"inspection_score\": 47, \"inspection_type\": \"Routine\", \"slchd_establishment_key\": \"DENNYS #7480|1701 W NORTH TEMPLE ST|SALT LAKE CITY\"}, {\"inspection_date\": \"2024-01-23 00:00:00\", \"inspection_score\": 5, \"inspection_type\": \"Routine\", \"slchd_establishment_key\": \"RANCHERITOS|775 W NORTH TEMPLE|SALT LAKE CITY\"}, {\"inspection_date\": \"2023-12-19 00:00:00\", \"inspection_score\": 23, \"inspection_type\": \"Routine\", \"slchd_establishment_key\": \"ANTOJITOS MEXICANOS EL CABRITO|956 W 1000 N|SALT LAKE CITY\"}, {\"inspection_date\": \"2023-12-14 00:00:00\", \"inspection_score\": 32, \"inspection_type\": \"Followup\", \"slchd_establishment_key\": \"DENNYS #7480|1701 W NORTH TEMPLE ST|SALT LAKE CITY\"}, {\"inspection_date\": \"2023-10-18 00:00:00\", \"inspection_score\": 40, \"inspection_type\": \"Routine\", \"slchd_establishment_key\": \"DENNYS #7480|1701 W NORTH TEMPLE ST|SALT LAKE CITY\"}, {\"inspection_date\": \"2023-07-12 00:00:00\", \"inspection_score\": 16, \"inspection_type\": \"Routine\", \"slchd_establishment_key\": \"RANCHERITOS|775 W NORTH TEMPLE|SALT LAKE CITY\"}]}\n\nAction: run_sql({'query': \"SELECT e.name, e.avg_rating, e.num_of_reviews\\nFROM establishments e\\nWHERE e.name IN (\\n    'El Jaripeo Taco Truck (Rose Park)',\\n    'Santo Taco',\\n    'Chubby\\\\'s Mexican Restaurant',\\n    'Hacienda Mexican Grill',\\n    'El Asadero Mexican Food',\\n    'El Cabrito',\\n    'Rancherito\\\\'s Mexican Food',\\n    'Denny\\\\'s'\\n)\\nAND e.address ILIKE '%84116%'\\nORDER BY e.avg_rating DESC, e.num_of_reviews DESC;\"})\n\nObservation: SQL error: Parser Error: syntax error at or near \"s\"\n\nLINE 6:     'Chubby\\'s Mexican Restaurant',\n                     ^\n\nAction: run_sql({'query': \"SELECT e.name, e.avg_rating, e.num_of_reviews\\nFROM establishments e\\nWHERE (\\n    e.name ILIKE '%El Jaripeo Taco Truck%'\\n    OR e.name ILIKE '%Santo Taco%'\\n    OR e.name ILIKE '%Chubby''s Mexican Restaurant%'\\n    OR e.name ILIKE '%Hacienda Mexican Grill%'\\n    OR e.name ILIKE '%El Asadero Mexican Food%'\\n    OR e.name ILIKE '%El Cabrito%'\\n    OR e.name ILIKE '%Rancherito''s Mexican Food%'\\n    OR e.name ILIKE '%Denny''s%'\\n)\\nAND e.address ILIKE '%84116%'\\nORDER BY e.avg_rating DESC, e.num_of_reviews DESC;\"})\n\nObservation: {\"row_count\": 8, \"truncated\": false, \"rows\": [{\"name\": \"El Jaripeo Taco Truck (Rose Park)\", \"avg_rating\": 4.8, \"num_of_reviews\": 58}, {\"name\": \"Santo Taco\", \"avg_rating\": 4.6, \"num_of_reviews\": 758}, {\"name\": \"Chubby's Mexican Restaurant\", \"avg_rating\": 4.5, \"num_of_reviews\": 1316}, {\"name\": \"Hacienda Mexican Grill\", \"avg_rating\": 4.5, \"num_of_reviews\": 308}, {\"name\": \"El Asadero Mexican Food\", \"avg_rating\": 4.4, \"num_of_reviews\": 438}, {\"name\": \"El Cabrito\", \"avg_rating\": 4.2, \"num_of_reviews\": 997}, {\"name\": \"Rancherito's Mexican Food\", \"avg_rating\": 4.0, \"num_of_reviews\": 1238}, {\"name\": \"Denny's\", \"avg_rating\": 3.6, \"num_of_reviews\": 1948}]}\n\nAction: plot_chart({'query': \"SELECT e.name, e.avg_rating, e.num_of_reviews\\nFROM establishments e\\nWHERE (\\n    e.name ILIKE '%El Jaripeo Taco Truck%'\\n    OR e.name ILIKE '%Santo Taco%'\\n    OR e.name ILIKE '%Chubby''s Mexican Restaurant%'\\n    OR e.name ILIKE '%Hacienda Mexican Grill%'\\n    OR e.name ILIKE '%El Asadero Mexican Food%'\\n    OR e.name ILIKE '%El Cabrito%'\\n    OR e.name ILIKE '%Rancherito''s Mexican Food%'\\n    OR e.name ILIKE '%Denny''s%'\\n)\\nAND e.address ILIKE '%84116%'\\nORDER BY e.avg_rating DESC;\", 'title': 'Savory Breakfast Spots in & around Rose Park (SLC 84116) - Average Google Rating', 'y': 'avg_rating', 'chart_type': 'bar', 'x': 'name'})\n\nObservation: Chart created: 'Savory Breakfast Spots in & around Rose Park (SLC 84116) - Average Google Rating' (bar, 8 rows). It will be shown to the user below your answer.",
+  "timeline": [],
+  "messages": [
+    {
+      "type": "HumanMessage",
+      "content": "I\u2019m in the mood for breakfast, but don\u2019t feel like traveling far out of Rose Park. What do you recommend? I don\u2019t like sweet breakfasts."
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "get_schema",
+          "args": {},
+          "id": "call_882777",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 2027,
+        "output_tokens": 197,
+        "total_tokens": 2224,
+        "input_token_details": {
+          "cache_read": 0
+        },
+        "output_token_details": {
+          "reasoning": 187
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "Project food_health_viz {\n  database_type: 'DuckDB'\n}\n\nTable establishment_keys {\n  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']\n  name varchar [not null]\n  address varchar [not null]\n  city varchar [not null]\n  city_state_zip varchar\n  establishment_type varchar\n  source varchar [note: 'friend_slc | own_scrape']\n  slchd_lat double\n  slchd_lon double\n  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']\n\n  Note: 'SLCHD establishment list, one row per portal listing.'\n}\n\nTable category {\n  category_id integer [pk]\n  category varchar\n}\n\nTable establishments {\n  gmap_id varchar [pk]\n  name varchar\n  address varchar\n  description varchar\n  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']\n  avg_rating double\n  num_of_reviews integer\n  price varchar\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']\n\n  Note: 'One row per Google Local place \u2014 all restaurants, not just SLCHD-matched.'\n}\n\nTable establishment_attributes {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  attribute varchar [not null]\n\n  indexes { (gmap_id, attribute) [pk] }\n\n  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. \"Service options\") dropped.'\n}\n\nTable establishment_categories {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  category_id integer [ref: > category.category_id, not null]\n\n  indexes { (gmap_id, category_id) [pk] }\n}\n\nTable gmap_hours {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  day integer [not null, note: '0=Sun \u2026 6=Sat']\n  open_min bigint\n  open_max bigint\n\n  indexes { (gmap_id, day) [pk] }\n\n  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'\n}\n\nTable review {\n  user_id varchar\n  name varchar\n  time bigint\n  rating double\n  text varchar\n  resp varchar\n  gmap_id varchar [ref: > establishments.gmap_id]\n}\n\nTable inspection_types {\n  inspection_type_id integer [pk, note: 'parsed leading number, e.g. \"01 - Routine\" -> 1']\n  description varchar [note: 'e.g. \"Routine\"']\n}\n\nTable inspections {\n  inspection_id bigint [pk, increment]\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]\n  inspection_date date [not null]\n  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable \u2014 27 rows have no type']\n  inspection_score integer\n\n  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'\n}\n\nTable violation_codes {\n  violation_code_id integer [pk, increment]\n  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. \"4.5.18\"']\n  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']\n  critical boolean [not null]\n}\n\nTable violations {\n  violation_id bigint [pk, increment]\n  inspection_id bigint [ref: > inspections.inspection_id, not null]\n  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]\n  violation_description varchar [note: 'per-occurrence free text']\n  violation_occurrences integer\n  violation_cos boolean [note: 'corrected on site']\n  violation_phr varchar [note: 'public health rationale']\n\n  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'\n}\n",
+      "tool_call_id": "call_882777",
+      "name": "get_schema"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "SELECT name, address, ST_Y(geom) as lat, ST_X(geom) as lon, avg_rating, num_of_reviews\nFROM establishments\nWHERE address ILIKE '%Rose Park%' OR address ILIKE '%84116%' OR name ILIKE '%Rose Park%'\nLIMIT 20;"
+          },
+          "id": "call_590800",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 3253,
+        "output_tokens": 139,
+        "total_tokens": 3392,
+        "input_token_details": {
+          "cache_read": 0
+        },
+        "output_token_details": {
+          "reasoning": 52
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 20, \"truncated\": false, \"rows\": [{\"name\": \"Stinky Rays Bbq\", \"address\": \"Stinky Rays Bbq, 5500 W Amelia Earhart Dr, Salt Lake City, UT 84116\", \"lat\": 40.777696899999995, \"lon\": -112.0234694, \"avg_rating\": 4.6, \"num_of_reviews\": 8}, {\"name\": \"The Sapphire Mexican Grill\", \"address\": \"The Sapphire Mexican Grill, 2177 W North Temple, Salt Lake City, UT 84116\", \"lat\": 40.7709992, \"lon\": -111.9524006, \"avg_rating\": 2.9, \"num_of_reviews\": 8}, {\"name\": \"Midnimo restaurant\", \"address\": \"Midnimo restaurant, 55 N Redwood Rd Ste D, Salt Lake City, UT 84116\", \"lat\": 40.7707535, \"lon\": -111.9405123, \"avg_rating\": 5.0, \"num_of_reviews\": 5}, {\"name\": \"Panderia Lizbeth\", \"address\": \"Panderia Lizbeth, Salt Lake City, UT 84116\", \"lat\": 40.791427299999995, \"lon\": -111.9173613, \"avg_rating\": 4.4, \"num_of_reviews\": 8}, {\"name\": \"Just A Craving\", \"address\": \"Just A Craving, 1780 W North Temple West Side of parking lot, Salt Lake City, UT 84116\", \"lat\": 40.7720657, \"lon\": -111.9422852, \"avg_rating\": 4.9, \"num_of_reviews\": 18}, {\"name\": \"Refreskeria Mi Fiesta\", \"address\": \"Refreskeria Mi Fiesta, 1271 W 500 N, Salt Lake City, UT 84116\", \"lat\": 40.7798979, \"lon\": -111.9277962, \"avg_rating\": 4.0, \"num_of_reviews\": 18}, {\"name\": \"The Taco Man Don Rafa\", \"address\": \"The Taco Man Don Rafa, 874 W North Temple, Salt Lake City, UT 84116\", \"lat\": 40.7718024, \"lon\": -111.9159212, \"avg_rating\": 3.2, \"num_of_reviews\": 5}, {\"name\": \"Ultimate Food Essentials\", \"address\": \"Ultimate Food Essentials, 1737 N, Beck St, Salt Lake City, UT 84116\", \"lat\": 40.80475, \"lon\": -111.917005, \"avg_rating\": 4.1, \"num_of_reviews\": 16}, {\"name\": \"La Cocina Caribe\\u00f1a\", \"address\": \"La Cocina Caribe\\u00f1a, 1749 Crystal Rock Ave, Salt Lake City, UT 84116\", \"lat\": 40.802231899999995, \"lon\": -111.9409076, \"avg_rating\": 5.0, \"num_of_reviews\": 8}, {\"name\": \"Cafe Rio\", \"address\": \"Cafe Rio, Salt Lake City International Airport, Concourse A, near Gate A19, Salt Lake City, UT 84116\", \"lat\": 40.7856408, \"lon\": -111.9880758, \"avg_rating\": 2.3, \"num_of_reviews\": 8}, {\"name\": \"Wing Tips Bar + Bistro\", \"address\": \"Wing Tips Bar + Bistro, 5001 West, Wiley Post Way, Salt Lake City, UT 84116\", \"lat\": 40.7729521, \"lon\": -112.0111161, \"avg_rating\": 4.8, \"num_of_reviews\": 8}, {\"name\": \"Basilico\", \"address\": \"Basilico, 2110 W North Temple, Salt Lake City, UT 84116\", \"lat\": 40.7719656, \"lon\": -111.9519328, \"avg_rating\": 3.5, \"num_of_reviews\": 36}, {\"name\": \"Pizza Palace\", \"address\": \"Pizza Palace, 5500 W Amelia Earhart Dr #306, Salt Lake City, UT 84116\", \"lat\": 40.7776299, \"lon\": -112.0231381, \"avg_rating\": 3.8, \"num_of_reviews\": 16}, {\"name\": \"The Bistro \\u2013 Eat. Drink. Connect.\\u00ae\", \"address\": \"The Bistro \\u2013 Eat. Drink. Connect.\\u00ae, 4843 W Douglas Corrigan Way, Salt Lake City, UT 84116\", \"lat\": 40.7713524, \"lon\": -112.0068333, \"avg_rating\": 3.8, \"num_of_reviews\": 48}, {\"name\": \"Mariscos Los Mochis Restaurant\", \"address\": \"Mariscos Los Mochis Restaurant, 1255 W 500 N, Salt Lake City, UT 84116\", \"lat\": 40.7800572, \"lon\": -111.9272966, \"avg_rating\": 4.2, \"num_of_reviews\": 88}, {\"name\": \"Admiral Byrd Food Court\", \"address\": \"Admiral Byrd Food Court, 5500 Amelia Earhart Dr, Salt Lake City, UT 84116, United States\", \"lat\": 40.7776219, \"lon\": -112.0231828, \"avg_rating\": 4.0, \"num_of_reviews\": 118}, {\"name\": \"Auntie Anne's\", \"address\": \"Auntie Anne's, 776 North, Terminal 1, Salt Lake City, UT 84116\", \"lat\": 40.7868164, \"lon\": -111.9789531, \"avg_rating\": 2.8, \"num_of_reviews\": 38}, {\"name\": \"Maverik Adventure's First Stop\", \"address\": \"Maverik Adventure's First Stop, 676 N Redwood Rd, Salt Lake City, UT 84116\", \"lat\": 40.784162599999995, \"lon\": -111.9389972, \"avg_rating\": 3.6, \"num_of_reviews\": 18}, {\"name\": \"Panda Buffet\", \"address\": \"Panda Buffet, 1025 North Temple, Salt Lake City, UT 84116\", \"lat\": 40.7712467, \"lon\": -111.920858, \"avg_rating\": 3.5, \"num_of_reviews\": 628}, {\"name\": \"Beans & Brews Coffeehouse (park & wait)\", \"address\": \"Beans & Brews Coffeehouse (park & wait), 375 N Terminal Dr STE 4, Salt Lake City, UT 84116\", \"lat\": 40.7772049, \"lon\": -111.9813712, \"avg_rating\": 3.7, \"num_of_reviews\": 27}]}",
+      "tool_call_id": "call_590800",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "SELECT e.gmap_id, e.name, e.address, e.avg_rating, e.num_of_reviews, ST_Y(e.geom) as lat, ST_X(e.geom) as lon,\n       STRING_AGG(DISTINCT c.category, ', ') as categories\nFROM establishments e\nLEFT JOIN establishment_categories ec ON e.gmap_id = ec.gmap_id\nLEFT JOIN category c ON ec.category_id = c.category_id\nWHERE ST_DWithin(e.geom, ST_Point(-111.925, 40.785)::GEOMETRY, 0.03) -- roughly 2 miles\nGROUP BY e.gmap_id, e.name, e.address, e.avg_rating, e.num_of_reviews, e.geom\nHAVING LOWER(STRING_AGG(DISTINCT c.category, ', ')) LIKE '%breakfast%'\n    OR LOWER(STRING_AGG(DISTINCT c.category, ', ')) LIKE '%diner%'\n    OR LOWER(STRING_AGG(DISTINCT c.category, ', ')) LIKE '%mexican%'\n    OR LOWER(STRING_AGG(DISTINCT c.category, ', ')) LIKE '%cafe%'\n    OR LOWER(STRING_AGG(DISTINCT c.category, ', ')) LIKE '%burrito%'\n    OR LOWER(STRING_AGG(DISTINCT c.category, ', ')) LIKE '%american%'\n    OR LOWER(e.name) LIKE '%breakfast%'\n    OR LOWER(e.name) LIKE '%cafe%'\n    OR LOWER(e.name) LIKE '%diner%'\n    OR LOWER(e.name) LIKE '%grill%'\n    OR LOWER(e.name) LIKE '%taco%'\n    OR LOWER(e.name) LIKE '%burrito%'\nORDER BY e.num_of_reviews DESC\nLIMIT 30;"
+          },
+          "id": "call_749713",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 5122,
+        "output_tokens": 620,
+        "total_tokens": 5742,
+        "input_token_details": {
+          "cache_read": 0
+        },
+        "output_token_details": {
+          "reasoning": 185
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 30, \"truncated\": false, \"rows\": [{\"gmap_id\": \"0x8752f456c3c9fc9b:0x9fd182e8a757e1b0\", \"name\": \"Red Iguana\", \"address\": \"Red Iguana, 736 W North Temple, Salt Lake City, UT 84116\", \"avg_rating\": 4.6, \"num_of_reviews\": 6646, \"lat\": 40.7718053, \"lon\": -111.9124897, \"categories\": \"Restaurant, Mexican restaurant\"}, {\"gmap_id\": \"0x8752f457817a4f8f:0x751cc3ccc1ac29f7\", \"name\": \"Red Iguana 2\", \"address\": \"Red Iguana 2, 866 W S Temple, Salt Lake City, UT 84116\", \"avg_rating\": 4.6, \"num_of_reviews\": 5356, \"lat\": 40.769692, \"lon\": -111.9161652, \"categories\": \"Restaurant, Mexican restaurant\"}, {\"gmap_id\": \"0x8752f50192b72d99:0x4aa1c9b50d6ca20a\", \"name\": \"Tucanos Brazilian Grill\", \"address\": \"Tucanos Brazilian Grill, 162 400 W, Salt Lake City, UT 84101\", \"avg_rating\": 4.3, \"num_of_reviews\": 3255, \"lat\": 40.7658138, \"lon\": -111.9028039, \"categories\": \"South American restaurant, Latin American restaurant, Salad shop, Brazilian restaurant, Steak house\"}, {\"gmap_id\": \"0x8752f4654ac5a097:0x6ab292a803235e36\", \"name\": \"Denny's\", \"address\": \"Denny's, 1701 W North Temple, Salt Lake City, UT 84116, United States\", \"avg_rating\": 3.6, \"num_of_reviews\": 1948, \"lat\": 40.7711808, \"lon\": -111.9396979, \"categories\": \"Diner, Breakfast restaurant, American restaurant\"}, {\"gmap_id\": \"0x8752f465a8068609:0x1bfcaf275f85c362\", \"name\": \"Apollo Burger\", \"address\": \"Apollo Burger, 143 N Redwood Rd, Salt Lake City, UT 84116, United States\", \"avg_rating\": 4.3, \"num_of_reviews\": 1788, \"lat\": 40.772746999999995, \"lon\": -111.9397432, \"categories\": \"Greek restaurant, American restaurant, Hamburger restaurant, Fast food restaurant\"}, {\"gmap_id\": \"0x8752f412f30bbd5d:0x88424347c6427d16\", \"name\": \"McDonald's\", \"address\": \"McDonald's, 1665 W 700 N, Salt Lake City, UT 84116\", \"avg_rating\": 2.9, \"num_of_reviews\": 1627, \"lat\": 40.7842703, \"lon\": -111.938391, \"categories\": \"Fast food restaurant, Sandwich shop, Coffee shop, Restaurant, Breakfast restaurant, Hamburger restaurant\"}, {\"gmap_id\": \"0x8752f5cb5794bcdd:0x6ff8340e5e15e79e\", \"name\": \"Garage on Beck\", \"address\": \"Garage on Beck, 1199 Beck St, Salt Lake City, UT 84103, United States\", \"avg_rating\": 4.5, \"num_of_reviews\": 1553, \"lat\": 40.793968199999995, \"lon\": -111.9037441, \"categories\": \"American restaurant, Live music venue, Restaurant, Bar, Bar & grill\"}, {\"gmap_id\": \"0x8752f4f785547723:0xab321eb8e83cb94d\", \"name\": \"Chunga's\", \"address\": \"Chunga's, 180 S 900 W, Salt Lake City, UT 84104\", \"avg_rating\": 4.5, \"num_of_reviews\": 1468, \"lat\": 40.7653089, \"lon\": -111.9172948, \"categories\": \"Mexican restaurant, Restaurant, Taco restaurant\"}, {\"gmap_id\": \"0x8752f416f8a047ff:0x7f763fc9f699be58\", \"name\": \"Chubby's Mexican Restaurant\", \"address\": \"Chubby's Mexican Restaurant, 955 N 1400 W, Salt Lake City, UT 84116\", \"avg_rating\": 4.5, \"num_of_reviews\": 1316, \"lat\": 40.7905399, \"lon\": -111.9314535, \"categories\": \"Mexican restaurant\"}, {\"gmap_id\": \"0x8752f456e21a6741:0x2000de55bb176bf7\", \"name\": \"Rancherito's Mexican Food\", \"address\": \"Rancherito's Mexican Food, 775 W North Temple, Salt Lake City, UT 84116\", \"avg_rating\": 4.0, \"num_of_reviews\": 1238, \"lat\": 40.771091, \"lon\": -111.9135443, \"categories\": \"Restaurant, Mexican restaurant\"}, {\"gmap_id\": \"0x8752f511a9a95c4d:0xecf9cd238cfb8d94\", \"name\": \"Star of India\", \"address\": \"Star of India, 1659 W North Temple, Salt Lake City, UT 84116\", \"avg_rating\": 4.4, \"num_of_reviews\": 1172, \"lat\": 40.770314299999995, \"lon\": -111.9384158, \"categories\": \"Cafe, Indian restaurant, Restaurant, Bar\"}, {\"gmap_id\": \"0x8752f464db3fb50d:0xe788dda750bcad1b\", \"name\": \"Arby's\", \"address\": \"Arby's, 25 N Redwood Rd, Salt Lake City, UT 84116\", \"avg_rating\": 3.7, \"num_of_reviews\": 1084, \"lat\": 40.7698828, \"lon\": -111.9402357, \"categories\": \"Deli, Fast food restaurant, Sandwich shop, American restaurant, Takeout Restaurant\"}, {\"gmap_id\": \"0x8752f47aafe841c9:0x5b790b732d4bb43\", \"name\": \"Taco Bell\", \"address\": \"Taco Bell, 1758 W North Temple, Salt Lake City, UT 84116\", \"avg_rating\": 3.5, \"num_of_reviews\": 1013, \"lat\": 40.7719927, \"lon\": -111.9410215, \"categories\": \"Fast food restaurant, Taco restaurant, Takeout Restaurant, Vegetarian restaurant, Burrito restaurant, Lunch restaurant, Tex-Mex restaurant, Breakfast restaurant, Restaurant, Mexican restaurant\"}, {\"gmap_id\": \"0x8752f43a2763d9c3:0x18dec6070370f121\", \"name\": \"El Cabrito\", \"address\": \"El Cabrito, 956 1000 N, Salt Lake City, UT 84116\", \"avg_rating\": 4.2, \"num_of_reviews\": 997, \"lat\": 40.791522, \"lon\": -111.9191076, \"categories\": \"Mexican restaurant\"}, {\"gmap_id\": \"0x8752f459f08ac5c3:0x41964dd598e042b3\", \"name\": \"McDonald's\", \"address\": \"McDonald's, 916 W North Temple, Salt Lake City, UT 84116\", \"avg_rating\": 3.3, \"num_of_reviews\": 961, \"lat\": 40.771893899999995, \"lon\": -111.9185771, \"categories\": \"Breakfast restaurant, Restaurant, Hamburger restaurant, Fast food restaurant, Coffee shop, Sandwich shop\"}, {\"gmap_id\": \"0x8752f5d3ffce3cef:0x8c7cc76e9c04610d\", \"name\": \"Santo Taco\", \"address\": \"Santo Taco, 910 900 W, Salt Lake City, UT 84116\", \"avg_rating\": 4.6, \"num_of_reviews\": 758, \"lat\": 40.7889878, \"lon\": -111.9162708, \"categories\": \"Mexican restaurant, Restaurant\"}, {\"gmap_id\": \"0x8752f43a1db19215:0x3c788e19d71d0a77\", \"name\": \"Don Daniel's Mexican Grill & Cantina\", \"address\": \"Don Daniel's Mexican Grill & Cantina, 1017N 900 W, Salt Lake City, UT 84116\", \"avg_rating\": 4.2, \"num_of_reviews\": 695, \"lat\": 40.7914924, \"lon\": -111.9174575, \"categories\": \"Seafood restaurant, Bar & grill, Mexican restaurant, Family restaurant\"}, {\"gmap_id\": \"0x8752f4f4985320f7:0xc4589a969ab11754\", \"name\": \"La Frontera Cafe\", \"address\": \"La Frontera Cafe, 1236 W 400 S, Salt Lake City, UT 84104\", \"avg_rating\": 3.6, \"num_of_reviews\": 453, \"lat\": 40.7608891, \"lon\": -111.9267765, \"categories\": \"Mexican restaurant\"}, {\"gmap_id\": \"0x8752f4597cc9b1dd:0xc681427095b16e4d\", \"name\": \"El Asadero Mexican Food\", \"address\": \"El Asadero Mexican Food, 1011 W North Temple, Salt Lake City, UT 84116\", \"avg_rating\": 4.4, \"num_of_reviews\": 438, \"lat\": 40.771156, \"lon\": -111.920371, \"categories\": \"Burrito restaurant, Restaurant, Mexican restaurant, Latin American restaurant\"}, {\"gmap_id\": \"0x8752f4f8278a31b7:0x3669c7335fb3e1ec\", \"name\": \"Taqueria El Rey De Oros\", \"address\": \"Taqueria El Rey De Oros, 157 S 900 W, Salt Lake City, UT 84104\", \"avg_rating\": 4.4, \"num_of_reviews\": 438, \"lat\": 40.7656205, \"lon\": -111.9164304, \"categories\": \"Mexican restaurant\"}, {\"gmap_id\": \"0x8752f477db85cbfd:0xf9f2680de2258e23\", \"name\": \"Lofte's Bar and Grill\", \"address\": \"Lofte's Bar and Grill, 2106 W North Temple, Salt Lake City, UT 84116\", \"avg_rating\": 4.0, \"num_of_reviews\": 432, \"lat\": 40.771944399999995, \"lon\": -111.9516667, \"categories\": \"Restaurant, Bar, Bar & grill\"}, {\"gmap_id\": \"0x8752f50189ed8f41:0x419eb9b57029f489\", \"name\": \"Costa Vida\", \"address\": \"Costa Vida, 171 S Rio Grande St, Salt Lake City, UT 84101\", \"avg_rating\": 4.2, \"num_of_reviews\": 406, \"lat\": 40.7656851, \"lon\": -111.9033785, \"categories\": \"Mexican restaurant, Fast food restaurant\"}, {\"gmap_id\": \"0x8752f477bb99c8f1:0xcb0cc502229cc5a4\", \"name\": \"Zilla's Restaurant & Lounge\", \"address\": \"Zilla's Restaurant & Lounge, 2080 W North Temple, Salt Lake City, UT 84116\", \"avg_rating\": 4.3, \"num_of_reviews\": 328, \"lat\": 40.771831899999995, \"lon\": -111.9502414, \"categories\": \"Diner, Bar\"}, {\"gmap_id\": \"0x8752f40dfb95461b:0xef3e4f5a637d8de\", \"name\": \"Hacienda Mexican Grill\", \"address\": \"Hacienda Mexican Grill, 797 N Redwood Rd, Salt Lake City, UT 84116\", \"avg_rating\": 4.5, \"num_of_reviews\": 308, \"lat\": 40.7863028, \"lon\": -111.9407972, \"categories\": \"Mexican restaurant\"}, {\"gmap_id\": \"0x8752f50007fb9427:0xdfe068b64fd6c435\", \"name\": \"Punch Bowl Social Salt Lake City\", \"address\": \"Punch Bowl Social Salt Lake City, 6 N Rio Grande St Building F2, Level 2, Salt Lake City, UT 84101\", \"avg_rating\": 4.2, \"num_of_reviews\": 302, \"lat\": 40.769484899999995, \"lon\": -111.9037438, \"categories\": \"Bowling alley, Brunch restaurant, Event venue, Bar, Video arcade, American restaurant, Karaoke\"}, {\"gmap_id\": \"0x8752f4665df65c3d:0x635cdc0a3328935\", \"name\": \"Nico's Restaurant\", \"address\": \"Nico's Restaurant, 1458 North Temple, Salt Lake City, UT 84116\", \"avg_rating\": 4.5, \"num_of_reviews\": 288, \"lat\": 40.771795999999995, \"lon\": -111.9329394, \"categories\": \"Mexican restaurant\"}, {\"gmap_id\": \"0x8752f4585e2690cb:0x35e82ddbc4aa0292\", \"name\": \"Julia's Mexican Restaurant\", \"address\": \"Julia's Mexican Restaurant, 51 1000 W, Salt Lake City, UT 84104\", \"avg_rating\": 4.6, \"num_of_reviews\": 287, \"lat\": 40.7678486, \"lon\": -111.9194399, \"categories\": \"Mexican restaurant\"}, {\"gmap_id\": \"0x8752f412fe1070b5:0xba95debd9d9e9138\", \"name\": \"Little Caesars Pizza\", \"address\": \"Little Caesars Pizza, 1625 W 700 N SUITE G, Salt Lake City, UT 84116\", \"avg_rating\": 3.5, \"num_of_reviews\": 284, \"lat\": 40.78429, \"lon\": -111.93781, \"categories\": \"American restaurant, Pizza restaurant, Pizza delivery, Pizza Takeout, Fast food restaurant, Chicken wings restaurant\"}, {\"gmap_id\": \"0x8752f504426e2167:0xfcb25877335b0c80\", \"name\": \"Sweet Rolled Tacos\", \"address\": \"Sweet Rolled Tacos, 157 S Rio Grande St, Salt Lake City, UT 84101\", \"avg_rating\": 4.6, \"num_of_reviews\": 234, \"lat\": 40.7659411, \"lon\": -111.9033115, \"categories\": \"Ice cream shop, Dessert shop\"}, {\"gmap_id\": \"0x8752f5aec2cda3ab:0x906ed4b1951efe3e\", \"name\": \"Sabor Latino\", \"address\": \"Sabor Latino, 2080 W North Temple, Salt Lake City, UT 84116\", \"avg_rating\": 4.5, \"num_of_reviews\": 214, \"lat\": 40.7718109, \"lon\": -111.9502782, \"categories\": \"Latin American restaurant\"}]}",
+      "tool_call_id": "call_749713",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "search_establishments",
+          "args": {
+            "sort_desc": true,
+            "near_lat": 40.785,
+            "limit": 20,
+            "sort_by": "avg_rating",
+            "near_lon": -111.925,
+            "radius_mi": 2.5
+          },
+          "id": "call_791370",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 10014,
+        "output_tokens": 795,
+        "total_tokens": 10809,
+        "input_token_details": {
+          "cache_read": 0
+        },
+        "output_token_details": {
+          "reasoning": 732
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 20, \"rows\": [{\"gmap_id\": \"0x8752f51cce9a7ca7:0x32fad0382c47c88\", \"name\": \"Empresso Coffee\", \"address\": \"Empresso Coffee, 79 S Main St, Salt Lake City, UT 84111\", \"latitude\": 40.7673959, \"longitude\": -111.8907905, \"avg_rating\": 5.0, \"num_of_reviews\": 3, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": 2.4068223673236795, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x8752f558c5a29e8f:0x7e752c9e0fbbf601\", \"name\": \"Midnimo restaurant\", \"address\": \"Midnimo restaurant, 55 N Redwood Rd Ste D, Salt Lake City, UT 84116\", \"latitude\": 40.7707535, \"longitude\": -111.9405123, \"avg_rating\": 5.0, \"num_of_reviews\": 5, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": 1.1331051625195367, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x8752f5490acebac5:0x1e28974dcc0762eb\", \"name\": \"Mac's Place\", \"address\": \"Mac's Place, 308 West Broadway Suite LL2, Salt Lake City, UT 84101\", \"latitude\": 40.763305599999995, \"longitude\": -111.8999557, \"avg_rating\": 5.0, \"num_of_reviews\": 18, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": 1.8185649786422944, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x8752f5528f182417:0x458b879a84008105\", \"name\": \"Kafe Mamai\", \"address\": \"Kafe Mamai, 751 W 800 S, Salt Lake City, UT 84104\", \"latitude\": 40.7517324, \"longitude\": -111.9127582, \"avg_rating\": 5.0, \"num_of_reviews\": 8, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": 1.2048472020506213, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x874d7dfea0dbe7f1:0xfb7868078b35c0fd\", \"name\": \"The BBQ Culture\", \"address\": null, \"latitude\": 40.776608, \"longitude\": -111.920485, \"avg_rating\": 5.0, \"num_of_reviews\": 13, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": 0.37971286886335337, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x8752f73c74e35087:0xe012d7f2b5ce9ef2\", \"name\": \"Sno Delicious\", \"address\": \"Sno Delicious, 012930108, North Salt Lake, UT 84054\", \"latitude\": 40.8538568, \"longitude\": -111.9301737, \"avg_rating\": 5.0, \"num_of_reviews\": 2, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": 1.8122367979033396, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x8752f5040542dfbb:0xd50a66b586b2e664\", \"name\": \"Pie Office\", \"address\": \"Pie Office, 230 W 200 S #2608, Salt Lake City, UT 84101\", \"latitude\": 40.7658518, \"longitude\": -111.8978776, \"avg_rating\": 5.0, \"num_of_reviews\": 1, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": 1.9379218405430965, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x8752f71ef16b1369:0x7c92b49a72a21ea3\", \"name\": \"La Cocina Caribe\\u00f1a\", \"address\": \"La Cocina Caribe\\u00f1a, 1749 Crystal Rock Ave, Salt Lake City, UT 84116\", \"latitude\": 40.802231899999995, \"longitude\": -111.9409076, \"avg_rating\": 5.0, \"num_of_reviews\": 8, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": 1.1856705205269702, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x8752f5440d10ef4d:0xc32bcdd9febc743\", \"name\": \"Jeeva\\u2019s Greek Caf\\u00e9\", \"address\": \"Jeeva\\u2019s Greek Caf\\u00e9, City Creek Center, 50 S Main St, Salt Lake City, UT 84101\", \"latitude\": 40.768356999999995, \"longitude\": -111.8917453, \"avg_rating\": 5.0, \"num_of_reviews\": 8, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": 2.337395407930119, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x87528f349b2fd5bd:0x70a1ac96d17e12d6\", \"name\": \"Mocha Motive\", \"address\": null, \"latitude\": 40.776608, \"longitude\": -111.920485, \"avg_rating\": 5.0, \"num_of_reviews\": 8, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": 0.37971286886335337, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x87528b4df0b14bfd:0xdd0ca9610645ba60\", \"name\": \"Distillery 36\", \"address\": \"Distillery 36, 2374 S Redwood Rd, West Valley City, UT 84119\", \"latitude\": 40.719838, \"longitude\": -111.939925, \"avg_rating\": 5.0, \"num_of_reviews\": 27, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": 1.972655710408674, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x8752f5c7ee3da119:0xa598b3e3e1115abb\", \"name\": \"Villa Yelito\", \"address\": \"Villa Yelito, 876 W 800 S, Salt Lake City, UT 84104\", \"latitude\": 40.7522638, \"longitude\": -111.9162218, \"avg_rating\": 5.0, \"num_of_reviews\": 7, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": 1.0396485133396165, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x8752f51fedb743c1:0xaede3603ba8b6a49\", \"name\": \"Cupcakes by Kasthuri\", \"address\": \"Cupcakes by Kasthuri, 824 400 W #B112, Salt Lake City, UT 84101\", \"latitude\": 40.7510602, \"longitude\": -111.9032034, \"avg_rating\": 5.0, \"num_of_reviews\": 78, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": 1.741839276092888, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x8752f508d6686761:0x655c516c05305a49\", \"name\": \"Publik Coffee\", \"address\": \"Publik Coffee, 51 S Main St, Salt Lake City, UT 84101\", \"latitude\": 40.7681733, \"longitude\": -111.8898201, \"avg_rating\": 5.0, \"num_of_reviews\": 4, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": 2.4690988221217194, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x8752f53d1f18d3c3:0x8b31b2ff43c9f850\", \"name\": \"CodSpeed @ HallPass\", \"address\": \"CodSpeed @ HallPass, 153 S Rio Grande St Suite 107, Salt Lake City, UT 84101\", \"latitude\": 40.7659226, \"longitude\": -111.9037754, \"avg_rating\": 5.0, \"num_of_reviews\": 1, \"price\": \"$\", \"slchd_establishment_key\": null, \"distance_mi\": 1.546794452467646, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x8752f4ce7b5b911f:0x8ac1d6809aed5785\", \"name\": \"Pella Food Services\", \"address\": \"Pella Food Services, 940 1700 S, Salt Lake City, UT 84104\", \"latitude\": 40.7340702, \"longitude\": -111.9179065, \"avg_rating\": 5.0, \"num_of_reviews\": 1, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": 1.4021784091013396, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x87528be2a57650eb:0x85bd8a26d9ecde01\", \"name\": \"Graffiti Rosa\", \"address\": null, \"latitude\": 40.776608, \"longitude\": -111.920485, \"avg_rating\": 5.0, \"num_of_reviews\": 3, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": 0.37971286886335337, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x8752f50363c3fa6f:0xb78d6d10e70ac220\", \"name\": \"Roots Coffee & Co.\", \"address\": \"Roots Coffee & Co., 774 S 300 W, Salt Lake City, UT 84101\", \"latitude\": 40.752289399999995, \"longitude\": -111.9001526, \"avg_rating\": 5.0, \"num_of_reviews\": 57, \"price\": null, \"slchd_establishment_key\": \"ROOTS COFFEE & CO|774 S 300 W|SALT LAKE CITY\", \"distance_mi\": 1.9127894898258948, \"most_recent_inspection_score\": 5, \"critical_violation_count\": 1, \"total_violation_count\": 11}, {\"gmap_id\": \"0x87528b304fc45045:0x8775d268b67c230a\", \"name\": \"O K Manufacturing\", \"address\": \"O K Manufacturing, 2340 S 900 W # D, Salt Lake City, UT 84119\", \"latitude\": 40.72036, \"longitude\": -111.918434, \"avg_rating\": 5.0, \"num_of_reviews\": 2, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": 1.7280206189835672, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}, {\"gmap_id\": \"0x8752f5f1787ec253:0x43f16ac1b71c8c48\", \"name\": \"Just A Craving\", \"address\": \"Just A Craving, 1780 W North Temple West Side of parking lot, Salt Lake City, UT 84116\", \"latitude\": 40.7720657, \"longitude\": -111.9422852, \"avg_rating\": 4.9, \"num_of_reviews\": 18, \"price\": null, \"slchd_establishment_key\": null, \"distance_mi\": 1.240067118017695, \"most_recent_inspection_score\": null, \"critical_violation_count\": 0, \"total_violation_count\": 0}]}",
+      "tool_call_id": "call_791370",
+      "name": "search_establishments"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "SELECT e.name, e.address, e.avg_rating, e.num_of_reviews, e.price,\n       e.slchd_establishment_key,\n       STRING_AGG(DISTINCT c.category, ', ') as categories\nFROM establishments e\nLEFT JOIN establishment_categories ec ON e.gmap_id = ec.gmap_id\nLEFT JOIN category c ON ec.category_id = c.category_id\nWHERE (e.address ILIKE '%84116%' OR ST_DWithin(e.geom, ST_Point(-111.925, 40.785)::GEOMETRY, 0.025))\n  AND (\n       LOWER(STRING_AGG(DISTINCT c.category, ', ')) LIKE '%mexican%'\n    OR LOWER(STRING_AGG(DISTINCT c.category, ', ')) LIKE '%diner%'\n    OR LOWER(STRING_AGG(DISTINCT c.category, ', ')) LIKE '%breakfast%'\n    OR LOWER(STRING_AGG(DISTINCT c.category, ', ')) LIKE '%american%'\n    OR LOWER(STRING_AGG(DISTINCT c.category, ', ')) LIKE '%burrito%'\n    OR LOWER(e.name) LIKE '%chubby%'\n    OR LOWER(e.name) LIKE '%cabrito%'\n    OR LOWER(e.name) LIKE '%santo%'\n    OR LOWER(e.name) LIKE '%denny%'\n    OR LOWER(e.name) LIKE '%nico%'\n    OR LOWER(e.name) LIKE '%rancherito%'\n    OR LOWER(e.name) LIKE '%hacienda%'\n    OR LOWER(e.name) LIKE '%asadero%'\n  )\nGROUP BY e.name, e.address, e.avg_rating, e.num_of_reviews, e.price, e.slchd_establishment_key, e.geom\nHAVING e.num_of_reviews >= 50\nORDER BY e.avg_rating DESC, e.num_of_reviews DESC;"
+          },
+          "id": "call_884396",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 14035,
+        "output_tokens": 608,
+        "total_tokens": 14643,
+        "input_token_details": {
+          "cache_read": 0
+        },
+        "output_token_details": {
+          "reasoning": 134
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "SQL error: Binder Error: WHERE clause cannot contain aggregates!\n\nLINE 9:        LOWER(STRING_AGG(DISTINCT c.category, ', ')) LIKE '%mexican%'\n                     ^",
+      "tool_call_id": "call_884396",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "WITH cat_agg AS (\n    SELECT e.gmap_id, e.name, e.address, e.avg_rating, e.num_of_reviews, e.price,\n           e.slchd_establishment_key, ST_Y(e.geom) as lat, ST_X(e.geom) as lon,\n           STRING_AGG(DISTINCT c.category, ', ') as categories\n    FROM establishments e\n    LEFT JOIN establishment_categories ec ON e.gmap_id = ec.gmap_id\n    LEFT JOIN category c ON ec.category_id = c.category_id\n    WHERE e.address ILIKE '%84116%' OR ST_DWithin(e.geom, ST_Point(-111.925, 40.785)::GEOMETRY, 0.025)\n    GROUP BY e.gmap_id, e.name, e.address, e.avg_rating, e.num_of_reviews, e.price, e.slchd_establishment_key, e.geom\n)\nSELECT name, address, avg_rating, num_of_reviews, price, categories, slchd_establishment_key, lat, lon\nFROM cat_agg\nWHERE num_of_reviews >= 50\n  AND (\n       LOWER(categories) LIKE '%mexican%'\n    OR LOWER(categories) LIKE '%diner%'\n    OR LOWER(categories) LIKE '%breakfast%'\n    OR LOWER(categories) LIKE '%american%'\n    OR LOWER(categories) LIKE '%burrito%'\n    OR LOWER(categories) LIKE '%cafe%'\n    OR LOWER(name) LIKE '%chubby%'\n    OR LOWER(name) LIKE '%cabrito%'\n    OR LOWER(name) LIKE '%santo%'\n  )\nORDER BY avg_rating DESC, num_of_reviews DESC;"
+          },
+          "id": "call_818869",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 14697,
+        "output_tokens": 459,
+        "total_tokens": 15156,
+        "input_token_details": {
+          "cache_read": 8130
+        },
+        "output_token_details": {
+          "reasoning": 22
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 41, \"truncated\": false, \"rows\": [{\"name\": \"El Jaripeo Taco Truck (Rose Park)\", \"address\": \"El Jaripeo Taco Truck (Rose Park), 1188-1198 600 N, Salt Lake City, UT 84116\", \"avg_rating\": 4.8, \"num_of_reviews\": 58, \"price\": null, \"categories\": \"Mexican restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.7826194, \"lon\": -111.9252599}, {\"name\": \"Red Iguana\", \"address\": \"Red Iguana, 736 W North Temple, Salt Lake City, UT 84116\", \"avg_rating\": 4.6, \"num_of_reviews\": 6646, \"price\": \"$$\", \"categories\": \"Mexican restaurant, Restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.7718053, \"lon\": -111.9124897}, {\"name\": \"Red Iguana 2\", \"address\": \"Red Iguana 2, 866 W S Temple, Salt Lake City, UT 84116\", \"avg_rating\": 4.6, \"num_of_reviews\": 5356, \"price\": \"$$\", \"categories\": \"Mexican restaurant, Restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.769692, \"lon\": -111.9161652}, {\"name\": \"Santo Taco\", \"address\": \"Santo Taco, 910 900 W, Salt Lake City, UT 84116\", \"avg_rating\": 4.6, \"num_of_reviews\": 758, \"price\": \"$\", \"categories\": \"Mexican restaurant, Restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.7889878, \"lon\": -111.9162708}, {\"name\": \"Julia's Mexican Restaurant\", \"address\": \"Julia's Mexican Restaurant, 51 1000 W, Salt Lake City, UT 84104\", \"avg_rating\": 4.6, \"num_of_reviews\": 287, \"price\": \"$\", \"categories\": \"Mexican restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.7678486, \"lon\": -111.9194399}, {\"name\": \"Angelito Mexican Restaurant & Ice Cream\", \"address\": \"Angelito Mexican Restaurant & Ice Cream, 592 Riverside Dr, Salt Lake City, UT 84116\", \"avg_rating\": 4.6, \"num_of_reviews\": 68, \"price\": null, \"categories\": \"Mexican restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.7840979, \"lon\": -111.9375183}, {\"name\": \"Garage on Beck\", \"address\": \"Garage on Beck, 1199 Beck St, Salt Lake City, UT 84103, United States\", \"avg_rating\": 4.5, \"num_of_reviews\": 1553, \"price\": \"\\u20a9\\u20a9\", \"categories\": \"Bar & grill, Live music venue, Bar, American restaurant, Restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.793968199999995, \"lon\": -111.9037441}, {\"name\": \"Chunga's\", \"address\": \"Chunga's, 180 S 900 W, Salt Lake City, UT 84104\", \"avg_rating\": 4.5, \"num_of_reviews\": 1468, \"price\": \"$\", \"categories\": \"Restaurant, Mexican restaurant, Taco restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.7653089, \"lon\": -111.9172948}, {\"name\": \"Chubby's Mexican Restaurant\", \"address\": \"Chubby's Mexican Restaurant, 955 N 1400 W, Salt Lake City, UT 84116\", \"avg_rating\": 4.5, \"num_of_reviews\": 1316, \"price\": \"$\", \"categories\": \"Mexican restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.7905399, \"lon\": -111.9314535}, {\"name\": \"Hacienda Mexican Grill\", \"address\": \"Hacienda Mexican Grill, 797 N Redwood Rd, Salt Lake City, UT 84116\", \"avg_rating\": 4.5, \"num_of_reviews\": 308, \"price\": null, \"categories\": \"Mexican restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.7863028, \"lon\": -111.9407972}, {\"name\": \"Nico's Restaurant\", \"address\": \"Nico's Restaurant, 1458 North Temple, Salt Lake City, UT 84116\", \"avg_rating\": 4.5, \"num_of_reviews\": 288, \"price\": \"$\", \"categories\": \"Mexican restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.771795999999995, \"lon\": -111.9329394}, {\"name\": \"Sabor Latino\", \"address\": \"Sabor Latino, 2080 W North Temple, Salt Lake City, UT 84116\", \"avg_rating\": 4.5, \"num_of_reviews\": 214, \"price\": null, \"categories\": \"Latin American restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.7718109, \"lon\": -111.9502782}, {\"name\": \"Star of India\", \"address\": \"Star of India, 1659 W North Temple, Salt Lake City, UT 84116\", \"avg_rating\": 4.4, \"num_of_reviews\": 1172, \"price\": \"$$\", \"categories\": \"Restaurant, Cafe, Bar, Indian restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.770314299999995, \"lon\": -111.9384158}, {\"name\": \"Taqueria El Rey De Oros\", \"address\": \"Taqueria El Rey De Oros, 157 S 900 W, Salt Lake City, UT 84104\", \"avg_rating\": 4.4, \"num_of_reviews\": 438, \"price\": \"$\", \"categories\": \"Mexican restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.7656205, \"lon\": -111.9164304}, {\"name\": \"El Asadero Mexican Food\", \"address\": \"El Asadero Mexican Food, 1011 W North Temple, Salt Lake City, UT 84116\", \"avg_rating\": 4.4, \"num_of_reviews\": 438, \"price\": \"$\", \"categories\": \"Burrito restaurant, Restaurant, Latin American restaurant, Mexican restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.771156, \"lon\": -111.920371}, {\"name\": \"Panaderia Flores Rose Park\", \"address\": \"Panaderia Flores Rose Park, River Park Plaza, 1625 W 700 N, Salt Lake City, UT 84116\", \"avg_rating\": 4.4, \"num_of_reviews\": 128, \"price\": null, \"categories\": \"Bakery, Mexican goods store, Pastry shop, Wedding bakery\", \"slchd_establishment_key\": null, \"lat\": 40.7840683, \"lon\": -111.9370885}, {\"name\": \"El Rey del Taco Taco stand\", \"address\": \"El Rey del Taco Taco stand, 119 900 W, Salt Lake City, UT 84116\", \"avg_rating\": 4.4, \"num_of_reviews\": 125, \"price\": \"$\", \"categories\": \"Mexican restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.7720038, \"lon\": -111.9171127}, {\"name\": \"Apollo Burger\", \"address\": \"Apollo Burger, 143 N Redwood Rd, Salt Lake City, UT 84116, United States\", \"avg_rating\": 4.3, \"num_of_reviews\": 1788, \"price\": \"\\u20a9\\u20a9\", \"categories\": \"Greek restaurant, Hamburger restaurant, Fast food restaurant, American restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.772746999999995, \"lon\": -111.9397432}, {\"name\": \"Zilla's Restaurant & Lounge\", \"address\": \"Zilla's Restaurant & Lounge, 2080 W North Temple, Salt Lake City, UT 84116\", \"avg_rating\": 4.3, \"num_of_reviews\": 328, \"price\": null, \"categories\": \"Bar, Diner\", \"slchd_establishment_key\": null, \"lat\": 40.771831899999995, \"lon\": -111.9502414}, {\"name\": \"Soup Kitchen\", \"address\": \"Soup Kitchen, 422 W 600 N, Salt Lake City, UT 84103\", \"avg_rating\": 4.3, \"num_of_reviews\": 188, \"price\": \"$\", \"categories\": \"Cafe\", \"slchd_establishment_key\": null, \"lat\": 40.782798, \"lon\": -111.903457}, {\"name\": \"El Cabrito\", \"address\": \"El Cabrito, 956 1000 N, Salt Lake City, UT 84116\", \"avg_rating\": 4.2, \"num_of_reviews\": 997, \"price\": \"$\", \"categories\": \"Mexican restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.791522, \"lon\": -111.9191076}, {\"name\": \"Don Daniel's Mexican Grill & Cantina\", \"address\": \"Don Daniel's Mexican Grill & Cantina, 1017N 900 W, Salt Lake City, UT 84116\", \"avg_rating\": 4.2, \"num_of_reviews\": 695, \"price\": \"$$\", \"categories\": \"Family restaurant, Seafood restaurant, Bar & grill, Mexican restaurant\", \"slchd_establishment_key\": \"DON DANIELS MEXICAN GRILL & CANTINA|1017 N 900 W|SALT LAKE CITY\", \"lat\": 40.7914924, \"lon\": -111.9174575}, {\"name\": \"ANGELITOS MEXICAN RESTAURANT & PALETERIA\", \"address\": \"ANGELITOS MEXICAN RESTAURANT & PALETERIA, 1625 W 700 N, Salt Lake City, UT 84116\", \"avg_rating\": 4.2, \"num_of_reviews\": 178, \"price\": \"$\", \"categories\": \"Candy store, Mexican restaurant, Sundae restaurant, Family restaurant, Taco restaurant, Snack bar\", \"slchd_establishment_key\": null, \"lat\": 40.784043, \"lon\": -111.93734}, {\"name\": \"Antojitos Do\\u00f1a Julia\", \"address\": \"Antojitos Do\\u00f1a Julia, 1447 W 1000 N, Salt Lake City, UT 84116\", \"avg_rating\": 4.2, \"num_of_reviews\": 157, \"price\": null, \"categories\": \"Mexican restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.790851499999995, \"lon\": -111.9320373}, {\"name\": \"Costa Vida\", \"address\": \"Costa Vida, 375 N Terminal Dr, Salt Lake City, UT 84116\", \"avg_rating\": 4.2, \"num_of_reviews\": 138, \"price\": \"$$\", \"categories\": \"Mexican restaurant, Fast food restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.7771207, \"lon\": -111.9814527}, {\"name\": \"Roberts Restaurant\", \"address\": \"Roberts Restaurant, 145 N Wright Brothers Dr, Salt Lake City, UT 84116\", \"avg_rating\": 4.1, \"num_of_reviews\": 774, \"price\": \"$\", \"categories\": \"American restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.772498899999995, \"lon\": -112.0066528}, {\"name\": \"Rancherito's Mexican Food\", \"address\": \"Rancherito's Mexican Food, 775 W North Temple, Salt Lake City, UT 84116\", \"avg_rating\": 4.0, \"num_of_reviews\": 1238, \"price\": \"$\", \"categories\": \"Restaurant, Mexican restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.771091, \"lon\": -111.9135443}, {\"name\": \"Admiral Byrd Food Court\", \"address\": \"Admiral Byrd Food Court, 5500 Amelia Earhart Dr, Salt Lake City, UT 84116, United States\", \"avg_rating\": 4.0, \"num_of_reviews\": 118, \"price\": null, \"categories\": \"Diner\", \"slchd_establishment_key\": null, \"lat\": 40.7776219, \"lon\": -112.0231828}, {\"name\": \"Perkins Restaurant & Bakery\", \"address\": \"Perkins Restaurant & Bakery, 230 North Admiral Byrd Rd, Salt Lake City, UT 84116\", \"avg_rating\": 3.8, \"num_of_reviews\": 618, \"price\": \"$$\", \"categories\": \"Bakery, Family restaurant, American restaurant, Breakfast restaurant, Restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.7733433, \"lon\": -112.0218214}, {\"name\": \"Arby's\", \"address\": \"Arby's, 25 N Redwood Rd, Salt Lake City, UT 84116\", \"avg_rating\": 3.7, \"num_of_reviews\": 1084, \"price\": \"$\", \"categories\": \"Deli, Fast food restaurant, American restaurant, Sandwich shop, Takeout Restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.7698828, \"lon\": -111.9402357}, {\"name\": \"Amelia\\u2019s Grill & Bar\", \"address\": \"Amelia\\u2019s Grill & Bar, 5575 W Amelia Earhart Dr, Salt Lake City, UT 84116\", \"avg_rating\": 3.7, \"num_of_reviews\": 478, \"price\": \"$$\", \"categories\": \"Restaurant, Pub, Bar & grill, Bar, American restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.775872, \"lon\": -112.0238546}, {\"name\": \"QDOBA Mexican Eats\", \"address\": \"QDOBA Mexican Eats, Intrnl Airport, 776 N Terminal Drive, HBFATG, Salt Lake City, UT 84116\", \"avg_rating\": 3.7, \"num_of_reviews\": 188, \"price\": \"$\", \"categories\": \"Tex-Mex restaurant, Fast food restaurant, Bar & grill, Mexican restaurant, Delivery service, Caterer, Restaurant, Brunch restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.7866133, \"lon\": -111.9818541}, {\"name\": \"Denny's\", \"address\": \"Denny's, 1701 W North Temple, Salt Lake City, UT 84116, United States\", \"avg_rating\": 3.6, \"num_of_reviews\": 1948, \"price\": \"\\u20a9\", \"categories\": \"Breakfast restaurant, Diner, American restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.7711808, \"lon\": -111.9396979}, {\"name\": \"La Frontera Cafe\", \"address\": \"La Frontera Cafe, 1236 W 400 S, Salt Lake City, UT 84104\", \"avg_rating\": 3.6, \"num_of_reviews\": 453, \"price\": \"$\", \"categories\": \"Mexican restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.7608891, \"lon\": -111.9267765}, {\"name\": \"Taco Bell\", \"address\": \"Taco Bell, 1758 W North Temple, Salt Lake City, UT 84116\", \"avg_rating\": 3.5, \"num_of_reviews\": 1013, \"price\": \"$\", \"categories\": \"Taco restaurant, Takeout Restaurant, Burrito restaurant, Lunch restaurant, Vegetarian restaurant, Breakfast restaurant, Restaurant, Mexican restaurant, Fast food restaurant, Tex-Mex restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.7719927, \"lon\": -111.9410215}, {\"name\": \"McDonald's\", \"address\": \"McDonald's, 776 N Terminal Dr, Salt Lake City, UT 84116\", \"avg_rating\": 3.5, \"num_of_reviews\": 585, \"price\": \"$\", \"categories\": \"Fast food restaurant, Breakfast restaurant, Restaurant, Coffee shop, Sandwich shop, Hamburger restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.7870637, \"lon\": -111.9825315}, {\"name\": \"Little Caesars Pizza\", \"address\": \"Little Caesars Pizza, 1625 W 700 N SUITE G, Salt Lake City, UT 84116\", \"avg_rating\": 3.5, \"num_of_reviews\": 284, \"price\": \"$\", \"categories\": \"Chicken wings restaurant, Pizza delivery, Fast food restaurant, Pizza restaurant, Pizza Takeout, American restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.78429, \"lon\": -111.93781}, {\"name\": \"A&W Restaurant\", \"address\": \"A&W Restaurant, 132 N Redwood Rd, Salt Lake City, UT 84116\", \"avg_rating\": 3.4, \"num_of_reviews\": 178, \"price\": \"$\", \"categories\": \"Fast food restaurant, American restaurant, Hamburger restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.772310399999995, \"lon\": -111.9389048}, {\"name\": \"McDonald's\", \"address\": \"McDonald's, 916 W North Temple, Salt Lake City, UT 84116\", \"avg_rating\": 3.3, \"num_of_reviews\": 961, \"price\": \"$\", \"categories\": \"Hamburger restaurant, Breakfast restaurant, Restaurant, Coffee shop, Sandwich shop, Fast food restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.771893899999995, \"lon\": -111.9185771}, {\"name\": \"French Meadow Bakery Caf\\u00e9\", \"address\": \"French Meadow Bakery Caf\\u00e9, Salt Lake City International Airport, 776 N Terminal Dr, Salt Lake City, UT 84116\", \"avg_rating\": 3.1, \"num_of_reviews\": 304, \"price\": null, \"categories\": \"Cafe, Takeout Restaurant, Bakery, Sandwich shop\", \"slchd_establishment_key\": null, \"lat\": 40.7867015, \"lon\": -111.9791109}, {\"name\": \"McDonald's\", \"address\": \"McDonald's, 1665 W 700 N, Salt Lake City, UT 84116\", \"avg_rating\": 2.9, \"num_of_reviews\": 1627, \"price\": \"$\", \"categories\": \"Fast food restaurant, Sandwich shop, Coffee shop, Hamburger restaurant, Restaurant, Breakfast restaurant\", \"slchd_establishment_key\": null, \"lat\": 40.7842703, \"lon\": -111.938391}]}",
+      "tool_call_id": "call_818869",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "SELECT name, address, slchd_establishment_key, avg_rating, num_of_reviews\nFROM establishments\nWHERE name ILIKE '%Chubby%' OR name ILIKE '%Santo Taco%' OR name ILIKE '%El Cabrito%'\n   OR name ILIKE '%Hacienda Mexican%' OR name ILIKE '%El Asadero%' OR name ILIKE '%El Jaripeo%'\n   OR name ILIKE '%Rancherito%' OR name ILIKE '%Denny%'\n  AND address ILIKE '%84116%';"
+          },
+          "id": "call_985602",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 19522,
+        "output_tokens": 809,
+        "total_tokens": 20331,
+        "input_token_details": {
+          "cache_read": 8141
+        },
+        "output_token_details": {
+          "reasoning": 669
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 40, \"truncated\": false, \"rows\": [{\"name\": \"El Jaripeo Tacos [Harmons Parking lot ]\", \"address\": \"El Jaripeo Tacos [Harmons Parking lot ], harmons parking lot, 3955 W 3500 S, West Valley City, UT 84120\", \"slchd_establishment_key\": null, \"avg_rating\": 3.8, \"num_of_reviews\": 38}, {\"name\": \"El JARIPEO TACOS (smith's parking 4000 west)\", \"address\": \"El JARIPEO TACOS (smith's parking 4000 west), 4643 4000 W, West Valley City, UT 84120\", \"slchd_establishment_key\": null, \"avg_rating\": 4.3, \"num_of_reviews\": 18}, {\"name\": \"El Asadero\", \"address\": \"El Asadero, 3205 State St, South Salt Lake, UT 84115\", \"slchd_establishment_key\": null, \"avg_rating\": 3.7, \"num_of_reviews\": 7}, {\"name\": \"El Jaripeo Grill Mexican Food\", \"address\": \"El Jaripeo Grill Mexican Food, 1259 S Redwood Rd, Salt Lake City, UT 84104\", \"slchd_establishment_key\": null, \"avg_rating\": 4.1, \"num_of_reviews\": 125}, {\"name\": \"Rancherito's Mexican Food\", \"address\": \"Rancherito's Mexican Food, 1860 Redwood Rd, Salt Lake City, UT 84104\", \"slchd_establishment_key\": null, \"avg_rating\": 4.1, \"num_of_reviews\": 913}, {\"name\": \"Denny's\", \"address\": \"Denny's, 1701 W North Temple, Salt Lake City, UT 84116, United States\", \"slchd_establishment_key\": null, \"avg_rating\": 3.6, \"num_of_reviews\": 1948}, {\"name\": \"Rancherito's\", \"address\": \"Rancherito's, 1230 N State St, Provo, UT 84604, United States\", \"slchd_establishment_key\": null, \"avg_rating\": 3.9, \"num_of_reviews\": 498}, {\"name\": \"Rancherito's Mexican Food\", \"address\": \"Rancherito's Mexican Food, 423 Main St, Layton, UT 84041, United States\", \"slchd_establishment_key\": null, \"avg_rating\": 4.2, \"num_of_reviews\": 1308}, {\"name\": \"El Jaripeo Taco Truck (Rose Park)\", \"address\": \"El Jaripeo Taco Truck (Rose Park), 1188-1198 600 N, Salt Lake City, UT 84116\", \"slchd_establishment_key\": null, \"avg_rating\": 4.8, \"num_of_reviews\": 58}, {\"name\": \"Mi Rancherito Mexican Restaurant\", \"address\": \"Mi Rancherito Mexican Restaurant, 540 Topaz Blvd, Delta, UT 84624\", \"slchd_establishment_key\": null, \"avg_rating\": 4.2, \"num_of_reviews\": 208}, {\"name\": \"El Asadero Mexican Food\", \"address\": \"El Asadero Mexican Food, 1011 W North Temple, Salt Lake City, UT 84116\", \"slchd_establishment_key\": null, \"avg_rating\": 4.4, \"num_of_reviews\": 438}, {\"name\": \"Chubby's Cafe\", \"address\": \"Chubby's Cafe, 855 Turf Farm Rd, Payson, UT 84651\", \"slchd_establishment_key\": null, \"avg_rating\": 4.8, \"num_of_reviews\": 168}, {\"name\": \"Hacienda Mexican Grill\", \"address\": \"Hacienda Mexican Grill, 797 N Redwood Rd, Salt Lake City, UT 84116\", \"slchd_establishment_key\": null, \"avg_rating\": 4.5, \"num_of_reviews\": 308}, {\"name\": \"Rancheritos Mexican Food\", \"address\": \"Rancheritos Mexican Food, 12642 S Redwood Rd, Riverton, UT 84065\", \"slchd_establishment_key\": null, \"avg_rating\": 3.8, \"num_of_reviews\": 86}, {\"name\": \"Mi Rancherito\", \"address\": \"Mi Rancherito, 242 N Main St, Spanish Fork, UT 84660\", \"slchd_establishment_key\": null, \"avg_rating\": 4.3, \"num_of_reviews\": 357}, {\"name\": \"Chubby's Cafe Vineyard\", \"address\": \"Chubby's Cafe Vineyard, 576 N Mill Rd, Vineyard, UT 84058\", \"slchd_establishment_key\": null, \"avg_rating\": 4.7, \"num_of_reviews\": 728}, {\"name\": \"Rancheritos Mexican Food\", \"address\": \"Rancheritos Mexican Food, 46 E 1230 N St, Provo, UT 84604\", \"slchd_establishment_key\": null, \"avg_rating\": 4.2, \"num_of_reviews\": 503}, {\"name\": \"Rancheritos Mexican Food\", \"address\": \"Rancheritos Mexican Food, 278 E State Rd, Pleasant Grove, UT 84062\", \"slchd_establishment_key\": null, \"avg_rating\": 4.2, \"num_of_reviews\": 603}, {\"name\": \"El Cabrito\", \"address\": \"El Cabrito, 956 1000 N, Salt Lake City, UT 84116\", \"slchd_establishment_key\": null, \"avg_rating\": 4.2, \"num_of_reviews\": 997}, {\"name\": \"Rancheritos Mexican Food\", \"address\": \"Rancheritos Mexican Food, 960 S University Ave, Provo, UT 84601\", \"slchd_establishment_key\": null, \"avg_rating\": 3.8, \"num_of_reviews\": 588}, {\"name\": \"Chubby's Cafe Saratoga Springs\", \"address\": \"Chubby's Cafe Saratoga Springs, 1284 N Redwood Rd, Saratoga Springs, UT 84045\", \"slchd_establishment_key\": null, \"avg_rating\": 4.6, \"num_of_reviews\": 1558}, {\"name\": \"Rancherito's Mexican Food\", \"address\": \"Rancherito's Mexican Food, 775 W North Temple, Salt Lake City, UT 84116\", \"slchd_establishment_key\": null, \"avg_rating\": 4.0, \"num_of_reviews\": 1238}, {\"name\": \"Chubby's Mexican Restaurant\", \"address\": \"Chubby's Mexican Restaurant, 955 N 1400 W, Salt Lake City, UT 84116\", \"slchd_establishment_key\": null, \"avg_rating\": 4.5, \"num_of_reviews\": 1316}, {\"name\": \"Santo Taco\", \"address\": \"Santo Taco, 910 900 W, Salt Lake City, UT 84116\", \"slchd_establishment_key\": null, \"avg_rating\": 4.6, \"num_of_reviews\": 758}, {\"name\": \"Rancheritos Mexican Food\", \"address\": \"Rancheritos Mexican Food, 3527 Washington Blvd, Ogden, UT 84403\", \"slchd_establishment_key\": null, \"avg_rating\": 4.0, \"num_of_reviews\": 1053}, {\"name\": \"Rancherito's Mexican Food\", \"address\": \"Rancherito's Mexican Food, 4735 Highland Dr, Holladay, UT 84117\", \"slchd_establishment_key\": null, \"avg_rating\": 4.2, \"num_of_reviews\": 1145}, {\"name\": \"Rancheritos Mexican Food\", \"address\": \"Rancheritos Mexican Food, 12250 State St, Draper, UT 84020\", \"slchd_establishment_key\": null, \"avg_rating\": 4.1, \"num_of_reviews\": 944}, {\"name\": \"Rancherito's Mexican Food\", \"address\": \"Rancherito's Mexican Food, 3455 S 5600 W, Salt Lake City, UT 84104\", \"slchd_establishment_key\": null, \"avg_rating\": 3.9, \"num_of_reviews\": 1408}, {\"name\": \"Rancherito's\", \"address\": \"Rancherito's, 7849 S Redwood Rd, West Jordan, UT 84088\", \"slchd_establishment_key\": null, \"avg_rating\": 4.0, \"num_of_reviews\": 846}, {\"name\": \"Rancherito's Mexican Food\", \"address\": \"Rancherito's Mexican Food, 3705 W 5400 S, Taylorsville, UT 84129\", \"slchd_establishment_key\": null, \"avg_rating\": 3.7, \"num_of_reviews\": 668}, {\"name\": \"Rancheritos Mexican Food\", \"address\": \"Rancheritos Mexican Food, 866 Antelope Dr, Clearfield, UT 84015\", \"slchd_establishment_key\": null, \"avg_rating\": 4.0, \"num_of_reviews\": 445}, {\"name\": \"MI Rancherito Mexican Restaurant\", \"address\": \"MI Rancherito Mexican Restaurant, 85 E Utah Ave, Payson, UT 84651\", \"slchd_establishment_key\": null, \"avg_rating\": 4.3, \"num_of_reviews\": 564}, {\"name\": \"Rancherito's Mexican Food\", \"address\": \"Rancherito's Mexican Food, 1147 Main St, Logan, UT 84341\", \"slchd_establishment_key\": null, \"avg_rating\": 4.1, \"num_of_reviews\": 892}, {\"name\": \"Chubby's Cafe Pleasant Grove\", \"address\": \"Chubby's Cafe Pleasant Grove, 336 S Main St, Pleasant Grove, UT 84062\", \"slchd_establishment_key\": null, \"avg_rating\": 4.7, \"num_of_reviews\": 2430}, {\"name\": \"Rancheritos Mexican Food\", \"address\": \"Rancheritos Mexican Food, 66 Center St, Orem, UT 84057\", \"slchd_establishment_key\": null, \"avg_rating\": 3.7, \"num_of_reviews\": 917}, {\"name\": \"Chubby's Cafe Tooele\", \"address\": \"Chubby's Cafe Tooele, 1211 N Main St, Tooele, UT 84074\", \"slchd_establishment_key\": null, \"avg_rating\": 4.6, \"num_of_reviews\": 661}, {\"name\": \"Rancherito's Mexican Food\", \"address\": \"Rancherito's Mexican Food, 343 Frontage Rd, Centerville, UT 84014\", \"slchd_establishment_key\": null, \"avg_rating\": 4.2, \"num_of_reviews\": 468}, {\"name\": \"Rancherito's Mexican Food\", \"address\": \"Rancherito's Mexican Food, 5650 S 1900 W, Roy, UT 84067\", \"slchd_establishment_key\": null, \"avg_rating\": 4.0, \"num_of_reviews\": 1143}, {\"name\": \"Rancheritos\", \"address\": \"Rancheritos, 735 E 9400 S, Sandy, UT 84094\", \"slchd_establishment_key\": null, \"avg_rating\": 3.4, \"num_of_reviews\": 538}, {\"name\": \"Rancherito's Mexican Food\", \"address\": \"Rancherito's Mexican Food, 3450 S State St, South Salt Lake, UT 84115\", \"slchd_establishment_key\": null, \"avg_rating\": 4.1, \"num_of_reviews\": 1383}]}",
+      "tool_call_id": "call_985602",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "SELECT slchd_establishment_key, name, address, city\nFROM establishment_keys\nWHERE address ILIKE '%84116%' OR address ILIKE '%1400 W%' OR address ILIKE '%1000 N%' OR address ILIKE '%900 W%' OR address ILIKE '%North Temple%' OR address ILIKE '%600 N%';"
+          },
+          "id": "call_925098",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 22813,
+        "output_tokens": 141,
+        "total_tokens": 22954,
+        "input_token_details": {
+          "cache_read": 0
+        },
+        "output_token_details": {
+          "reasoning": 39
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 30, \"truncated\": false, \"rows\": [{\"slchd_establishment_key\": \"23 N 900 W SLC|23 N 900 W|SALT LAKE CITY\", \"name\": \"23 N 900 W SLC\", \"address\": \"23 N 900 W\", \"city\": \"SALT LAKE CITY\"}, {\"slchd_establishment_key\": \"ANTOJITOS DONA JULIA|1447 W 1000 N|SALT LAKE CITY\", \"name\": \"ANTOJITOS DONA JULIA\", \"address\": \"1447 W 1000 N\", \"city\": \"SALT LAKE CITY\"}, {\"slchd_establishment_key\": \"ANTOJITOS MEXICANOS EL CABRITO|956 W 1000 N|SALT LAKE CITY\", \"name\": \"ANTOJITOS MEXICANOS EL CABRITO\", \"address\": \"956 W 1000 N\", \"city\": \"SALT LAKE CITY\"}, {\"slchd_establishment_key\": \"BURGER KING 31574|1660 W NORTH TEMPLE ST|SALT LAKE CITY\", \"name\": \"BURGER KING 31574\", \"address\": \"1660 W NORTH TEMPLE ST\", \"city\": \"SALT LAKE CITY\"}, {\"slchd_establishment_key\": \"CARLS JR #21|1726 W NORTH TEMPLE|SALT LAKE CITY\", \"name\": \"CARLS JR #21\", \"address\": \"1726 W NORTH TEMPLE\", \"city\": \"SALT LAKE CITY\"}, {\"slchd_establishment_key\": \"CHURCH OFFICE BUILDING-BANQUET KITCHEN|50 E NORTH TEMPLE ST|SALT LAKE CITY\", \"name\": \"CHURCH OFFICE BUILDING-BANQUET KITCHEN\", \"address\": \"50 E NORTH TEMPLE ST\", \"city\": \"SALT LAKE CITY\"}, {\"slchd_establishment_key\": \"CULTURE COFFEE|285 N 900 W|SALT LAKE CITY\", \"name\": \"CULTURE COFFEE\", \"address\": \"285 N 900 W\", \"city\": \"SALT LAKE CITY\"}, {\"slchd_establishment_key\": \"DENNYS #7480|1701 W NORTH TEMPLE ST|SALT LAKE CITY\", \"name\": \"DENNYS #7480\", \"address\": \"1701 W NORTH TEMPLE ST\", \"city\": \"SALT LAKE CITY\"}, {\"slchd_establishment_key\": \"DOMINOS|1156 W 600 N|SALT LAKE CITY\", \"name\": \"DOMINOS\", \"address\": \"1156 W 600 N\", \"city\": \"SALT LAKE CITY\"}, {\"slchd_establishment_key\": \"DON DANIELS MEXICAN GRILL & CANTINA|1017 N 900 W|SALT LAKE CITY\", \"name\": \"DON DANIELS MEXICAN GRILL & CANTINA\", \"address\": \"1017 N 900 W\", \"city\": \"SALT LAKE CITY\"}, {\"slchd_establishment_key\": \"FLYING J TRAVEL CENTER #746|2025 S 900 W|SALT LAKE CITY\", \"name\": \"FLYING J TRAVEL CENTER #746\", \"address\": \"2025 S 900 W\", \"city\": \"SALT LAKE CITY\"}, {\"slchd_establishment_key\": \"HABANERO CHILE|1245 S 900 W|SALT LAKE CITY\", \"name\": \"HABANERO CHILE\", \"address\": \"1245 S 900 W\", \"city\": \"SALT LAKE CITY\"}, {\"slchd_establishment_key\": \"ICO FAIRBOURNE STATION - POOL|2900 W LEHMAN AVE|WEST VALLEY CITY\", \"name\": \"ICO FAIRBOURNE STATION - POOL\", \"address\": \"2900 W LEHMAN AVE\", \"city\": \"WEST VALLEY CITY\"}, {\"slchd_establishment_key\": \"ICO FAIRBOURNE STATION- W/P|2900 W LEHMAN AVE|WEST VALLEY CITY\", \"name\": \"ICO FAIRBOURNE STATION- W/P\", \"address\": \"2900 W LEHMAN AVE\", \"city\": \"WEST VALLEY CITY\"}, {\"slchd_establishment_key\": \"INDEPENDENCE DAY DRONE SHOW 2025|1060 S 900 W|SALT LAKE CITY\", \"name\": \"INDEPENDENCE DAY DRONE SHOW 2025\", \"address\": \"1060 S 900 W\", \"city\": \"SALT LAKE CITY\"}, {\"slchd_establishment_key\": \"INDEPENDENCE DAY DRONE SHOW 2026|1060 S 900 W|SALT LAKE CITY\", \"name\": \"INDEPENDENCE DAY DRONE SHOW 2026\", \"address\": \"1060 S 900 W\", \"city\": \"SALT LAKE CITY\"}, {\"slchd_establishment_key\": \"JACKSONS #150|1704 W NORTH TEMPLE ST|SALT LAKE CITY\", \"name\": \"JACKSONS #150\", \"address\": \"1704 W NORTH TEMPLE ST\", \"city\": \"SALT LAKE CITY\"}, {\"slchd_establishment_key\": \"MCDONALDS #5688|3900 W 5400 S|TAYLORSVILLE\", \"name\": \"MCDONALDS #5688\", \"address\": \"3900 W 5400 S\", \"city\": \"TAYLORSVILLE\"}, {\"slchd_establishment_key\": \"MCDONALDS #6396|916 W NORTH TEMPLE ST|SALT LAKE CITY\", \"name\": \"MCDONALDS #6396\", \"address\": \"916 W NORTH TEMPLE ST\", \"city\": \"SALT LAKE CITY\"}, {\"slchd_establishment_key\": \"NICOS RESTAURANT|1458 W NORTH TEMPLE ST|SALT LAKE CITY\", \"name\": \"NICOS RESTAURANT\", \"address\": \"1458 W NORTH TEMPLE ST\", \"city\": \"SALT LAKE CITY\"}, {\"slchd_establishment_key\": \"PAPA JOHNS PIZZA #2074|1230 W 600 N|SALT LAKE CITY\", \"name\": \"PAPA JOHNS PIZZA #2074\", \"address\": \"1230 W 600 N\", \"city\": \"SALT LAKE CITY\"}, {\"slchd_establishment_key\": \"QUALITY QUICK STOP|938 N 900 W|SALT LAKE CITY\", \"name\": \"QUALITY QUICK STOP\", \"address\": \"938 N 900 W\", \"city\": \"SALT LAKE CITY\"}, {\"slchd_establishment_key\": \"RANCHERITOS|775 W NORTH TEMPLE|SALT LAKE CITY\", \"name\": \"RANCHERITOS\", \"address\": \"775 W NORTH TEMPLE\", \"city\": \"SALT LAKE CITY\"}, {\"slchd_establishment_key\": \"RUNWAY CAFE|2211 W NORTH TEMPLE ST|SALT LAKE CITY\", \"name\": \"RUNWAY CAFE\", \"address\": \"2211 W NORTH TEMPLE ST\", \"city\": \"SALT LAKE CITY\"}, {\"slchd_establishment_key\": \"SALVATION ARMY #6E6YR|438 S 900 W|SALT LAKE CITY\", \"name\": \"SALVATION ARMY #6E6YR\", \"address\": \"438 S 900 W\", \"city\": \"SALT LAKE CITY\"}, {\"slchd_establishment_key\": \"SALVATION ARMY|438 S 900 W|SALT LAKE CITY\", \"name\": \"SALVATION ARMY\", \"address\": \"438 S 900 W\", \"city\": \"SALT LAKE CITY\"}, {\"slchd_establishment_key\": \"SHA MUU|23 N 900 W|SALT LAKE CITY\", \"name\": \"SHA MUU\", \"address\": \"23 N 900 W\", \"city\": \"SALT LAKE CITY\"}, {\"slchd_establishment_key\": \"UTAH CULTURAL CELEBRATION CENTER - KITCHEN|3100 S 1400 W|WEST VALLEY CITY\", \"name\": \"UTAH CULTURAL CELEBRATION CENTER - KITCHEN\", \"address\": \"3100 S 1400 W\", \"city\": \"WEST VALLEY CITY\"}, {\"slchd_establishment_key\": \"UTAH FOOD BANK|3150 S 900 W|SOUTH SALT LAKE\", \"name\": \"UTAH FOOD BANK\", \"address\": \"3150 S 900 W\", \"city\": \"SOUTH SALT LAKE\"}, {\"slchd_establishment_key\": \"XIMBO 28|422 W 600 N|SALT LAKE CITY\", \"name\": \"XIMBO 28\", \"address\": \"422 W 600 N\", \"city\": \"SALT LAKE CITY\"}]}",
+      "tool_call_id": "call_925098",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "SELECT slchd_establishment_key, name, address, city\nFROM establishment_keys\nWHERE name ILIKE '%chubby%' OR name ILIKE '%santo%' OR name ILIKE '%jaripeo%' OR name ILIKE '%hacienda%';"
+          },
+          "id": "call_998741",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 25018,
+        "output_tokens": 156,
+        "total_tokens": 25174,
+        "input_token_details": {
+          "cache_read": 16292
+        },
+        "output_token_details": {
+          "reasoning": 82
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 3, \"truncated\": false, \"rows\": [{\"slchd_establishment_key\": \"EL JARIPEO 8 #267390A|7235 W 3500 S|MAGNA\", \"name\": \"EL JARIPEO 8 #267390A\", \"address\": \"7235 W 3500 S\", \"city\": \"MAGNA\"}, {\"slchd_establishment_key\": \"EL JARIPEO GRILL ON THE WHEEL #3T7LA|1259 S REDWOOD RD|SALT LAKE CITY\", \"name\": \"EL JARIPEO GRILL ON THE WHEEL #3T7LA\", \"address\": \"1259 S REDWOOD RD\", \"city\": \"SALT LAKE CITY\"}, {\"slchd_establishment_key\": \"SANTORINIS AND SWIG|9256 S STATE ST|SANDY\", \"name\": \"SANTORINIS AND SWIG\", \"address\": \"9256 S STATE ST\", \"city\": \"SANDY\"}]}",
+      "tool_call_id": "call_998741",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "SELECT i.inspection_date, i.inspection_score, it.description as inspection_type,\n       e.slchd_establishment_key\nFROM inspections i\nLEFT JOIN inspection_types it ON i.inspection_type_id = it.inspection_type_id\nJOIN establishment_keys e ON i.slchd_establishment_key = e.slchd_establishment_key\nWHERE e.slchd_establishment_key IN (\n    'ANTOJITOS MEXICANOS EL CABRITO|956 W 1000 N|SALT LAKE CITY',\n    'RANCHERITOS|775 W NORTH TEMPLE|SALT LAKE CITY',\n    'DENNYS #7480|1701 W NORTH TEMPLE ST|SALT LAKE CITY'\n)\nORDER BY i.inspection_date DESC\nLIMIT 15;"
+          },
+          "id": "call_789290",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 25417,
+        "output_tokens": 1108,
+        "total_tokens": 26525,
+        "input_token_details": {
+          "cache_read": 16287
+        },
+        "output_token_details": {
+          "reasoning": 900
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 15, \"truncated\": false, \"rows\": [{\"inspection_date\": \"2025-10-24 00:00:00\", \"inspection_score\": 13, \"inspection_type\": \"Routine\", \"slchd_establishment_key\": \"DENNYS #7480|1701 W NORTH TEMPLE ST|SALT LAKE CITY\"}, {\"inspection_date\": \"2025-04-22 00:00:00\", \"inspection_score\": 6, \"inspection_type\": \"Routine\", \"slchd_establishment_key\": \"RANCHERITOS|775 W NORTH TEMPLE|SALT LAKE CITY\"}, {\"inspection_date\": \"2025-04-21 00:00:00\", \"inspection_score\": 22, \"inspection_type\": \"Critical Item\", \"slchd_establishment_key\": \"DENNYS #7480|1701 W NORTH TEMPLE ST|SALT LAKE CITY\"}, {\"inspection_date\": \"2025-01-03 00:00:00\", \"inspection_score\": 3, \"inspection_type\": \"Routine\", \"slchd_establishment_key\": \"DENNYS #7480|1701 W NORTH TEMPLE ST|SALT LAKE CITY\"}, {\"inspection_date\": \"2024-12-17 00:00:00\", \"inspection_score\": 8, \"inspection_type\": \"Routine\", \"slchd_establishment_key\": \"ANTOJITOS MEXICANOS EL CABRITO|956 W 1000 N|SALT LAKE CITY\"}, {\"inspection_date\": \"2024-12-02 00:00:00\", \"inspection_score\": 11, \"inspection_type\": \"Routine\", \"slchd_establishment_key\": \"RANCHERITOS|775 W NORTH TEMPLE|SALT LAKE CITY\"}, {\"inspection_date\": \"2024-11-14 00:00:00\", \"inspection_score\": 0, \"inspection_type\": \"Critical Item\", \"slchd_establishment_key\": \"DENNYS #7480|1701 W NORTH TEMPLE ST|SALT LAKE CITY\"}, {\"inspection_date\": \"2024-07-02 00:00:00\", \"inspection_score\": 2, \"inspection_type\": \"Routine\", \"slchd_establishment_key\": \"DENNYS #7480|1701 W NORTH TEMPLE ST|SALT LAKE CITY\"}, {\"inspection_date\": \"2024-06-07 00:00:00\", \"inspection_score\": 19, \"inspection_type\": \"Routine\", \"slchd_establishment_key\": \"RANCHERITOS|775 W NORTH TEMPLE|SALT LAKE CITY\"}, {\"inspection_date\": \"2024-02-21 00:00:00\", \"inspection_score\": 47, \"inspection_type\": \"Routine\", \"slchd_establishment_key\": \"DENNYS #7480|1701 W NORTH TEMPLE ST|SALT LAKE CITY\"}, {\"inspection_date\": \"2024-01-23 00:00:00\", \"inspection_score\": 5, \"inspection_type\": \"Routine\", \"slchd_establishment_key\": \"RANCHERITOS|775 W NORTH TEMPLE|SALT LAKE CITY\"}, {\"inspection_date\": \"2023-12-19 00:00:00\", \"inspection_score\": 23, \"inspection_type\": \"Routine\", \"slchd_establishment_key\": \"ANTOJITOS MEXICANOS EL CABRITO|956 W 1000 N|SALT LAKE CITY\"}, {\"inspection_date\": \"2023-12-14 00:00:00\", \"inspection_score\": 32, \"inspection_type\": \"Followup\", \"slchd_establishment_key\": \"DENNYS #7480|1701 W NORTH TEMPLE ST|SALT LAKE CITY\"}, {\"inspection_date\": \"2023-10-18 00:00:00\", \"inspection_score\": 40, \"inspection_type\": \"Routine\", \"slchd_establishment_key\": \"DENNYS #7480|1701 W NORTH TEMPLE ST|SALT LAKE CITY\"}, {\"inspection_date\": \"2023-07-12 00:00:00\", \"inspection_score\": 16, \"inspection_type\": \"Routine\", \"slchd_establishment_key\": \"RANCHERITOS|775 W NORTH TEMPLE|SALT LAKE CITY\"}]}",
+      "tool_call_id": "call_789290",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "SELECT e.name, e.avg_rating, e.num_of_reviews\nFROM establishments e\nWHERE e.name IN (\n    'El Jaripeo Taco Truck (Rose Park)',\n    'Santo Taco',\n    'Chubby\\'s Mexican Restaurant',\n    'Hacienda Mexican Grill',\n    'El Asadero Mexican Food',\n    'El Cabrito',\n    'Rancherito\\'s Mexican Food',\n    'Denny\\'s'\n)\nAND e.address ILIKE '%84116%'\nORDER BY e.avg_rating DESC, e.num_of_reviews DESC;"
+          },
+          "id": "call_1066882",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 27639,
+        "output_tokens": 227,
+        "total_tokens": 27866,
+        "input_token_details": {
+          "cache_read": 24433
+        },
+        "output_token_details": {
+          "reasoning": 72
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "SQL error: Parser Error: syntax error at or near \"s\"\n\nLINE 6:     'Chubby\\'s Mexican Restaurant',\n                     ^",
+      "tool_call_id": "call_1066882",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "SELECT e.name, e.avg_rating, e.num_of_reviews\nFROM establishments e\nWHERE (\n    e.name ILIKE '%El Jaripeo Taco Truck%'\n    OR e.name ILIKE '%Santo Taco%'\n    OR e.name ILIKE '%Chubby''s Mexican Restaurant%'\n    OR e.name ILIKE '%Hacienda Mexican Grill%'\n    OR e.name ILIKE '%El Asadero Mexican Food%'\n    OR e.name ILIKE '%El Cabrito%'\n    OR e.name ILIKE '%Rancherito''s Mexican Food%'\n    OR e.name ILIKE '%Denny''s%'\n)\nAND e.address ILIKE '%84116%'\nORDER BY e.avg_rating DESC, e.num_of_reviews DESC;"
+          },
+          "id": "call_105448",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 27911,
+        "output_tokens": 222,
+        "total_tokens": 28133,
+        "input_token_details": {
+          "cache_read": 24426
+        },
+        "output_token_details": {
+          "reasoning": 19
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 8, \"truncated\": false, \"rows\": [{\"name\": \"El Jaripeo Taco Truck (Rose Park)\", \"avg_rating\": 4.8, \"num_of_reviews\": 58}, {\"name\": \"Santo Taco\", \"avg_rating\": 4.6, \"num_of_reviews\": 758}, {\"name\": \"Chubby's Mexican Restaurant\", \"avg_rating\": 4.5, \"num_of_reviews\": 1316}, {\"name\": \"Hacienda Mexican Grill\", \"avg_rating\": 4.5, \"num_of_reviews\": 308}, {\"name\": \"El Asadero Mexican Food\", \"avg_rating\": 4.4, \"num_of_reviews\": 438}, {\"name\": \"El Cabrito\", \"avg_rating\": 4.2, \"num_of_reviews\": 997}, {\"name\": \"Rancherito's Mexican Food\", \"avg_rating\": 4.0, \"num_of_reviews\": 1238}, {\"name\": \"Denny's\", \"avg_rating\": 3.6, \"num_of_reviews\": 1948}]}",
+      "tool_call_id": "call_105448",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "plot_chart",
+          "args": {
+            "query": "SELECT e.name, e.avg_rating, e.num_of_reviews\nFROM establishments e\nWHERE (\n    e.name ILIKE '%El Jaripeo Taco Truck%'\n    OR e.name ILIKE '%Santo Taco%'\n    OR e.name ILIKE '%Chubby''s Mexican Restaurant%'\n    OR e.name ILIKE '%Hacienda Mexican Grill%'\n    OR e.name ILIKE '%El Asadero Mexican Food%'\n    OR e.name ILIKE '%El Cabrito%'\n    OR e.name ILIKE '%Rancherito''s Mexican Food%'\n    OR e.name ILIKE '%Denny''s%'\n)\nAND e.address ILIKE '%84116%'\nORDER BY e.avg_rating DESC;",
+            "title": "Savory Breakfast Spots in & around Rose Park (SLC 84116) - Average Google Rating",
+            "y": "avg_rating",
+            "chart_type": "bar",
+            "x": "name"
+          },
+          "id": "call_1111426",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 28382,
+        "output_tokens": 274,
+        "total_tokens": 28656,
+        "input_token_details": {
+          "cache_read": 24420
+        },
+        "output_token_details": {
+          "reasoning": 31
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "Chart created: 'Savory Breakfast Spots in & around Rose Park (SLC 84116) - Average Google Rating' (bar, 8 rows). It will be shown to the user below your answer.",
+      "tool_call_id": "call_1111426",
+      "name": "plot_chart"
+    },
+    {
+      "type": "AIMessage",
+      "content": "If you're in **Rose Park (ZIP 84116)** and want a **savory breakfast** (such as hearty breakfast burritos, chilaquiles, huevos rancheros, or classic eggs, bacon, and hashbrowns) without traveling far, here are the top recommendations right in or adjacent to the neighborhood:\n\n---\n\n### Top Savory Breakfast Recommendations in Rose Park\n\n1. **El Jaripeo Taco Truck (Rose Park)**\n   * **Location:** 1188 W 600 N, Salt Lake City, UT 84116\n   * **Google Rating:** **4.8 \u2605** (58 reviews)\n   * **Savory Highlights:** Excellent local food truck located right on 600 N in Rose Park, serving quick, savory breakfast burritos and tacos.\n   * *SLCHD Inspection Status:* No matched Salt Lake County Health Department inspection record in the database.\n\n2. **Santo Taco**\n   * **Location:** 910 900 W, Salt Lake City, UT 84116\n   * **Google Rating:** **4.6 \u2605** (758 reviews) | Price: **$**\n   * **Savory Highlights:** Located on 900 W in Rose Park. Known for fresh street-style tacos, chilaquiles, and savory Mexican morning specials.\n   * *SLCHD Inspection Status:* No matched Salt Lake County Health Department inspection record in the database.\n\n3. **Chubby's Mexican Restaurant**\n   * **Location:** 955 N 1400 W, Salt Lake City, UT 84116\n   * **Google Rating:** **4.5 \u2605** (1,316 reviews) | Price: **$**\n   * **Savory Highlights:** A neighborhood staple in the heart of Rose Park. Famous for giant savory breakfast burritos packed with eggs, chorizo or bacon, potatoes, and cheese, as well as Huevos Rancheros.\n   * *SLCHD Inspection Status:* No matched Salt Lake County Health Department inspection record in the database.\n\n4. **Hacienda Mexican Grill**\n   * **Location:** 797 N Redwood Rd, Salt Lake City, UT 84116\n   * **Google Rating:** **4.5 \u2605** (308 reviews)\n   * **Savory Highlights:** Conveniently on Redwood Rd, serving egg scrambles, savory breakfast burritos, and savory Mexican breakfast plates.\n   * *SLCHD Inspection Status:* No matched Salt Lake County Health Department inspection record in the database.\n\n5. **El Cabrito**\n   * **Location:** 956 1000 N, Salt Lake City, UT 84116\n   * **Google Rating:** **4.2 \u2605** (997 reviews) | Price: **$**\n   * **Savory Highlights:** Classic local joint on 1000 N in Rose Park offering savory Mexican morning dishes like menudo, breakfast burritos, and savory tacos.\n   * *SLCHD Health Inspection:* Matched listing (`ANTOJITOS MEXICANOS EL CABRITO`). Most recent routine inspection was on **December 17, 2024** with a clean score of **8**.\n\n---\n\n### Nearby Options (North Temple Corridor)\n\n* **El Asadero Mexican Food** (1011 W North Temple, 4.4 \u2605, 438 reviews) \u2013 Great spot on the edge of Rose Park for stuffed savory breakfast burritos. *(No matched SLCHD record)*\n* **Rancherito's Mexican Food** (775 W North Temple, 4.0 \u2605, 1,238 reviews) \u2013 Open 24/7 for massive savory breakfast burritos (Chorizo, Machaca, Steak & Eggs). *(Matched SLCHD record: routine inspection score of 6 on April 22, 2025)*\n* **Denny's** (1701 W North Temple, 3.6 \u2605, 1,948 reviews) \u2013 Traditional 24/7 diner for savory American breakfasts (eggs, bacon, sausage, omelets, hashbrowns). *(Matched SLCHD record: routine inspection score of 13 on October 24, 2025)*\n\n---\n\n*Note: Approximately 98.4% of Google Local establishment listings in Salt Lake County do not have a matched SLCHD health inspection record in this database; an unmatched status simply indicates no linked health department entry was found.*",
+      "raw_content": [
+        {
+          "type": "text",
+          "text": "If you're in **Rose Park (ZIP 84116)** and want a **savory breakfast** (such as hearty breakfast burritos, chilaquiles, huevos rancheros, or classic eggs, bacon, and hashbrowns) without traveling far, here are the top recommendations right in or adjacent to the neighborhood:\n\n---\n\n### Top Savory Breakfast Recommendations in Rose Park\n\n1. **El Jaripeo Taco Truck (Rose Park)**\n   * **Location:** 1188 W 600 N, Salt Lake City, UT 84116\n   * **Google Rating:** **4.8 \u2605** (58 reviews)\n   * **Savory Highlights:** Excellent local food truck located right on 600 N in Rose Park, serving quick, savory breakfast burritos and tacos.\n   * *SLCHD Inspection Status:* No matched Salt Lake County Health Department inspection record in the database.\n\n2. **Santo Taco**\n   * **Location:** 910 900 W, Salt Lake City, UT 84116\n   * **Google Rating:** **4.6 \u2605** (758 reviews) | Price: **$**\n   * **Savory Highlights:** Located on 900 W in Rose Park. Known for fresh street-style tacos, chilaquiles, and savory Mexican morning specials.\n   * *SLCHD Inspection Status:* No matched Salt Lake County Health Department inspection record in the database.\n\n3. **Chubby's Mexican Restaurant**\n   * **Location:** 955 N 1400 W, Salt Lake City, UT 84116\n   * **Google Rating:** **4.5 \u2605** (1,316 reviews) | Price: **$**\n   * **Savory Highlights:** A neighborhood staple in the heart of Rose Park. Famous for giant savory breakfast burritos packed with eggs, chorizo or bacon, potatoes, and cheese, as well as Huevos Rancheros.\n   * *SLCHD Inspection Status:* No matched Salt Lake County Health Department inspection record in the database.\n\n4. **Hacienda Mexican Grill**\n   * **Location:** 797 N Redwood Rd, Salt Lake City, UT 84116\n   * **Google Rating:** **4.5 \u2605** (308 reviews)\n   * **Savory Highlights:** Conveniently on Redwood Rd, serving egg scrambles, savory breakfast burritos, and savory Mexican breakfast plates.\n   * *SLCHD Inspection Status:* No matched Salt Lake County Health Department inspection record in the database.\n\n5. **El Cabrito**\n   * **Location:** 956 1000 N, Salt Lake City, UT 84116\n   * **Google Rating:** **4.2 \u2605** (997 reviews) | Price: **$**\n   * **Savory Highlights:** Classic local joint on 1000 N in Rose Park offering savory Mexican morning dishes like menudo, breakfast burritos, and savory tacos.\n   * *SLCHD Health Inspection:* Matched listing (`ANTOJITOS MEXICANOS EL CABRITO`). Most recent routine inspection was on **December 17, 2024** with a clean score of **8**.\n\n---\n\n### Nearby Options (North Temple Corridor)\n\n* **El Asadero Mexican Food** (1011 W North Temple, 4.4 \u2605, 438 reviews) \u2013 Great spot on the edge of Rose Park for stuffed savory breakfast burritos. *(No matched SLCHD record)*\n* **Rancherito's Mexican Food** (775 W North Temple, 4.0 \u2605, 1,238 reviews) \u2013 Open 24/7 for massive savory breakfast burritos (Chorizo, Machaca, Steak & Eggs). *(Matched SLCHD record: routine inspection score of 6 on April 22, 2025)*\n* **Denny's** (1701 W North Temple, 3.6 \u2605, 1,948 reviews) \u2013 Traditional 24/7 diner for savory American breakfasts (eggs, bacon, sausage, omelets, hashbrowns). *(Matched SLCHD record: routine inspection score of 13 on October 24, 2025)*\n\n---\n\n*Note: Approximately 98.4% of Google Local establishment listings in Salt Lake County do not have a matched SLCHD health inspection record in this database; an unmatched status simply indicates no linked health department entry was found.*",
+          "extras": {
+            "signature": "Et8aCtwaARFNMg+yTKWzJ1n5551cNa4vCzEEjom+spM/PbZZtJkW4uIIu3Vn+9Kz+XOnQi5KX0Q4hrXh7M4+EjkB1Y13REvvxf5ayLximwXslFoJGK7UDil0+v/eOtp0OMPVMBHxJ3nqvthe/BFoEW4Z5Nl1YlK9KI63gWBFLg/GJyA9uABzXsOD66+4L5UsBnc2/NU2TGNy2ONaBBma0qZ0deq1bj03R21T0enQzJDxuCu261pEp6ukP9SszZgii+W11+w6eqcMk0KjCgIOXy+Zjg5RdwHQy2p4nbX1zvUnjvOOmT25dxcQGZZ+Bm9d4l55EmRlttv9IXoyhTyTPRNEzw1gHQJnE4lMJguRC5Q7ldAWtpHqhWYLnR0hZgGVaLk9d8fw4aaqZzGbVPOLkmJOC/m9Hw8sgz9X10YQJBSwCYPgY13gBrPsvxks8364mvKrg3YNjW0ojN/VIR+Igctau16KIFs7KMERsFMtWfhMr6Y7A0EquFbrNjhpLDRsphBFDoVFWBeqUpivnVOi1rtPhQcK9MeCpPiWPHalGPws1u39Bmz41O/bH37tO6Ela1boc5iU6qUUelQoDeggTIkNlyCVxILJvrqd1kcN8gk0UYzy8Wgf9LLEvmSMvVGd1veKDulqT5W90PrSmcSht0wnniX024pvT1Iz6pxixrQNOozmO39QSPpnKe+W3j05DWgw3HJJ4PcSqfnUI0to+lgV8K7h1PpaUuGcQff6TY8wzpLyUrZxG51Wft0V2GxNrWaCOI2LLbl9ZjWQ6foDRTi0ewmY/gNqfsnD/XkAXpwrzxmKSX36VOFQFgKkR2gYoiKX1VZtqy28ONcMMC5sob+ihShkkonb7QvyWi1vye6LB24gBDV0CKXHIYYLkfBOF67qNVES+1gulUQTZsIryjCxaf7T+8CGUwCmbpOXfCGWOjP1U8SPLY1xnVOr7bNF3mLLzzHr73vyFZcQi7BHoWDiJ3xPDDz+Rilr4reTqmVg4mDILviF5YANOYxHGoh8OxpUG/YQIppddB0rHZhIPUR9pbMvv3ILOdMy0O8To9hV0FCfzXiRg/aAfu85fUDXlNm2mgHz3HL03+JLF6231Toft5Tuhn2u6tyX2Fh8V7IwEB8JGwgx8TxxIQwzruACFAhxkMxfhH5HopRXX8kV7p8xi8oXM5yh2V9kDuY7bY8CuRSdvnxts0NAwq+Sf16mJPRUFL9yuwFYz1OZpnMU7WVRh9GSxfKG3rx4IbMfOcBZYTyL9njNrTjKv1oPeC+bF2luLTeFyzZW5LWAn1n0asKyHSFllbmuml/hQOGPqEfqopP3mF1d8kTu1+0fSizrkgX6BKOHKaET0PFV8rmwx/R6R6PnCx2EvohjeouW/WdYQA6pXHEZuq6cVkGqWUVGgCmX+fA8FekYjN7rKhaqdOyzLJXdN1F669pf3DHV8WGhDuJOnvWj2c0r/NMvFtGxU9smy8a5+w/B054q3Ej8w1rm7Tf2A8QRL1rNF6kkFHgaZf3gxr5jUk8pfWcz+udrVIm7nq1y5il8U2uX/ZjEBScoimsLp46Ge8qZTrguh2uoAwnvVwY0u/nPwtDCsxgIu6/QJTozNbwUBmSF4W/Mh0MgsLh3BVYh11kJmSkNYRvpv2jvlRwn+jWoqeYkyV6VStQGSFFqP8M7jUYA2YCMSyPpD0hq7GZEZsgKCJauBeu7eumwyjqTFLelgc+6nMWooA82KTIL/6ChpMEfpbU0li5xdo9KHTS1jOz2OdjyUauhjw3Ef4VrCr0fMkq9Ebe1GSohXkeqdVThTBrwZaNA7vGt6ULeRiQcHakvbNnS13pPMwm8a59P7jagZX50yL2CfCwxOPEnQDGWpedPNdM+gd8Cbvk7OLKPaWBcBdCCTZK7sL2ZAN1lZhX2iD5wQybxGASf+JF7XthMTUEC/qNj3khI+CKLrcTKanMgJPFgaHC6lh3mKwTdeD7NZ3vh81MfaWLFwg2vW7RxO7XzLa+Nfx17wIplrfpa24Gul2LqKE3GsymlY94gptkbzZpeyjTA07wcHGTyAX4izjEBO45BQdZKMio9CZkXcpAOxjt4wKdiN3WyKdr8XckzwmlZ6YgzTInGhWs1mn9rJjAcJuCF6aDwLeWMkEpcnPmwjgcZRa/mS2qwedKnu3UKQdnt8qNCySXIhvpXsl1661zwYA3wkpbSO/AvUQBHEONqmzFS1inGQ+HZtDqB7UnsvZiBAGxOgYEJxn0sHrTVV/3n2FHIPwXG+8ckO24ZJ6nQUpAPFQuHSHaossEI+06tJwrmUJp6wB7Pa5gXaT+dK9+PTBDhjYnAcAz3PkNU0nhwdgK3Y1v+ZAI6DYO1tp9dbZQosztJ+Z2KKFaAkVYJXNDBV2u62Aa6svU+4SEoTUxRmDkwSVjt8IW1EUGwlZ/qLPYgl7nI3YArTPaAYjnRRi5o8NwsUD7eVjAW4HNEBlILVyGVn3PS/MTo/zpvgfNTuGZxyCOlJE8TIY7X/s/F8rIkhAQ4G2Ca9cTzSaHZHlM2+lUxb1qMuTwHS7pwpDVb5rVpzu9k4iNRP/QueFVzz4Cv/PpnPzAhf2B7gYojproSqHRRCWTTcmAlhbzcyOmsmuUYQvfcDFBGNfp/lBUiXk7uKnT1BpsNAFdZXV1OdCbLB4tR/gqZSivVeAnPTMV5xnXJjl/PIenZ2AHbQ6GlA6XJKJmBO+FkP8vvKgoNZpepfpmNV/hxcSmfu46gfafBzeZNtaTYaXwTuK8C6rsjJc9inwTcsbEaGuUt0O8yTFgrkHwW/g1x6xL8jM2rzFhSrhMV8w9iFAJVNbuRCHNQOH2simM+VyE2pZm5JyufjDHdpgMWTTGdjGZiEZI8a1MiTDErkfvu9BlzHw7AelnBM6kUjmWO2FBBXZrYY6QonSUmUC8SDLcZT7/Mp2RfJzcq4dKfKB5tr968AF4iEM8SDjoCi3CBRDCnwKb9gyTDfeqybil/3fSorb9wGafvAWLDPpFojcEXW21kSefDM6lWviBFcQMaNO3YR4shzu/Z5tLqmVM1ybfi2DaIzyMXJG4C/RRruVhMgb/bS/R/G5onLhABzibUsrYiqtQoTKovbO3gY+6vICcBjvzg2K24ekkypQf+g+4tLzOyKTtwWcE1bDpzGO09ZMlcRpOJb813kDm2Vl+NWkei0OtK9GsovC0WPgVavuXAtyc5COJ04RVPhbUaPjTlSVTijyqvxSvRFmnM6GrN0x5dyCcswhFQwghJhirEblyMv3+ZcdINtWHmPkJd6PEvMyxR+TKwcrLVGmIJbh/LN9Y1XU4PK+CnQmw4WbqT3gsCwDmgZylcjalA1MuIByBLNde2yrKvalfB8eWOpR54azKgK7Teaq9CDocnMEYFlIvUn+jypcw8Qh67lPMnbY4bp3JP6VesRY0WGNEBOTbtAsB3lKEc7hQ4QPMW4FK52C5f2aKj8RJ57l/OfK0gIAxq1zaZKyxek0Wh2vpo0M85QjnCMyLOlpv/YOu5T9rb2OMrmF7CK1/LuK0T7KlB4Ng6QNzknrQxzaBhGsga1wTrQ/HNQN0fq0dpZ6CEvpfvo77hBXAHu+c9BR7NkvlwiCYOvLA38oNrA/8xBEHnHAYcVDH0pSWjsAbMDxJDpj72Rl0RI1oCVsSVd7JiWTBrMwtLXwV4xE5qVVnundj4QQ/QxzckO8vCNP3P3Mn7mvYNSZOr/vs0Y5CyDsEULc/58AQUVzq8KAukrJQOddWAo61fYJAnOamN8/JnFjao14zpCSVDjQ6hJpuXW5LlgF/GlK+LQF7UboCQCpJQLDYfqndI75X291hL6Gx4p2fOk/Z7+PKXddp/F22mWRR0Rb8MOpfnznlmMNee9AmwyIdb1aB2qEUMZyrg2wG56x3b8aZraOPVvx+aHPGqkFYsKZ9Tp2itDGMSzrwMW7TnjEy7n/8xOlVobujBrazxhgDYrz1WxDASNZl09ZQRqnwRT2zvmSq4TrbQR8G+L8V0K1mJwQholbI3rh2odkCNVuMIKJ1YlCO8WJyDcwjf4hO5ToYiy2WykjNppDXg7iFfuhaannHUYUf7RNsBQlSbUk63zpOYDM5QG13VrdCiVlOfpOnjLPswlmDsEguSGetebGMHgNNMu4Z3KKr1u/UM9WrRsUn9GJZLr2a4R1aMTjiwnhLUkQht+zMbc4UQt157c+Nkru6g5RBnVbWfbPW9M/ZHL943HOvt0TYUrdTq5mo6BMwGvlYW4YP0JIEMObJqTy5b4GlRH105hfyYutaxiA7A5+l+ejQE4muM1Q/M7tzfn5RkSIXtooZgS/zSfZHM9qa66ghi9+z9DONaQ5bp6BN56OI8PgOlYNRs1KD0MIStfrb173yKDlDWGzY9kbRJ/ElZIlXI9YLuPuSeZp2fxuVwkgDkWsLSaIbl6R9UP0TBmmM+yKvfiQGa4TCwVO00awSDKCt/XhLbMTNKLATf+eERq0d5ZOJLj1DdaL5OiMWt4jCpYW5XLinYl59ja9ZGH8fOEs18IBgQDne4RUvdiYElfAZ1c69tZzUF/3H5WJJkPMEn29kbvC8G"
+          }
+        }
+      ],
+      "tool_calls": [],
+      "usage_metadata": {
+        "input_tokens": 28714,
+        "output_tokens": 2006,
+        "total_tokens": 30720,
+        "input_token_details": {
+          "cache_read": 24413
+        },
+        "output_token_details": {
+          "reasoning": 1018
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    }
+  ],
+  "charts": [
+    {
+      "data": [
+        {
+          "hovertemplate": "name=%{x}<br>avg_rating=%{y}<extra></extra>",
+          "legendgroup": "",
+          "marker": {
+            "color": "#000001",
+            "pattern": {
+              "shape": ""
+            }
+          },
+          "name": "",
+          "orientation": "v",
+          "showlegend": false,
+          "textposition": "auto",
+          "x": [
+            "El Jaripeo Taco Truck (Rose Park)",
+            "Santo Taco",
+            "Hacienda Mexican Grill",
+            "Chubby's Mexican Restaurant",
+            "El Asadero Mexican Food",
+            "El Cabrito",
+            "Rancherito's Mexican Food",
+            "Denny's"
+          ],
+          "xaxis": "x",
+          "y": {
+            "dtype": "f8",
+            "bdata": "MzMzMzMzE0BmZmZmZmYSQAAAAAAAABJAAAAAAAAAEkCamZmZmZkRQM3MzMzMzBBAAAAAAAAAEEDNzMzMzMwMQA=="
+          },
+          "yaxis": "y",
+          "type": "bar"
+        }
+      ],
+      "layout": {
+        "template": {
+          "data": {
+            "candlestick": [
+              {
+                "decreasing": {
+                  "line": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "line": {
+                    "color": "#000032"
+                  }
+                },
+                "type": "candlestick"
+              }
+            ],
+            "contourcarpet": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contourcarpet"
+              }
+            ],
+            "contour": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contour"
+              }
+            ],
+            "heatmap": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "heatmap"
+              }
+            ],
+            "histogram2d": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "histogram2d"
+              }
+            ],
+            "icicle": [
+              {
+                "textfont": {
+                  "color": "white"
+                },
+                "type": "icicle"
+              }
+            ],
+            "sankey": [
+              {
+                "textfont": {
+                  "color": "#000036"
+                },
+                "type": "sankey"
+              }
+            ],
+            "scatter": [
+              {
+                "marker": {
+                  "line": {
+                    "width": 0
+                  }
+                },
+                "type": "scatter"
+              }
+            ],
+            "table": [
+              {
+                "cells": {
+                  "fill": {
+                    "color": "#000038"
+                  },
+                  "font": {
+                    "color": "#000037"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "header": {
+                  "fill": {
+                    "color": "#000040"
+                  },
+                  "font": {
+                    "color": "#000036"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "type": "table"
+              }
+            ],
+            "waterfall": [
+              {
+                "connector": {
+                  "line": {
+                    "color": "#000036",
+                    "width": 2
+                  }
+                },
+                "decreasing": {
+                  "marker": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "marker": {
+                    "color": "#000032"
+                  }
+                },
+                "totals": {
+                  "marker": {
+                    "color": "#000034"
+                  }
+                },
+                "type": "waterfall"
+              }
+            ]
+          },
+          "layout": {
+            "coloraxis": {
+              "colorscale": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorscale": {
+              "diverging": [
+                [
+                  0.0,
+                  "#000021"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000022"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000023"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000024"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000025"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000026"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000027"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000028"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000029"
+                ],
+                [
+                  1.0,
+                  "#000030"
+                ]
+              ],
+              "sequential": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ],
+              "sequentialminus": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorway": [
+              "#000001",
+              "#000002",
+              "#000003",
+              "#000004",
+              "#000005",
+              "#000006",
+              "#000007",
+              "#000008",
+              "#000009",
+              "#000010"
+            ]
+          }
+        },
+        "xaxis": {
+          "anchor": "y",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "name"
+          }
+        },
+        "yaxis": {
+          "anchor": "x",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "avg_rating"
+          }
+        },
+        "legend": {
+          "tracegroupgap": 0
+        },
+        "title": {
+          "text": "Savory Breakfast Spots in & around Rose Park (SLC 84116) - Average Google Rating"
+        },
+        "barmode": "relative"
+      }
+    }
+  ],
+  "candidate_pool_raw": [
+    {
+      "gmap_id": "0x8752f51cce9a7ca7:0x32fad0382c47c88",
+      "name": "Empresso Coffee",
+      "address": "Empresso Coffee, 79 S Main St, Salt Lake City, UT 84111",
+      "latitude": 40.7673959,
+      "longitude": -111.8907905,
+      "avg_rating": 5.0,
+      "num_of_reviews": 3,
+      "price": null,
+      "slchd_establishment_key": null,
+      "distance_mi": 2.4068223673236795,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    },
+    {
+      "gmap_id": "0x8752f558c5a29e8f:0x7e752c9e0fbbf601",
+      "name": "Midnimo restaurant",
+      "address": "Midnimo restaurant, 55 N Redwood Rd Ste D, Salt Lake City, UT 84116",
+      "latitude": 40.7707535,
+      "longitude": -111.9405123,
+      "avg_rating": 5.0,
+      "num_of_reviews": 5,
+      "price": null,
+      "slchd_establishment_key": null,
+      "distance_mi": 1.1331051625195367,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    },
+    {
+      "gmap_id": "0x8752f5490acebac5:0x1e28974dcc0762eb",
+      "name": "Mac's Place",
+      "address": "Mac's Place, 308 West Broadway Suite LL2, Salt Lake City, UT 84101",
+      "latitude": 40.763305599999995,
+      "longitude": -111.8999557,
+      "avg_rating": 5.0,
+      "num_of_reviews": 18,
+      "price": null,
+      "slchd_establishment_key": null,
+      "distance_mi": 1.8185649786422944,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    },
+    {
+      "gmap_id": "0x8752f5528f182417:0x458b879a84008105",
+      "name": "Kafe Mamai",
+      "address": "Kafe Mamai, 751 W 800 S, Salt Lake City, UT 84104",
+      "latitude": 40.7517324,
+      "longitude": -111.9127582,
+      "avg_rating": 5.0,
+      "num_of_reviews": 8,
+      "price": null,
+      "slchd_establishment_key": null,
+      "distance_mi": 1.2048472020506213,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    },
+    {
+      "gmap_id": "0x874d7dfea0dbe7f1:0xfb7868078b35c0fd",
+      "name": "The BBQ Culture",
+      "address": null,
+      "latitude": 40.776608,
+      "longitude": -111.920485,
+      "avg_rating": 5.0,
+      "num_of_reviews": 13,
+      "price": null,
+      "slchd_establishment_key": null,
+      "distance_mi": 0.37971286886335337,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    },
+    {
+      "gmap_id": "0x8752f73c74e35087:0xe012d7f2b5ce9ef2",
+      "name": "Sno Delicious",
+      "address": "Sno Delicious, 012930108, North Salt Lake, UT 84054",
+      "latitude": 40.8538568,
+      "longitude": -111.9301737,
+      "avg_rating": 5.0,
+      "num_of_reviews": 2,
+      "price": null,
+      "slchd_establishment_key": null,
+      "distance_mi": 1.8122367979033396,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    },
+    {
+      "gmap_id": "0x8752f5040542dfbb:0xd50a66b586b2e664",
+      "name": "Pie Office",
+      "address": "Pie Office, 230 W 200 S #2608, Salt Lake City, UT 84101",
+      "latitude": 40.7658518,
+      "longitude": -111.8978776,
+      "avg_rating": 5.0,
+      "num_of_reviews": 1,
+      "price": null,
+      "slchd_establishment_key": null,
+      "distance_mi": 1.9379218405430965,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    },
+    {
+      "gmap_id": "0x8752f71ef16b1369:0x7c92b49a72a21ea3",
+      "name": "La Cocina Caribe\u00f1a",
+      "address": "La Cocina Caribe\u00f1a, 1749 Crystal Rock Ave, Salt Lake City, UT 84116",
+      "latitude": 40.802231899999995,
+      "longitude": -111.9409076,
+      "avg_rating": 5.0,
+      "num_of_reviews": 8,
+      "price": null,
+      "slchd_establishment_key": null,
+      "distance_mi": 1.1856705205269702,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    },
+    {
+      "gmap_id": "0x8752f5440d10ef4d:0xc32bcdd9febc743",
+      "name": "Jeeva\u2019s Greek Caf\u00e9",
+      "address": "Jeeva\u2019s Greek Caf\u00e9, City Creek Center, 50 S Main St, Salt Lake City, UT 84101",
+      "latitude": 40.768356999999995,
+      "longitude": -111.8917453,
+      "avg_rating": 5.0,
+      "num_of_reviews": 8,
+      "price": null,
+      "slchd_establishment_key": null,
+      "distance_mi": 2.337395407930119,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    },
+    {
+      "gmap_id": "0x87528f349b2fd5bd:0x70a1ac96d17e12d6",
+      "name": "Mocha Motive",
+      "address": null,
+      "latitude": 40.776608,
+      "longitude": -111.920485,
+      "avg_rating": 5.0,
+      "num_of_reviews": 8,
+      "price": null,
+      "slchd_establishment_key": null,
+      "distance_mi": 0.37971286886335337,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    },
+    {
+      "gmap_id": "0x87528b4df0b14bfd:0xdd0ca9610645ba60",
+      "name": "Distillery 36",
+      "address": "Distillery 36, 2374 S Redwood Rd, West Valley City, UT 84119",
+      "latitude": 40.719838,
+      "longitude": -111.939925,
+      "avg_rating": 5.0,
+      "num_of_reviews": 27,
+      "price": null,
+      "slchd_establishment_key": null,
+      "distance_mi": 1.972655710408674,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    },
+    {
+      "gmap_id": "0x8752f5c7ee3da119:0xa598b3e3e1115abb",
+      "name": "Villa Yelito",
+      "address": "Villa Yelito, 876 W 800 S, Salt Lake City, UT 84104",
+      "latitude": 40.7522638,
+      "longitude": -111.9162218,
+      "avg_rating": 5.0,
+      "num_of_reviews": 7,
+      "price": null,
+      "slchd_establishment_key": null,
+      "distance_mi": 1.0396485133396165,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    },
+    {
+      "gmap_id": "0x8752f51fedb743c1:0xaede3603ba8b6a49",
+      "name": "Cupcakes by Kasthuri",
+      "address": "Cupcakes by Kasthuri, 824 400 W #B112, Salt Lake City, UT 84101",
+      "latitude": 40.7510602,
+      "longitude": -111.9032034,
+      "avg_rating": 5.0,
+      "num_of_reviews": 78,
+      "price": null,
+      "slchd_establishment_key": null,
+      "distance_mi": 1.741839276092888,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    },
+    {
+      "gmap_id": "0x8752f508d6686761:0x655c516c05305a49",
+      "name": "Publik Coffee",
+      "address": "Publik Coffee, 51 S Main St, Salt Lake City, UT 84101",
+      "latitude": 40.7681733,
+      "longitude": -111.8898201,
+      "avg_rating": 5.0,
+      "num_of_reviews": 4,
+      "price": null,
+      "slchd_establishment_key": null,
+      "distance_mi": 2.4690988221217194,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    },
+    {
+      "gmap_id": "0x8752f53d1f18d3c3:0x8b31b2ff43c9f850",
+      "name": "CodSpeed @ HallPass",
+      "address": "CodSpeed @ HallPass, 153 S Rio Grande St Suite 107, Salt Lake City, UT 84101",
+      "latitude": 40.7659226,
+      "longitude": -111.9037754,
+      "avg_rating": 5.0,
+      "num_of_reviews": 1,
+      "price": "$",
+      "slchd_establishment_key": null,
+      "distance_mi": 1.546794452467646,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    },
+    {
+      "gmap_id": "0x8752f4ce7b5b911f:0x8ac1d6809aed5785",
+      "name": "Pella Food Services",
+      "address": "Pella Food Services, 940 1700 S, Salt Lake City, UT 84104",
+      "latitude": 40.7340702,
+      "longitude": -111.9179065,
+      "avg_rating": 5.0,
+      "num_of_reviews": 1,
+      "price": null,
+      "slchd_establishment_key": null,
+      "distance_mi": 1.4021784091013396,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    },
+    {
+      "gmap_id": "0x87528be2a57650eb:0x85bd8a26d9ecde01",
+      "name": "Graffiti Rosa",
+      "address": null,
+      "latitude": 40.776608,
+      "longitude": -111.920485,
+      "avg_rating": 5.0,
+      "num_of_reviews": 3,
+      "price": null,
+      "slchd_establishment_key": null,
+      "distance_mi": 0.37971286886335337,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    },
+    {
+      "gmap_id": "0x8752f50363c3fa6f:0xb78d6d10e70ac220",
+      "name": "Roots Coffee & Co.",
+      "address": "Roots Coffee & Co., 774 S 300 W, Salt Lake City, UT 84101",
+      "latitude": 40.752289399999995,
+      "longitude": -111.9001526,
+      "avg_rating": 5.0,
+      "num_of_reviews": 57,
+      "price": null,
+      "slchd_establishment_key": "ROOTS COFFEE & CO|774 S 300 W|SALT LAKE CITY",
+      "distance_mi": 1.9127894898258948,
+      "most_recent_inspection_score": 5,
+      "critical_violation_count": 1,
+      "total_violation_count": 11
+    },
+    {
+      "gmap_id": "0x87528b304fc45045:0x8775d268b67c230a",
+      "name": "O K Manufacturing",
+      "address": "O K Manufacturing, 2340 S 900 W # D, Salt Lake City, UT 84119",
+      "latitude": 40.72036,
+      "longitude": -111.918434,
+      "avg_rating": 5.0,
+      "num_of_reviews": 2,
+      "price": null,
+      "slchd_establishment_key": null,
+      "distance_mi": 1.7280206189835672,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    },
+    {
+      "gmap_id": "0x8752f5f1787ec253:0x43f16ac1b71c8c48",
+      "name": "Just A Craving",
+      "address": "Just A Craving, 1780 W North Temple West Side of parking lot, Salt Lake City, UT 84116",
+      "latitude": 40.7720657,
+      "longitude": -111.9422852,
+      "avg_rating": 4.9,
+      "num_of_reviews": 18,
+      "price": null,
+      "slchd_establishment_key": null,
+      "distance_mi": 1.240067118017695,
+      "most_recent_inspection_score": null,
+      "critical_violation_count": 0,
+      "total_violation_count": 0
+    }
+  ],
+  "duration_seconds": 235.02,
+  "usage": {
+    "available": true,
+    "per_call": [
+      {
+        "input_tokens": 2027,
+        "output_tokens": 197,
+        "total_tokens": 2224
+      },
+      {
+        "input_tokens": 3253,
+        "output_tokens": 139,
+        "total_tokens": 3392
+      },
+      {
+        "input_tokens": 5122,
+        "output_tokens": 620,
+        "total_tokens": 5742
+      },
+      {
+        "input_tokens": 10014,
+        "output_tokens": 795,
+        "total_tokens": 10809
+      },
+      {
+        "input_tokens": 14035,
+        "output_tokens": 608,
+        "total_tokens": 14643
+      },
+      {
+        "input_tokens": 14697,
+        "output_tokens": 459,
+        "total_tokens": 15156
+      },
+      {
+        "input_tokens": 19522,
+        "output_tokens": 809,
+        "total_tokens": 20331
+      },
+      {
+        "input_tokens": 22813,
+        "output_tokens": 141,
+        "total_tokens": 22954
+      },
+      {
+        "input_tokens": 25018,
+        "output_tokens": 156,
+        "total_tokens": 25174
+      },
+      {
+        "input_tokens": 25417,
+        "output_tokens": 1108,
+        "total_tokens": 26525
+      },
+      {
+        "input_tokens": 27639,
+        "output_tokens": 227,
+        "total_tokens": 27866
+      },
+      {
+        "input_tokens": 27911,
+        "output_tokens": 222,
+        "total_tokens": 28133
+      },
+      {
+        "input_tokens": 28382,
+        "output_tokens": 274,
+        "total_tokens": 28656
+      },
+      {
+        "input_tokens": 28714,
+        "output_tokens": 2006,
+        "total_tokens": 30720
+      }
+    ],
+    "input_tokens": 254564,
+    "output_tokens": 7761,
+    "total_tokens": 262325
+  },
+  "tokens_per_minute": 66970.5,
+  "estimated_cost_usd": 0.440053,
+  "success": true,
+  "error": null,
+  "chart_image_files": [
+    "2026-08-15T11-17-18.466036+00-00_v1_memory_97d2efb8_chart0.png"
+  ]
+}

@@ -1,0 +1,165 @@
+Question: How many establishments have a Salt Lake County health inspection on record?
+
+Variant: v2_memory | Provider: google | Model: gemini-3.6-flash
+Timestamp: 2026-08-15T07:46:52.984014+00:00 | Duration: 17.13s
+
+--- Answer ---
+Based on the Salt Lake County Health Department (SLCHD) inspection database and Google Local places records, here is the breakdown of establishments with inspection records:
+
+### Key Findings
+
+1. **SLCHD Health Inspection Listings (`establishment_keys`):**
+   * **1,315 establishments** have active health inspection records on file in the Salt Lake County Health Department dataset (covering **8,020 total inspection visits**).
+   * **26 establishments** exist as registered SLCHD listings but currently have no recorded inspection visits on file.
+   * Total SLCHD registered establishment listings: **1,341**.
+
+2. **Google Local Places Database (`establishments`):**
+   * Out of **8,592** total Google Local food & beverage listings in Salt Lake County:
+     * **139 establishments** (1.62%) are matched to an SLCHD health inspection record.
+     * **8,453 establishments** (98.38%) have **no matched SLCHD inspection history**. 
+     * *Note: Lacking a matched SLCHD inspection record in this dataset does not imply a clean health record—it simply means the Google Local listing has no linked inspection history.*
+
+---
+
+### Data Summary Table
+
+| Category / Perspective | Count | Percentage |
+| :--- | :--- | :--- |
+| **SLCHD Listings with Inspection Records** | **1,315** | **98.06%** of SLCHD listings |
+| SLCHD Listings without Inspection Records | 26 | 1.94% of SLCHD listings |
+| **Total SLCHD Portal Listings** | **1,341** | 100.0% |
+| | | |
+| **Google Places Matched to SLCHD Inspections** | **139** | **1.62%** of Google Places |
+| Google Places Unmatched (No Linked Inspection History) | 8,453 | 98.38% of Google Places |
+| **Total Google Places Establishments** | **8,592** | 100.0% |
+
+--- Reasoning trace ---
+Action: get_schema({})
+
+Observation: Project food_health_viz {
+  database_type: 'DuckDB'
+}
+
+Table establishment_keys {
+  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']
+  name varchar [not null]
+  address varchar [not null]
+  city varchar [not null]
+  city_state_zip varchar
+  establishment_type varchar
+  source varchar [note: 'friend_slc | own_scrape']
+  slchd_lat double
+  slchd_lon double
+  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']
+
+  Note: 'SLCHD establishment list, one row per portal listing.'
+}
+
+Table category {
+  category_id integer [pk]
+  category varchar
+}
+
+Table establishments {
+  gmap_id varchar [pk]
+  name varchar
+  address varchar
+  description varchar
+  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']
+  avg_rating double
+  num_of_reviews integer
+  price varchar
+  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']
+
+  Note: 'One row per Google Local place — all restaurants, not just SLCHD-matched.'
+}
+
+Table establishment_attributes {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  attribute varchar [not null]
+
+  indexes { (gmap_id, attribute) [pk] }
+
+  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. "Service options") dropped.'
+}
+
+Table establishment_categories {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  category_id integer [ref: > category.category_id, not null]
+
+  indexes { (gmap_id, category_id) [pk] }
+}
+
+Table gmap_hours {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  day integer [not null, note: '0=Sun … 6=Sat']
+  open_min bigint
+  open_max bigint
+
+  indexes { (gmap_id, day) [pk] }
+
+  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'
+}
+
+Table review {
+  user_id varchar
+  name varchar
+  time bigint
+  rating double
+  text varchar
+  resp varchar
+  gmap_id varchar [ref: > establishments.gmap_id]
+}
+
+Table inspection_types {
+  inspection_type_id integer [pk, note: 'parsed leading number, e.g. "01 - Routine" -> 1']
+  description varchar [note: 'e.g. "Routine"']
+}
+
+Table inspections {
+  inspection_id bigint [pk, increment]
+  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]
+  inspection_date date [not null]
+  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable — 27 rows have no type']
+  inspection_score integer
+
+  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'
+}
+
+Table violation_codes {
+  violation_code_id integer [pk, increment]
+  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. "4.5.18"']
+  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']
+  critical boolean [not null]
+}
+
+Table violations {
+  violation_id bigint [pk, increment]
+  inspection_id bigint [ref: > inspections.inspection_id, not null]
+  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]
+  violation_description varchar [note: 'per-occurrence free text']
+  violation_occurrences integer
+  violation_cos boolean [note: 'corrected on site']
+  violation_phr varchar [note: 'public health rationale']
+
+  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'
+}
+
+
+Action: run_sql({'query': 'SELECT \n  (SELECT COUNT(*) FROM establishments) AS total_gmap_establishments,\n  (SELECT COUNT(*) FROM establishments WHERE slchd_establishment_key IS NOT NULL) AS gmap_matched_slchd,\n  (SELECT COUNT(DISTINCT slchd_establishment_key) FROM establishments WHERE slchd_establishment_key IS NOT NULL) AS distinct_slchd_keys_in_gmap,\n  (SELECT COUNT(*) FROM establishment_keys) AS total_slchd_establishment_keys,\n  (SELECT COUNT(DISTINCT slchd_establishment_key) FROM inspections) AS slchd_keys_with_inspections,\n  (SELECT COUNT(*) FROM inspections) AS total_inspections\n'})
+
+Observation: {"row_count": 1, "truncated": false, "rows": [{"total_gmap_establishments": 8592, "gmap_matched_slchd": 139, "distinct_slchd_keys_in_gmap": 138, "total_slchd_establishment_keys": 1341, "slchd_keys_with_inspections": 1315, "total_inspections": 8020}]}
+
+Action: run_sql({'query': 'SELECT \n  COUNT(DISTINCT e.gmap_id) as gmap_total,\n  COUNT(DISTINCT CASE WHEN e.slchd_establishment_key IS NOT NULL THEN e.gmap_id END) as gmap_matched_key,\n  COUNT(DISTINCT CASE WHEN i.slchd_establishment_key IS NOT NULL THEN e.gmap_id END) as gmap_with_inspections,\n  (SELECT COUNT(*) FROM establishment_keys) as slchd_keys_total,\n  (SELECT COUNT(DISTINCT slchd_establishment_key) FROM inspections) as slchd_keys_with_inspections,\n  (SELECT COUNT(DISTINCT slchd_establishment_key) FROM establishment_keys WHERE slchd_establishment_key NOT IN (SELECT DISTINCT slchd_establishment_key FROM inspections)) as slchd_keys_without_inspections\nFROM establishments e\nLEFT JOIN inspections i ON e.slchd_establishment_key = i.slchd_establishment_key\n'})
+
+Observation: {"row_count": 1, "truncated": false, "rows": [{"gmap_total": 8592, "gmap_matched_key": 139, "gmap_with_inspections": 139, "slchd_keys_total": 1341, "slchd_keys_with_inspections": 1315, "slchd_keys_without_inspections": 26}]}
+
+Action: plot_chart({'x': 'status', 'title': 'Salt Lake County Health Department (SLCHD) Listings by Inspection Record Status', 'query': "SELECT \n  'SLCHD Listings with Inspections' AS status,\n  COUNT(DISTINCT slchd_establishment_key) AS count\nFROM inspections\nUNION ALL\nSELECT \n  'SLCHD Listings without Inspections' AS status,\n  COUNT(*) - (SELECT COUNT(DISTINCT slchd_establishment_key) FROM inspections) AS count\nFROM establishment_keys\n", 'chart_type': 'bar', 'y': 'count'})
+
+Observation: Chart created: 'Salt Lake County Health Department (SLCHD) Listings by Inspection Record Status' (bar, 2 rows). It will be shown to the user below your answer.
+
+Action: plot_chart({'y': 'count', 'x': 'status', 'chart_type': 'bar', 'query': "SELECT \n  'Matched SLCHD Health Inspection Record' AS status,\n  COUNT(CASE WHEN slchd_establishment_key IS NOT NULL THEN 1 END) AS count\nFROM establishments\nUNION ALL\nSELECT \n  'No Matched SLCHD Record' AS status,\n  COUNT(CASE WHEN slchd_establishment_key IS NULL THEN 1 END) AS count\nFROM establishments\n", 'title': 'Google Local Establishments by SLCHD Inspection Match Status'})
+
+Observation: Chart created: 'Google Local Establishments by SLCHD Inspection Match Status' (bar, 2 rows). It will be shown to the user below your answer.
+
+--- Usage: 27189 tokens, ~$0.0580 ---

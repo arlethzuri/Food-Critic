@@ -1,0 +1,2833 @@
+{
+  "source": "frontend",
+  "run_id": "92d2ee7c",
+  "timestamp": "2026-08-15T07:48:08.539399+00:00",
+  "variant": "v3_memory",
+  "provider": "google",
+  "model": "gemini-3.6-flash",
+  "question": "Among them, can you show me the distribution and timeline of health inspections?",
+  "output_text": "Across the 8,020 total health inspections recorded for Salt Lake County establishments, here is the breakdown of both the timeline and distribution:\n\n### 1. Timeline of Health Inspections (2014\u20132025)\n- **2014\u20132017:** Initial dataset capture grew from 72 inspections in 2014 to 244 in 2017.\n- **2018\u20132019:** Ramped up to 461 (2018) and 611 (2019) inspections.\n- **2020:** Dropped to 375 inspections, reflecting COVID-19 operational disruptions.\n- **2021\u20132025:** Rebounded steadily, reaching 621 in 2021, 898 in 2022, 908 in 2023, 1,258 in 2024, and 1,387 in 2025 (plus 890 in early 2026).\n\n### 2. Distribution of Inspection Scores (0 = Clean, Higher = Worse)\n- **0 (Clean / Perfect):** 710 inspections (8.9%)\n- **1\u20135:** 2,363 inspections (29.5%)\n- **6\u201310:** 1,938 inspections (24.2%)\n- **11\u201320:** 1,802 inspections (22.5%)\n- **21\u201330:** 604 inspections (7.5%)\n- **31\u201350:** 308 inspections (3.8%)\n- **51+:** 73 inspections (0.9%)\n\n### 3. Distribution by Inspection Type\n- **Routine:** 7,543 inspections (94.1%)\n- **Followup:** 254 inspections (3.2%)\n- **Critical Item:** 216 inspections (2.7%)\n- **Complaint Investigation:** 7 inspections (0.1%)",
+  "structured_response": {
+    "narrative_answer": "Across the 8,020 total health inspections recorded for Salt Lake County establishments, here is the breakdown of both the timeline and distribution:\n\n### 1. Timeline of Health Inspections (2014\u20132025)\n- **2014\u20132017:** Initial dataset capture grew from 72 inspections in 2014 to 244 in 2017.\n- **2018\u20132019:** Ramped up to 461 (2018) and 611 (2019) inspections.\n- **2020:** Dropped to 375 inspections, reflecting COVID-19 operational disruptions.\n- **2021\u20132025:** Rebounded steadily, reaching 621 in 2021, 898 in 2022, 908 in 2023, 1,258 in 2024, and 1,387 in 2025 (plus 890 in early 2026).\n\n### 2. Distribution of Inspection Scores (0 = Clean, Higher = Worse)\n- **0 (Clean / Perfect):** 710 inspections (8.9%)\n- **1\u20135:** 2,363 inspections (29.5%)\n- **6\u201310:** 1,938 inspections (24.2%)\n- **11\u201320:** 1,802 inspections (22.5%)\n- **21\u201330:** 604 inspections (7.5%)\n- **31\u201350:** 308 inspections (3.8%)\n- **51+:** 73 inspections (0.9%)\n\n### 3. Distribution by Inspection Type\n- **Routine:** 7,543 inspections (94.1%)\n- **Followup:** 254 inspections (3.2%)\n- **Critical Item:** 216 inspections (2.7%)\n- **Complaint Investigation:** 7 inspections (0.1%)",
+    "hypothesis": "none",
+    "confidence": "high",
+    "establishment_name": "",
+    "supporting_evidence": [],
+    "undermining_evidence": [],
+    "candidate_pool": []
+  },
+  "trace_text": "Action: get_schema({})\n\nObservation: Project food_health_viz {\n  database_type: 'DuckDB'\n}\n\nTable establishment_keys {\n  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']\n  name varchar [not null]\n  address varchar [not null]\n  city varchar [not null]\n  city_state_zip varchar\n  establishment_type varchar\n  source varchar [note: 'friend_slc | own_scrape']\n  slchd_lat double\n  slchd_lon double\n  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']\n\n  Note: 'SLCHD establishment list, one row per portal listing.'\n}\n\nTable category {\n  category_id integer [pk]\n  category varchar\n}\n\nTable establishments {\n  gmap_id varchar [pk]\n  name varchar\n  address varchar\n  description varchar\n  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']\n  avg_rating double\n  num_of_reviews integer\n  price varchar\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']\n\n  Note: 'One row per Google Local place \u2014 all restaurants, not just SLCHD-matched.'\n}\n\nTable establishment_attributes {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  attribute varchar [not null]\n\n  indexes { (gmap_id, attribute) [pk] }\n\n  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. \"Service options\") dropped.'\n}\n\nTable establishment_categories {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  category_id integer [ref: > category.category_id, not null]\n\n  indexes { (gmap_id, category_id) [pk] }\n}\n\nTable gmap_hours {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  day integer [not null, note: '0=Sun \u2026 6=Sat']\n  open_min bigint\n  open_max bigint\n\n  indexes { (gmap_id, day) [pk] }\n\n  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'\n}\n\nTable review {\n  user_id varchar\n  name varchar\n  time bigint\n  rating double\n  text varchar\n  resp varchar\n  gmap_id varchar [ref: > establishments.gmap_id]\n}\n\nTable inspection_types {\n  inspection_type_id integer [pk, note: 'parsed leading number, e.g. \"01 - Routine\" -> 1']\n  description varchar [note: 'e.g. \"Routine\"']\n}\n\nTable inspections {\n  inspection_id bigint [pk, increment]\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]\n  inspection_date date [not null]\n  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable \u2014 27 rows have no type']\n  inspection_score integer\n\n  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'\n}\n\nTable violation_codes {\n  violation_code_id integer [pk, increment]\n  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. \"4.5.18\"']\n  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']\n  critical boolean [not null]\n}\n\nTable violations {\n  violation_id bigint [pk, increment]\n  inspection_id bigint [ref: > inspections.inspection_id, not null]\n  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]\n  violation_description varchar [note: 'per-occurrence free text']\n  violation_occurrences integer\n  violation_cos boolean [note: 'corrected on site']\n  violation_phr varchar [note: 'public health rationale']\n\n  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'\n}\n\n\nAction: run_sql({'query': 'SELECT \\n    (SELECT COUNT(*) FROM establishments) AS total_gmap_establishments,\\n    (SELECT COUNT(*) FROM establishments WHERE slchd_establishment_key IS NOT NULL) AS gmap_matched_to_slchd,\\n    (SELECT COUNT(DISTINCT slchd_establishment_key) FROM establishment_keys) AS total_slchd_keys,\\n    (SELECT COUNT(DISTINCT slchd_establishment_key) FROM inspections) AS slchd_keys_with_inspections,\\n    (SELECT COUNT(*) FROM inspections) AS total_inspections,\\n    (SELECT COUNT(DISTINCT e.gmap_id) FROM establishments e JOIN inspections i ON e.slchd_establishment_key = i.slchd_establishment_key) AS gmap_establishments_with_inspections\\n'})\n\nObservation: {\"row_count\": 1, \"truncated\": false, \"rows\": [{\"total_gmap_establishments\": 8592, \"gmap_matched_to_slchd\": 139, \"total_slchd_keys\": 1341, \"slchd_keys_with_inspections\": 1315, \"total_inspections\": 8020, \"gmap_establishments_with_inspections\": 139}]}\n\nAction: run_sql({'query': 'SELECT \\n    ek.source, \\n    COUNT(ek.slchd_establishment_key) AS total_keys,\\n    COUNT(DISTINCT i.slchd_establishment_key) AS keys_with_inspections\\nFROM establishment_keys ek\\nLEFT JOIN inspections i ON ek.slchd_establishment_key = i.slchd_establishment_key\\nGROUP BY ek.source'})\n\nObservation: {\"row_count\": 2, \"truncated\": false, \"rows\": [{\"source\": \"friend_slc\", \"total_keys\": 7618, \"keys_with_inspections\": 1245}, {\"source\": \"own_scrape\", \"total_keys\": 428, \"keys_with_inspections\": 70}]}\n\nAction: run_sql({'query': 'SELECT \\n    ek.source, \\n    COUNT(DISTINCT ek.slchd_establishment_key) AS total_keys,\\n    COUNT(DISTINCT i.slchd_establishment_key) AS keys_with_inspections\\nFROM establishment_keys ek\\nLEFT JOIN inspections i ON ek.slchd_establishment_key = i.slchd_establishment_key\\nGROUP BY ek.source'})\n\nObservation: {\"row_count\": 2, \"truncated\": false, \"rows\": [{\"source\": \"own_scrape\", \"total_keys\": 96, \"keys_with_inspections\": 70}, {\"source\": \"friend_slc\", \"total_keys\": 1245, \"keys_with_inspections\": 1245}]}\n\nAction: plot_chart({'color': 'status', 'chart_type': 'bar', 'y': 'count', 'x': 'status', 'query': \"SELECT \\n    'Matched to SLCHD (Has Inspections)' AS status, 139 AS count\\nUNION ALL\\nSELECT \\n    'No SLCHD Match (Unlinked)' AS status, 8453 AS count\", 'title': 'Google Maps Establishments by SLCHD Inspection Record Availability'})\n\nObservation: Chart created: 'Google Maps Establishments by SLCHD Inspection Record Availability' (bar, 2 rows). It will be shown to the user below your answer.\n\nAction: plot_chart({'color': 'source_and_status', 'chart_type': 'bar', 'title': 'Salt Lake County Health Department (SLCHD) Portal Listings Breakdown', 'y': 'count', 'x': 'source_and_status', 'query': \"SELECT \\n    'Friend SLC (Has Inspections)' AS source_and_status, 1245 AS count\\nUNION ALL\\nSELECT \\n    'Own Scrape (Has Inspections)' AS source_and_status, 70 AS count\\nUNION ALL\\nSELECT \\n    'Own Scrape (No Inspections)' AS source_and_status, 26 AS count\"})\n\nObservation: Chart created: 'Salt Lake County Health Department (SLCHD) Portal Listings Breakdown' (bar, 3 rows). It will be shown to the user below your answer.\n\nAction: run_sql({'query': \"SELECT \\n    DATE_TRUNC('year', inspection_date) AS year,\\n    COUNT(*) AS inspection_count,\\n    ROUND(AVG(inspection_score), 2) AS avg_score\\nFROM inspections\\nGROUP BY 1\\nORDER BY 1\"})\n\nObservation: {\"row_count\": 18, \"truncated\": false, \"rows\": [{\"year\": \"2009-01-01 00:00:00\", \"inspection_count\": 3, \"avg_score\": 7.0}, {\"year\": \"2010-01-01 00:00:00\", \"inspection_count\": 6, \"avg_score\": 4.8}, {\"year\": \"2011-01-01 00:00:00\", \"inspection_count\": 8, \"avg_score\": 6.71}, {\"year\": \"2012-01-01 00:00:00\", \"inspection_count\": 11, \"avg_score\": 6.0}, {\"year\": \"2013-01-01 00:00:00\", \"inspection_count\": 24, \"avg_score\": 8.91}, {\"year\": \"2014-01-01 00:00:00\", \"inspection_count\": 72, \"avg_score\": 8.73}, {\"year\": \"2015-01-01 00:00:00\", \"inspection_count\": 82, \"avg_score\": 13.0}, {\"year\": \"2016-01-01 00:00:00\", \"inspection_count\": 161, \"avg_score\": 12.25}, {\"year\": \"2017-01-01 00:00:00\", \"inspection_count\": 244, \"avg_score\": 11.41}, {\"year\": \"2018-01-01 00:00:00\", \"inspection_count\": 461, \"avg_score\": 11.09}, {\"year\": \"2019-01-01 00:00:00\", \"inspection_count\": 611, \"avg_score\": 10.19}, {\"year\": \"2020-01-01 00:00:00\", \"inspection_count\": 375, \"avg_score\": 9.8}, {\"year\": \"2021-01-01 00:00:00\", \"inspection_count\": 621, \"avg_score\": 10.4}, {\"year\": \"2022-01-01 00:00:00\", \"inspection_count\": 898, \"avg_score\": 12.08}, {\"year\": \"2023-01-01 00:00:00\", \"inspection_count\": 908, \"avg_score\": 12.01}, {\"year\": \"2024-01-01 00:00:00\", \"inspection_count\": 1258, \"avg_score\": 11.49}, {\"year\": \"2025-01-01 00:00:00\", \"inspection_count\": 1387, \"avg_score\": 8.9}, {\"year\": \"2026-01-01 00:00:00\", \"inspection_count\": 890, \"avg_score\": 6.33}]}\n\nAction: run_sql({'query': \"SELECT \\n    CASE \\n        WHEN inspection_score = 0 THEN '0 (Clean / Perfect)'\\n        WHEN inspection_score BETWEEN 1 AND 5 THEN '1 - 5'\\n        WHEN inspection_score BETWEEN 6 AND 10 THEN '6 - 10'\\n        WHEN inspection_score BETWEEN 11 AND 20 THEN '11 - 20'\\n        WHEN inspection_score BETWEEN 21 AND 30 THEN '21 - 30'\\n        WHEN inspection_score BETWEEN 31 AND 50 THEN '31 - 50'\\n        ELSE '51+' \\n    END AS score_range,\\n    COUNT(*) AS inspection_count\\nFROM inspections\\nWHERE inspection_score IS NOT NULL\\nGROUP BY 1\\nORDER BY MIN(inspection_score)\"})\n\nObservation: {\"row_count\": 7, \"truncated\": false, \"rows\": [{\"score_range\": \"0 (Clean / Perfect)\", \"inspection_count\": 710}, {\"score_range\": \"1 - 5\", \"inspection_count\": 2363}, {\"score_range\": \"6 - 10\", \"inspection_count\": 1938}, {\"score_range\": \"11 - 20\", \"inspection_count\": 1802}, {\"score_range\": \"21 - 30\", \"inspection_count\": 604}, {\"score_range\": \"31 - 50\", \"inspection_count\": 308}, {\"score_range\": \"51+\", \"inspection_count\": 73}]}\n\nAction: run_sql({'query': \"SELECT \\n    COALESCE(it.description, 'Unspecified') AS type_description,\\n    COUNT(i.inspection_id) AS total_inspections\\nFROM inspections i\\nLEFT JOIN inspection_types it ON i.inspection_type_id = it.inspection_type_id\\nGROUP BY 1\\nORDER BY total_inspections DESC\"})\n\nObservation: {\"row_count\": 4, \"truncated\": false, \"rows\": [{\"type_description\": \"Routine\", \"total_inspections\": 7543}, {\"type_description\": \"Followup\", \"total_inspections\": 254}, {\"type_description\": \"Critical Item\", \"total_inspections\": 216}, {\"type_description\": \"Complaint Investigation\", \"total_inspections\": 7}]}\n\nAction: run_sql({'query': 'SELECT \\n    CAST(EXTRACT(year FROM inspection_date) AS VARCHAR) AS inspection_year,\\n    COUNT(*) AS total_inspections\\nFROM inspections\\nWHERE EXTRACT(year FROM inspection_date) >= 2014\\nGROUP BY 1\\nORDER BY inspection_year ASC'})\n\nObservation: {\"row_count\": 13, \"truncated\": false, \"rows\": [{\"inspection_year\": \"2014\", \"total_inspections\": 72}, {\"inspection_year\": \"2015\", \"total_inspections\": 82}, {\"inspection_year\": \"2016\", \"total_inspections\": 161}, {\"inspection_year\": \"2017\", \"total_inspections\": 244}, {\"inspection_year\": \"2018\", \"total_inspections\": 461}, {\"inspection_year\": \"2019\", \"total_inspections\": 611}, {\"inspection_year\": \"2020\", \"total_inspections\": 375}, {\"inspection_year\": \"2021\", \"total_inspections\": 621}, {\"inspection_year\": \"2022\", \"total_inspections\": 898}, {\"inspection_year\": \"2023\", \"total_inspections\": 908}, {\"inspection_year\": \"2024\", \"total_inspections\": 1258}, {\"inspection_year\": \"2025\", \"total_inspections\": 1387}, {\"inspection_year\": \"2026\", \"total_inspections\": 890}]}\n\nAction: plot_chart({'title': 'Health Inspections Timeline (2014 - 2025)', 'x': 'inspection_year', 'query': 'SELECT \\n    CAST(EXTRACT(year FROM inspection_date) AS VARCHAR) AS inspection_year,\\n    COUNT(*) AS total_inspections\\nFROM inspections\\nWHERE EXTRACT(year FROM inspection_date) BETWEEN 2014 AND 2025\\nGROUP BY 1\\nORDER BY inspection_year ASC', 'chart_type': 'line', 'y': 'total_inspections'})\n\nObservation: Chart created: 'Health Inspections Timeline (2014 - 2025)' (line, 12 rows). It will be shown to the user below your answer.\n\nAction: plot_chart({'query': \"SELECT \\n    score_range,\\n    inspection_count\\nFROM (\\n    SELECT \\n        CASE \\n            WHEN inspection_score = 0 THEN '0 (Clean)'\\n            WHEN inspection_score BETWEEN 1 AND 5 THEN '1 - 5'\\n            WHEN inspection_score BETWEEN 6 AND 10 THEN '6 - 10'\\n            WHEN inspection_score BETWEEN 11 AND 20 THEN '11 - 20'\\n            WHEN inspection_score BETWEEN 21 AND 30 THEN '21 - 30'\\n            WHEN inspection_score BETWEEN 31 AND 50 THEN '31 - 50'\\n            ELSE '51+' \\n        END AS score_range,\\n        COUNT(*) AS inspection_count,\\n        MIN(inspection_score) AS sort_order\\n    FROM inspections\\n    WHERE inspection_score IS NOT NULL\\n    GROUP BY 1\\n) sub\\nORDER BY sort_order ASC\", 'color': 'score_range', 'title': 'Distribution of Health Inspection Scores (0 = Clean, Higher = Worse)', 'chart_type': 'bar', 'x': 'score_range', 'y': 'inspection_count'})\n\nObservation: Chart created: 'Distribution of Health Inspection Scores (0 = Clean, Higher = Worse)' (bar, 7 rows). It will be shown to the user below your answer.\n\nAction: plot_chart({'chart_type': 'bar', 'query': \"SELECT \\n    COALESCE(it.description, 'Unspecified') AS inspection_type,\\n    COUNT(i.inspection_id) AS total_inspections\\nFROM inspections i\\nLEFT JOIN inspection_types it ON i.inspection_type_id = it.inspection_type_id\\nGROUP BY 1\\nORDER BY total_inspections DESC\", 'title': 'Distribution of Inspections by Inspection Type', 'color': 'inspection_type', 'x': 'inspection_type', 'y': 'total_inspections'})\n\nObservation: Chart created: 'Distribution of Inspections by Inspection Type' (bar, 4 rows). It will be shown to the user below your answer.",
+  "timeline": [
+    {
+      "index": 0,
+      "kind": "sql",
+      "tool_name": "run_sql",
+      "tool_args": {
+        "query": "SELECT \n    (SELECT COUNT(*) FROM establishments) AS total_gmap_establishments,\n    (SELECT COUNT(*) FROM establishments WHERE slchd_establishment_key IS NOT NULL) AS gmap_matched_to_slchd,\n    (SELECT COUNT(DISTINCT slchd_establishment_key) FROM establishment_keys) AS total_slchd_keys,\n    (SELECT COUNT(DISTINCT slchd_establishment_key) FROM inspections) AS slchd_keys_with_inspections,\n    (SELECT COUNT(*) FROM inspections) AS total_inspections,\n    (SELECT COUNT(DISTINCT e.gmap_id) FROM establishments e JOIN inspections i ON e.slchd_establishment_key = i.slchd_establishment_key) AS gmap_establishments_with_inspections\n"
+      },
+      "caption": "Running a SQL query",
+      "rows": [
+        {
+          "total_gmap_establishments": 8592,
+          "gmap_matched_to_slchd": 139,
+          "total_slchd_keys": 1341,
+          "slchd_keys_with_inspections": 1315,
+          "total_inspections": 8020,
+          "gmap_establishments_with_inspections": 139
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "kind": "sql",
+      "tool_name": "run_sql",
+      "tool_args": {
+        "query": "SELECT \n    ek.source, \n    COUNT(ek.slchd_establishment_key) AS total_keys,\n    COUNT(DISTINCT i.slchd_establishment_key) AS keys_with_inspections\nFROM establishment_keys ek\nLEFT JOIN inspections i ON ek.slchd_establishment_key = i.slchd_establishment_key\nGROUP BY ek.source"
+      },
+      "caption": "Running a SQL query",
+      "rows": [
+        {
+          "source": "friend_slc",
+          "total_keys": 7618,
+          "keys_with_inspections": 1245
+        },
+        {
+          "source": "own_scrape",
+          "total_keys": 428,
+          "keys_with_inspections": 70
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "kind": "sql",
+      "tool_name": "run_sql",
+      "tool_args": {
+        "query": "SELECT \n    ek.source, \n    COUNT(DISTINCT ek.slchd_establishment_key) AS total_keys,\n    COUNT(DISTINCT i.slchd_establishment_key) AS keys_with_inspections\nFROM establishment_keys ek\nLEFT JOIN inspections i ON ek.slchd_establishment_key = i.slchd_establishment_key\nGROUP BY ek.source"
+      },
+      "caption": "Running a SQL query",
+      "rows": [
+        {
+          "source": "own_scrape",
+          "total_keys": 96,
+          "keys_with_inspections": 70
+        },
+        {
+          "source": "friend_slc",
+          "total_keys": 1245,
+          "keys_with_inspections": 1245
+        }
+      ]
+    },
+    {
+      "index": 3,
+      "kind": "chart",
+      "tool_name": "plot_chart",
+      "tool_args": {
+        "color": "status",
+        "chart_type": "bar",
+        "y": "count",
+        "x": "status",
+        "query": "SELECT \n    'Matched to SLCHD (Has Inspections)' AS status, 139 AS count\nUNION ALL\nSELECT \n    'No SLCHD Match (Unlinked)' AS status, 8453 AS count",
+        "title": "Google Maps Establishments by SLCHD Inspection Record Availability"
+      },
+      "caption": "Charting: Google Maps Establishments by SLCHD Inspection Record Availability",
+      "rows": []
+    },
+    {
+      "index": 4,
+      "kind": "chart",
+      "tool_name": "plot_chart",
+      "tool_args": {
+        "color": "source_and_status",
+        "chart_type": "bar",
+        "title": "Salt Lake County Health Department (SLCHD) Portal Listings Breakdown",
+        "y": "count",
+        "x": "source_and_status",
+        "query": "SELECT \n    'Friend SLC (Has Inspections)' AS source_and_status, 1245 AS count\nUNION ALL\nSELECT \n    'Own Scrape (Has Inspections)' AS source_and_status, 70 AS count\nUNION ALL\nSELECT \n    'Own Scrape (No Inspections)' AS source_and_status, 26 AS count"
+      },
+      "caption": "Charting: Salt Lake County Health Department (SLCHD) Portal Listings Breakdown",
+      "rows": []
+    },
+    {
+      "index": 5,
+      "kind": "sql",
+      "tool_name": "run_sql",
+      "tool_args": {
+        "query": "SELECT \n    DATE_TRUNC('year', inspection_date) AS year,\n    COUNT(*) AS inspection_count,\n    ROUND(AVG(inspection_score), 2) AS avg_score\nFROM inspections\nGROUP BY 1\nORDER BY 1"
+      },
+      "caption": "Running a SQL query",
+      "rows": [
+        {
+          "year": "2009-01-01 00:00:00",
+          "inspection_count": 3,
+          "avg_score": 7.0
+        },
+        {
+          "year": "2010-01-01 00:00:00",
+          "inspection_count": 6,
+          "avg_score": 4.8
+        },
+        {
+          "year": "2011-01-01 00:00:00",
+          "inspection_count": 8,
+          "avg_score": 6.71
+        },
+        {
+          "year": "2012-01-01 00:00:00",
+          "inspection_count": 11,
+          "avg_score": 6.0
+        },
+        {
+          "year": "2013-01-01 00:00:00",
+          "inspection_count": 24,
+          "avg_score": 8.91
+        },
+        {
+          "year": "2014-01-01 00:00:00",
+          "inspection_count": 72,
+          "avg_score": 8.73
+        },
+        {
+          "year": "2015-01-01 00:00:00",
+          "inspection_count": 82,
+          "avg_score": 13.0
+        },
+        {
+          "year": "2016-01-01 00:00:00",
+          "inspection_count": 161,
+          "avg_score": 12.25
+        },
+        {
+          "year": "2017-01-01 00:00:00",
+          "inspection_count": 244,
+          "avg_score": 11.41
+        },
+        {
+          "year": "2018-01-01 00:00:00",
+          "inspection_count": 461,
+          "avg_score": 11.09
+        },
+        {
+          "year": "2019-01-01 00:00:00",
+          "inspection_count": 611,
+          "avg_score": 10.19
+        },
+        {
+          "year": "2020-01-01 00:00:00",
+          "inspection_count": 375,
+          "avg_score": 9.8
+        },
+        {
+          "year": "2021-01-01 00:00:00",
+          "inspection_count": 621,
+          "avg_score": 10.4
+        },
+        {
+          "year": "2022-01-01 00:00:00",
+          "inspection_count": 898,
+          "avg_score": 12.08
+        },
+        {
+          "year": "2023-01-01 00:00:00",
+          "inspection_count": 908,
+          "avg_score": 12.01
+        },
+        {
+          "year": "2024-01-01 00:00:00",
+          "inspection_count": 1258,
+          "avg_score": 11.49
+        },
+        {
+          "year": "2025-01-01 00:00:00",
+          "inspection_count": 1387,
+          "avg_score": 8.9
+        },
+        {
+          "year": "2026-01-01 00:00:00",
+          "inspection_count": 890,
+          "avg_score": 6.33
+        }
+      ]
+    },
+    {
+      "index": 6,
+      "kind": "sql",
+      "tool_name": "run_sql",
+      "tool_args": {
+        "query": "SELECT \n    CASE \n        WHEN inspection_score = 0 THEN '0 (Clean / Perfect)'\n        WHEN inspection_score BETWEEN 1 AND 5 THEN '1 - 5'\n        WHEN inspection_score BETWEEN 6 AND 10 THEN '6 - 10'\n        WHEN inspection_score BETWEEN 11 AND 20 THEN '11 - 20'\n        WHEN inspection_score BETWEEN 21 AND 30 THEN '21 - 30'\n        WHEN inspection_score BETWEEN 31 AND 50 THEN '31 - 50'\n        ELSE '51+' \n    END AS score_range,\n    COUNT(*) AS inspection_count\nFROM inspections\nWHERE inspection_score IS NOT NULL\nGROUP BY 1\nORDER BY MIN(inspection_score)"
+      },
+      "caption": "Running a SQL query",
+      "rows": [
+        {
+          "score_range": "0 (Clean / Perfect)",
+          "inspection_count": 710
+        },
+        {
+          "score_range": "1 - 5",
+          "inspection_count": 2363
+        },
+        {
+          "score_range": "6 - 10",
+          "inspection_count": 1938
+        },
+        {
+          "score_range": "11 - 20",
+          "inspection_count": 1802
+        },
+        {
+          "score_range": "21 - 30",
+          "inspection_count": 604
+        },
+        {
+          "score_range": "31 - 50",
+          "inspection_count": 308
+        },
+        {
+          "score_range": "51+",
+          "inspection_count": 73
+        }
+      ]
+    },
+    {
+      "index": 7,
+      "kind": "sql",
+      "tool_name": "run_sql",
+      "tool_args": {
+        "query": "SELECT \n    COALESCE(it.description, 'Unspecified') AS type_description,\n    COUNT(i.inspection_id) AS total_inspections\nFROM inspections i\nLEFT JOIN inspection_types it ON i.inspection_type_id = it.inspection_type_id\nGROUP BY 1\nORDER BY total_inspections DESC"
+      },
+      "caption": "Running a SQL query",
+      "rows": [
+        {
+          "type_description": "Routine",
+          "total_inspections": 7543
+        },
+        {
+          "type_description": "Followup",
+          "total_inspections": 254
+        },
+        {
+          "type_description": "Critical Item",
+          "total_inspections": 216
+        },
+        {
+          "type_description": "Complaint Investigation",
+          "total_inspections": 7
+        }
+      ]
+    },
+    {
+      "index": 8,
+      "kind": "sql",
+      "tool_name": "run_sql",
+      "tool_args": {
+        "query": "SELECT \n    CAST(EXTRACT(year FROM inspection_date) AS VARCHAR) AS inspection_year,\n    COUNT(*) AS total_inspections\nFROM inspections\nWHERE EXTRACT(year FROM inspection_date) >= 2014\nGROUP BY 1\nORDER BY inspection_year ASC"
+      },
+      "caption": "Running a SQL query",
+      "rows": [
+        {
+          "inspection_year": "2014",
+          "total_inspections": 72
+        },
+        {
+          "inspection_year": "2015",
+          "total_inspections": 82
+        },
+        {
+          "inspection_year": "2016",
+          "total_inspections": 161
+        },
+        {
+          "inspection_year": "2017",
+          "total_inspections": 244
+        },
+        {
+          "inspection_year": "2018",
+          "total_inspections": 461
+        },
+        {
+          "inspection_year": "2019",
+          "total_inspections": 611
+        },
+        {
+          "inspection_year": "2020",
+          "total_inspections": 375
+        },
+        {
+          "inspection_year": "2021",
+          "total_inspections": 621
+        },
+        {
+          "inspection_year": "2022",
+          "total_inspections": 898
+        },
+        {
+          "inspection_year": "2023",
+          "total_inspections": 908
+        },
+        {
+          "inspection_year": "2024",
+          "total_inspections": 1258
+        },
+        {
+          "inspection_year": "2025",
+          "total_inspections": 1387
+        },
+        {
+          "inspection_year": "2026",
+          "total_inspections": 890
+        }
+      ]
+    },
+    {
+      "index": 9,
+      "kind": "chart",
+      "tool_name": "plot_chart",
+      "tool_args": {
+        "title": "Health Inspections Timeline (2014 - 2025)",
+        "x": "inspection_year",
+        "query": "SELECT \n    CAST(EXTRACT(year FROM inspection_date) AS VARCHAR) AS inspection_year,\n    COUNT(*) AS total_inspections\nFROM inspections\nWHERE EXTRACT(year FROM inspection_date) BETWEEN 2014 AND 2025\nGROUP BY 1\nORDER BY inspection_year ASC",
+        "chart_type": "line",
+        "y": "total_inspections"
+      },
+      "caption": "Charting: Health Inspections Timeline (2014 - 2025)",
+      "rows": []
+    },
+    {
+      "index": 10,
+      "kind": "chart",
+      "tool_name": "plot_chart",
+      "tool_args": {
+        "query": "SELECT \n    score_range,\n    inspection_count\nFROM (\n    SELECT \n        CASE \n            WHEN inspection_score = 0 THEN '0 (Clean)'\n            WHEN inspection_score BETWEEN 1 AND 5 THEN '1 - 5'\n            WHEN inspection_score BETWEEN 6 AND 10 THEN '6 - 10'\n            WHEN inspection_score BETWEEN 11 AND 20 THEN '11 - 20'\n            WHEN inspection_score BETWEEN 21 AND 30 THEN '21 - 30'\n            WHEN inspection_score BETWEEN 31 AND 50 THEN '31 - 50'\n            ELSE '51+' \n        END AS score_range,\n        COUNT(*) AS inspection_count,\n        MIN(inspection_score) AS sort_order\n    FROM inspections\n    WHERE inspection_score IS NOT NULL\n    GROUP BY 1\n) sub\nORDER BY sort_order ASC",
+        "color": "score_range",
+        "title": "Distribution of Health Inspection Scores (0 = Clean, Higher = Worse)",
+        "chart_type": "bar",
+        "x": "score_range",
+        "y": "inspection_count"
+      },
+      "caption": "Charting: Distribution of Health Inspection Scores (0 = Clean, Higher = Worse)",
+      "rows": []
+    },
+    {
+      "index": 11,
+      "kind": "chart",
+      "tool_name": "plot_chart",
+      "tool_args": {
+        "chart_type": "bar",
+        "query": "SELECT \n    COALESCE(it.description, 'Unspecified') AS inspection_type,\n    COUNT(i.inspection_id) AS total_inspections\nFROM inspections i\nLEFT JOIN inspection_types it ON i.inspection_type_id = it.inspection_type_id\nGROUP BY 1\nORDER BY total_inspections DESC",
+        "title": "Distribution of Inspections by Inspection Type",
+        "color": "inspection_type",
+        "x": "inspection_type",
+        "y": "total_inspections"
+      },
+      "caption": "Charting: Distribution of Inspections by Inspection Type",
+      "rows": []
+    }
+  ],
+  "messages": [
+    {
+      "type": "HumanMessage",
+      "content": "How many establishments have a Salt Lake County health inspection on record?"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "get_schema",
+          "args": {},
+          "id": "call_546207",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 3340,
+        "output_tokens": 91,
+        "total_tokens": 3431,
+        "input_token_details": {
+          "cache_read": 0
+        },
+        "output_token_details": {
+          "reasoning": 81
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "Project food_health_viz {\n  database_type: 'DuckDB'\n}\n\nTable establishment_keys {\n  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']\n  name varchar [not null]\n  address varchar [not null]\n  city varchar [not null]\n  city_state_zip varchar\n  establishment_type varchar\n  source varchar [note: 'friend_slc | own_scrape']\n  slchd_lat double\n  slchd_lon double\n  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']\n\n  Note: 'SLCHD establishment list, one row per portal listing.'\n}\n\nTable category {\n  category_id integer [pk]\n  category varchar\n}\n\nTable establishments {\n  gmap_id varchar [pk]\n  name varchar\n  address varchar\n  description varchar\n  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']\n  avg_rating double\n  num_of_reviews integer\n  price varchar\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']\n\n  Note: 'One row per Google Local place \u2014 all restaurants, not just SLCHD-matched.'\n}\n\nTable establishment_attributes {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  attribute varchar [not null]\n\n  indexes { (gmap_id, attribute) [pk] }\n\n  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. \"Service options\") dropped.'\n}\n\nTable establishment_categories {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  category_id integer [ref: > category.category_id, not null]\n\n  indexes { (gmap_id, category_id) [pk] }\n}\n\nTable gmap_hours {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  day integer [not null, note: '0=Sun \u2026 6=Sat']\n  open_min bigint\n  open_max bigint\n\n  indexes { (gmap_id, day) [pk] }\n\n  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'\n}\n\nTable review {\n  user_id varchar\n  name varchar\n  time bigint\n  rating double\n  text varchar\n  resp varchar\n  gmap_id varchar [ref: > establishments.gmap_id]\n}\n\nTable inspection_types {\n  inspection_type_id integer [pk, note: 'parsed leading number, e.g. \"01 - Routine\" -> 1']\n  description varchar [note: 'e.g. \"Routine\"']\n}\n\nTable inspections {\n  inspection_id bigint [pk, increment]\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]\n  inspection_date date [not null]\n  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable \u2014 27 rows have no type']\n  inspection_score integer\n\n  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'\n}\n\nTable violation_codes {\n  violation_code_id integer [pk, increment]\n  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. \"4.5.18\"']\n  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']\n  critical boolean [not null]\n}\n\nTable violations {\n  violation_id bigint [pk, increment]\n  inspection_id bigint [ref: > inspections.inspection_id, not null]\n  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]\n  violation_description varchar [note: 'per-occurrence free text']\n  violation_occurrences integer\n  violation_cos boolean [note: 'corrected on site']\n  violation_phr varchar [note: 'public health rationale']\n\n  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'\n}\n",
+      "tool_call_id": "call_546207",
+      "name": "get_schema"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "SELECT \n    (SELECT COUNT(*) FROM establishments) AS total_gmap_establishments,\n    (SELECT COUNT(*) FROM establishments WHERE slchd_establishment_key IS NOT NULL) AS gmap_matched_to_slchd,\n    (SELECT COUNT(DISTINCT slchd_establishment_key) FROM establishment_keys) AS total_slchd_keys,\n    (SELECT COUNT(DISTINCT slchd_establishment_key) FROM inspections) AS slchd_keys_with_inspections,\n    (SELECT COUNT(*) FROM inspections) AS total_inspections,\n    (SELECT COUNT(DISTINCT e.gmap_id) FROM establishments e JOIN inspections i ON e.slchd_establishment_key = i.slchd_establishment_key) AS gmap_establishments_with_inspections\n"
+          },
+          "id": "call_672640",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 4460,
+        "output_tokens": 388,
+        "total_tokens": 4848,
+        "input_token_details": {
+          "cache_read": 0
+        },
+        "output_token_details": {
+          "reasoning": 188
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 1, \"truncated\": false, \"rows\": [{\"total_gmap_establishments\": 8592, \"gmap_matched_to_slchd\": 139, \"total_slchd_keys\": 1341, \"slchd_keys_with_inspections\": 1315, \"total_inspections\": 8020, \"gmap_establishments_with_inspections\": 139}]}",
+      "tool_call_id": "call_672640",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "SELECT \n    ek.source, \n    COUNT(ek.slchd_establishment_key) AS total_keys,\n    COUNT(DISTINCT i.slchd_establishment_key) AS keys_with_inspections\nFROM establishment_keys ek\nLEFT JOIN inspections i ON ek.slchd_establishment_key = i.slchd_establishment_key\nGROUP BY ek.source"
+          },
+          "id": "call_598229",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 4954,
+        "output_tokens": 362,
+        "total_tokens": 5316,
+        "input_token_details": {
+          "cache_read": 0
+        },
+        "output_token_details": {
+          "reasoning": 258
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 2, \"truncated\": false, \"rows\": [{\"source\": \"friend_slc\", \"total_keys\": 7618, \"keys_with_inspections\": 1245}, {\"source\": \"own_scrape\", \"total_keys\": 428, \"keys_with_inspections\": 70}]}",
+      "tool_call_id": "call_598229",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "SELECT \n    ek.source, \n    COUNT(DISTINCT ek.slchd_establishment_key) AS total_keys,\n    COUNT(DISTINCT i.slchd_establishment_key) AS keys_with_inspections\nFROM establishment_keys ek\nLEFT JOIN inspections i ON ek.slchd_establishment_key = i.slchd_establishment_key\nGROUP BY ek.source"
+          },
+          "id": "call_690363",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 5395,
+        "output_tokens": 269,
+        "total_tokens": 5664,
+        "input_token_details": {
+          "cache_read": 0
+        },
+        "output_token_details": {
+          "reasoning": 163
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 2, \"truncated\": false, \"rows\": [{\"source\": \"own_scrape\", \"total_keys\": 96, \"keys_with_inspections\": 70}, {\"source\": \"friend_slc\", \"total_keys\": 1245, \"keys_with_inspections\": 1245}]}",
+      "tool_call_id": "call_690363",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "plot_chart",
+          "args": {
+            "color": "status",
+            "chart_type": "bar",
+            "y": "count",
+            "x": "status",
+            "query": "SELECT \n    'Matched to SLCHD (Has Inspections)' AS status, 139 AS count\nUNION ALL\nSELECT \n    'No SLCHD Match (Unlinked)' AS status, 8453 AS count",
+            "title": "Google Maps Establishments by SLCHD Inspection Record Availability"
+          },
+          "id": "call_718545",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 5742,
+        "output_tokens": 557,
+        "total_tokens": 6299,
+        "input_token_details": {
+          "cache_read": 0
+        },
+        "output_token_details": {
+          "reasoning": 451
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "Chart created: 'Google Maps Establishments by SLCHD Inspection Record Availability' (bar, 2 rows). It will be shown to the user below your answer.",
+      "tool_call_id": "call_718545",
+      "name": "plot_chart"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "plot_chart",
+          "args": {
+            "color": "source_and_status",
+            "chart_type": "bar",
+            "title": "Salt Lake County Health Department (SLCHD) Portal Listings Breakdown",
+            "y": "count",
+            "x": "source_and_status",
+            "query": "SELECT \n    'Friend SLC (Has Inspections)' AS source_and_status, 1245 AS count\nUNION ALL\nSELECT \n    'Own Scrape (Has Inspections)' AS source_and_status, 70 AS count\nUNION ALL\nSELECT \n    'Own Scrape (No Inspections)' AS source_and_status, 26 AS count"
+          },
+          "id": "call_468212",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 6345,
+        "output_tokens": 243,
+        "total_tokens": 6588,
+        "input_token_details": {
+          "cache_read": 0
+        },
+        "output_token_details": {
+          "reasoning": 93
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "Chart created: 'Salt Lake County Health Department (SLCHD) Portal Listings Breakdown' (bar, 3 rows). It will be shown to the user below your answer.",
+      "tool_call_id": "call_468212",
+      "name": "plot_chart"
+    },
+    {
+      "type": "AIMessage",
+      "content": "{\n  \"narrative_answer\": \"In the dataset, the count of establishments with Salt Lake County Health Department (SLCHD) inspection records depends on whether you look at the Google Maps establishment database or the Salt Lake County inspection portal database:\\n\\n1. **Google Maps Establishments (`establishments` table):**\\n   - **139** out of **8,592** total establishments (**1.62%**) have a matched SLCHD health inspection history on record. All 139 of these matched establishments have associated inspection records.\\n   - **8,453** establishments (**98.38%**) do not have a matched SLCHD health inspection record in this database.\\n\\n2. **Salt Lake County Health Department Listings (`establishment_keys` table):**\\n   - **1,315** out of **1,341** total SLCHD portal listings (**98.06%**) have at least one inspection recorded in the `inspections` table (totaling 8,020 individual inspection events).\\n   - **26** SLCHD listings have no inspection entries recorded.\\n\\nSummary:\\n- **139** Google Places establishments have matched SLCHD health inspection records.\\n- **1,315** unique SLCHD establishment listings have health inspection records on file in the health department data.\",\n  \"hypothesis\": \"none\",\n  \"confidence\": \"high\",\n  \"supporting_evidence\": [],\n  \"undermining_evidence\": [],\n  \"candidate_pool\": []\n} ",
+      "raw_content": [
+        {
+          "type": "text",
+          "text": "{\n  \"narrative_answer\": \"In the dataset, the count of establishments with Salt Lake County Health Department (SLCHD) inspection records depends on whether you look at the Google Maps establishment database or the Salt Lake County inspection portal database:\\n\\n1. **Google Maps Establishments (`establishments` table):**\\n   - **139** out of **8,592** total establishments (**1.62%**) have a matched SLCHD health inspection history on record. All 139 of these matched establishments have associated inspection records.\\n   - **8,453** establishments (**98.38%**) do not have a matched SLCHD health inspection record in this database.\\n\\n2. **Salt Lake County Health Department Listings (`establishment_keys` table):**\\n   - **1,315** out of **1,341** total SLCHD portal listings (**98.06%**) have at least one inspection recorded in the `inspections` table (totaling 8,020 individual inspection events).\\n   - **26** SLCHD listings have no inspection entries recorded.\\n\\nSummary:\\n- **139** Google Places establishments have matched SLCHD health inspection records.\\n- **1,315** unique SLCHD establishment listings have health inspection records on file in the health department data.\",\n  \"hypothesis\": \"none\",\n  \"confidence\": \"high\",\n  \"supporting_evidence\": [],\n  \"undermining_evidence\": [],\n  \"candidate_pool\": []\n} ",
+          "extras": {
+            "signature": "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"
+          }
+        }
+      ],
+      "tool_calls": [],
+      "usage_metadata": {
+        "input_tokens": 6636,
+        "output_tokens": 912,
+        "total_tokens": 7548,
+        "input_token_details": {
+          "cache_read": 0
+        },
+        "output_token_details": {
+          "reasoning": 570
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "HumanMessage",
+      "content": "Among them, can you show me the distribution and timeline of health inspections?"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "SELECT \n    DATE_TRUNC('year', inspection_date) AS year,\n    COUNT(*) AS inspection_count,\n    ROUND(AVG(inspection_score), 2) AS avg_score\nFROM inspections\nGROUP BY 1\nORDER BY 1"
+          },
+          "id": "call_519629",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 7565,
+        "output_tokens": 364,
+        "total_tokens": 7929,
+        "input_token_details": {
+          "cache_read": 0
+        },
+        "output_token_details": {
+          "reasoning": 292
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 18, \"truncated\": false, \"rows\": [{\"year\": \"2009-01-01 00:00:00\", \"inspection_count\": 3, \"avg_score\": 7.0}, {\"year\": \"2010-01-01 00:00:00\", \"inspection_count\": 6, \"avg_score\": 4.8}, {\"year\": \"2011-01-01 00:00:00\", \"inspection_count\": 8, \"avg_score\": 6.71}, {\"year\": \"2012-01-01 00:00:00\", \"inspection_count\": 11, \"avg_score\": 6.0}, {\"year\": \"2013-01-01 00:00:00\", \"inspection_count\": 24, \"avg_score\": 8.91}, {\"year\": \"2014-01-01 00:00:00\", \"inspection_count\": 72, \"avg_score\": 8.73}, {\"year\": \"2015-01-01 00:00:00\", \"inspection_count\": 82, \"avg_score\": 13.0}, {\"year\": \"2016-01-01 00:00:00\", \"inspection_count\": 161, \"avg_score\": 12.25}, {\"year\": \"2017-01-01 00:00:00\", \"inspection_count\": 244, \"avg_score\": 11.41}, {\"year\": \"2018-01-01 00:00:00\", \"inspection_count\": 461, \"avg_score\": 11.09}, {\"year\": \"2019-01-01 00:00:00\", \"inspection_count\": 611, \"avg_score\": 10.19}, {\"year\": \"2020-01-01 00:00:00\", \"inspection_count\": 375, \"avg_score\": 9.8}, {\"year\": \"2021-01-01 00:00:00\", \"inspection_count\": 621, \"avg_score\": 10.4}, {\"year\": \"2022-01-01 00:00:00\", \"inspection_count\": 898, \"avg_score\": 12.08}, {\"year\": \"2023-01-01 00:00:00\", \"inspection_count\": 908, \"avg_score\": 12.01}, {\"year\": \"2024-01-01 00:00:00\", \"inspection_count\": 1258, \"avg_score\": 11.49}, {\"year\": \"2025-01-01 00:00:00\", \"inspection_count\": 1387, \"avg_score\": 8.9}, {\"year\": \"2026-01-01 00:00:00\", \"inspection_count\": 890, \"avg_score\": 6.33}]}",
+      "tool_call_id": "call_519629",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "SELECT \n    CASE \n        WHEN inspection_score = 0 THEN '0 (Clean / Perfect)'\n        WHEN inspection_score BETWEEN 1 AND 5 THEN '1 - 5'\n        WHEN inspection_score BETWEEN 6 AND 10 THEN '6 - 10'\n        WHEN inspection_score BETWEEN 11 AND 20 THEN '11 - 20'\n        WHEN inspection_score BETWEEN 21 AND 30 THEN '21 - 30'\n        WHEN inspection_score BETWEEN 31 AND 50 THEN '31 - 50'\n        ELSE '51+' \n    END AS score_range,\n    COUNT(*) AS inspection_count\nFROM inspections\nWHERE inspection_score IS NOT NULL\nGROUP BY 1\nORDER BY MIN(inspection_score)"
+          },
+          "id": "call_678080",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 8677,
+        "output_tokens": 263,
+        "total_tokens": 8940,
+        "input_token_details": {
+          "cache_read": 6586
+        },
+        "output_token_details": {
+          "reasoning": 67
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 7, \"truncated\": false, \"rows\": [{\"score_range\": \"0 (Clean / Perfect)\", \"inspection_count\": 710}, {\"score_range\": \"1 - 5\", \"inspection_count\": 2363}, {\"score_range\": \"6 - 10\", \"inspection_count\": 1938}, {\"score_range\": \"11 - 20\", \"inspection_count\": 1802}, {\"score_range\": \"21 - 30\", \"inspection_count\": 604}, {\"score_range\": \"31 - 50\", \"inspection_count\": 308}, {\"score_range\": \"51+\", \"inspection_count\": 73}]}",
+      "tool_call_id": "call_678080",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "SELECT \n    COALESCE(it.description, 'Unspecified') AS type_description,\n    COUNT(i.inspection_id) AS total_inspections\nFROM inspections i\nLEFT JOIN inspection_types it ON i.inspection_type_id = it.inspection_type_id\nGROUP BY 1\nORDER BY total_inspections DESC"
+          },
+          "id": "call_678123",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 9104,
+        "output_tokens": 106,
+        "total_tokens": 9210,
+        "input_token_details": {
+          "cache_read": 6641
+        },
+        "output_token_details": {
+          "reasoning": 13
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 4, \"truncated\": false, \"rows\": [{\"type_description\": \"Routine\", \"total_inspections\": 7543}, {\"type_description\": \"Followup\", \"total_inspections\": 254}, {\"type_description\": \"Critical Item\", \"total_inspections\": 216}, {\"type_description\": \"Complaint Investigation\", \"total_inspections\": 7}]}",
+      "tool_call_id": "call_678123",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "SELECT \n    CAST(EXTRACT(year FROM inspection_date) AS VARCHAR) AS inspection_year,\n    COUNT(*) AS total_inspections\nFROM inspections\nWHERE EXTRACT(year FROM inspection_date) >= 2014\nGROUP BY 1\nORDER BY inspection_year ASC"
+          },
+          "id": "call_678838",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 9305,
+        "output_tokens": 146,
+        "total_tokens": 9451,
+        "input_token_details": {
+          "cache_read": 6663
+        },
+        "output_token_details": {
+          "reasoning": 66
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 13, \"truncated\": false, \"rows\": [{\"inspection_year\": \"2014\", \"total_inspections\": 72}, {\"inspection_year\": \"2015\", \"total_inspections\": 82}, {\"inspection_year\": \"2016\", \"total_inspections\": 161}, {\"inspection_year\": \"2017\", \"total_inspections\": 244}, {\"inspection_year\": \"2018\", \"total_inspections\": 461}, {\"inspection_year\": \"2019\", \"total_inspections\": 611}, {\"inspection_year\": \"2020\", \"total_inspections\": 375}, {\"inspection_year\": \"2021\", \"total_inspections\": 621}, {\"inspection_year\": \"2022\", \"total_inspections\": 898}, {\"inspection_year\": \"2023\", \"total_inspections\": 908}, {\"inspection_year\": \"2024\", \"total_inspections\": 1258}, {\"inspection_year\": \"2025\", \"total_inspections\": 1387}, {\"inspection_year\": \"2026\", \"total_inspections\": 890}]}",
+      "tool_call_id": "call_678838",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "plot_chart",
+          "args": {
+            "title": "Health Inspections Timeline (2014 - 2025)",
+            "x": "inspection_year",
+            "query": "SELECT \n    CAST(EXTRACT(year FROM inspection_date) AS VARCHAR) AS inspection_year,\n    COUNT(*) AS total_inspections\nFROM inspections\nWHERE EXTRACT(year FROM inspection_date) BETWEEN 2014 AND 2025\nGROUP BY 1\nORDER BY inspection_year ASC",
+            "chart_type": "line",
+            "y": "total_inspections"
+          },
+          "id": "call_621746",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 9746,
+        "output_tokens": 256,
+        "total_tokens": 10002,
+        "input_token_details": {
+          "cache_read": 6714
+        },
+        "output_token_details": {
+          "reasoning": 123
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "Chart created: 'Health Inspections Timeline (2014 - 2025)' (line, 12 rows). It will be shown to the user below your answer.",
+      "tool_call_id": "call_621746",
+      "name": "plot_chart"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "plot_chart",
+          "args": {
+            "query": "SELECT \n    score_range,\n    inspection_count\nFROM (\n    SELECT \n        CASE \n            WHEN inspection_score = 0 THEN '0 (Clean)'\n            WHEN inspection_score BETWEEN 1 AND 5 THEN '1 - 5'\n            WHEN inspection_score BETWEEN 6 AND 10 THEN '6 - 10'\n            WHEN inspection_score BETWEEN 11 AND 20 THEN '11 - 20'\n            WHEN inspection_score BETWEEN 21 AND 30 THEN '21 - 30'\n            WHEN inspection_score BETWEEN 31 AND 50 THEN '31 - 50'\n            ELSE '51+' \n        END AS score_range,\n        COUNT(*) AS inspection_count,\n        MIN(inspection_score) AS sort_order\n    FROM inspections\n    WHERE inspection_score IS NOT NULL\n    GROUP BY 1\n) sub\nORDER BY sort_order ASC",
+            "color": "score_range",
+            "title": "Distribution of Health Inspection Scores (0 = Clean, Higher = Worse)",
+            "chart_type": "bar",
+            "x": "score_range",
+            "y": "inspection_count"
+          },
+          "id": "call_714621",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 10054,
+        "output_tokens": 295,
+        "total_tokens": 10349,
+        "input_token_details": {
+          "cache_read": 6746
+        },
+        "output_token_details": {
+          "reasoning": 15
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "Chart created: 'Distribution of Health Inspection Scores (0 = Clean, Higher = Worse)' (bar, 7 rows). It will be shown to the user below your answer.",
+      "tool_call_id": "call_714621",
+      "name": "plot_chart"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "plot_chart",
+          "args": {
+            "chart_type": "bar",
+            "query": "SELECT \n    COALESCE(it.description, 'Unspecified') AS inspection_type,\n    COUNT(i.inspection_id) AS total_inspections\nFROM inspections i\nLEFT JOIN inspection_types it ON i.inspection_type_id = it.inspection_type_id\nGROUP BY 1\nORDER BY total_inspections DESC",
+            "title": "Distribution of Inspections by Inspection Type",
+            "color": "inspection_type",
+            "x": "inspection_type",
+            "y": "total_inspections"
+          },
+          "id": "call_231796",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 10398,
+        "output_tokens": 220,
+        "total_tokens": 10618,
+        "input_token_details": {
+          "cache_read": 6780
+        },
+        "output_token_details": {
+          "reasoning": 81
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "Chart created: 'Distribution of Inspections by Inspection Type' (bar, 4 rows). It will be shown to the user below your answer.",
+      "tool_call_id": "call_231796",
+      "name": "plot_chart"
+    },
+    {
+      "type": "AIMessage",
+      "content": "{\n  \"narrative_answer\": \"Across the 8,020 total health inspections recorded for Salt Lake County establishments, here is the breakdown of both the timeline and distribution:\\n\\n### 1. Timeline of Health Inspections (2014\u20132025)\\n- **2014\u20132017:** Initial dataset capture grew from 72 inspections in 2014 to 244 in 2017.\\n- **2018\u20132019:** Ramped up to 461 (2018) and 611 (2019) inspections.\\n- **2020:** Dropped to 375 inspections, reflecting COVID-19 operational disruptions.\\n- **2021\u20132025:** Rebounded steadily, reaching 621 in 2021, 898 in 2022, 908 in 2023, 1,258 in 2024, and 1,387 in 2025 (plus 890 in early 2026).\\n\\n### 2. Distribution of Inspection Scores (0 = Clean, Higher = Worse)\\n- **0 (Clean / Perfect):** 710 inspections (8.9%)\\n- **1\u20135:** 2,363 inspections (29.5%)\\n- **6\u201310:** 1,938 inspections (24.2%)\\n- **11\u201320:** 1,802 inspections (22.5%)\\n- **21\u201330:** 604 inspections (7.5%)\\n- **31\u201350:** 308 inspections (3.8%)\\n- **51+:** 73 inspections (0.9%)\\n\\n### 3. Distribution by Inspection Type\\n- **Routine:** 7,543 inspections (94.1%)\\n- **Followup:** 254 inspections (3.2%)\\n- **Critical Item:** 216 inspections (2.7%)\\n- **Complaint Investigation:** 7 inspections (0.1%)\",\n  \"hypothesis\": \"none\",\n  \"confidence\": \"high\",\n  \"supporting_evidence\": [],\n  \"undermining_evidence\": [],\n  \"candidate_pool\": []\n} ",
+      "raw_content": [
+        {
+          "type": "text",
+          "text": "{\n  \"narrative_answer\": \"Across the 8,020 total health inspections recorded for Salt Lake County establishments, here is the breakdown of both the timeline and distribution:\\n\\n### 1. Timeline of Health Inspections (2014\u20132025)\\n- **2014\u20132017:** Initial dataset capture grew from 72 inspections in 2014 to 244 in 2017.\\n- **2018\u20132019:** Ramped up to 461 (2018) and 611 (2019) inspections.\\n- **2020:** Dropped to 375 inspections, reflecting COVID-19 operational disruptions.\\n- **2021\u20132025:** Rebounded steadily, reaching 621 in 2021, 898 in 2022, 908 in 2023, 1,258 in 2024, and 1,387 in 2025 (plus 890 in early 2026).\\n\\n### 2. Distribution of Inspection Scores (0 = Clean, Higher = Worse)\\n- **0 (Clean / Perfect):** 710 inspections (8.9%)\\n- **1\u20135:** 2,363 inspections (29.5%)\\n- **6\u201310:** 1,938 inspections (24.2%)\\n- **11\u201320:** 1,802 inspections (22.5%)\\n- **21\u201330:** 604 inspections (7.5%)\\n- **31\u201350:** 308 inspections (3.8%)\\n- **51+:** 73 inspections (0.9%)\\n\\n### 3. Distribution by Inspection Type\\n- **Routine:** 7,543 inspections (94.1%)\\n- **Followup:** 254 inspections (3.2%)\\n- **Critical Item:** 216 inspections (2.7%)\\n- **Complaint Investigation:** 7 inspections (0.1%)\",\n  \"hypothesis\": \"none\",\n  \"confidence\": \"high\",\n  \"supporting_evidence\": [],\n  \"undermining_evidence\": [],\n  \"candidate_pool\": []\n} ",
+          "extras": {
+            "signature": "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"
+          }
+        }
+      ],
+      "tool_calls": [],
+      "usage_metadata": {
+        "input_tokens": 10661,
+        "output_tokens": 1306,
+        "total_tokens": 11967,
+        "input_token_details": {
+          "cache_read": 6803
+        },
+        "output_token_details": {
+          "reasoning": 759
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    }
+  ],
+  "charts": [
+    {
+      "data": [
+        {
+          "hovertemplate": "inspection_year=%{x}<br>total_inspections=%{y}<extra></extra>",
+          "legendgroup": "",
+          "line": {
+            "color": "#000001",
+            "dash": "solid"
+          },
+          "marker": {
+            "symbol": "circle"
+          },
+          "mode": "lines",
+          "name": "",
+          "orientation": "v",
+          "showlegend": false,
+          "x": [
+            "2014",
+            "2015",
+            "2016",
+            "2017",
+            "2018",
+            "2019",
+            "2020",
+            "2021",
+            "2022",
+            "2023",
+            "2024",
+            "2025"
+          ],
+          "xaxis": "x",
+          "y": {
+            "dtype": "i2",
+            "bdata": "SABSAKEA9ADNAWMCdwFtAoIDjAPqBGsF"
+          },
+          "yaxis": "y",
+          "type": "scatter"
+        }
+      ],
+      "layout": {
+        "template": {
+          "data": {
+            "candlestick": [
+              {
+                "decreasing": {
+                  "line": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "line": {
+                    "color": "#000032"
+                  }
+                },
+                "type": "candlestick"
+              }
+            ],
+            "contourcarpet": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contourcarpet"
+              }
+            ],
+            "contour": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contour"
+              }
+            ],
+            "heatmap": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "heatmap"
+              }
+            ],
+            "histogram2d": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "histogram2d"
+              }
+            ],
+            "icicle": [
+              {
+                "textfont": {
+                  "color": "white"
+                },
+                "type": "icicle"
+              }
+            ],
+            "sankey": [
+              {
+                "textfont": {
+                  "color": "#000036"
+                },
+                "type": "sankey"
+              }
+            ],
+            "scatter": [
+              {
+                "marker": {
+                  "line": {
+                    "width": 0
+                  }
+                },
+                "type": "scatter"
+              }
+            ],
+            "table": [
+              {
+                "cells": {
+                  "fill": {
+                    "color": "#000038"
+                  },
+                  "font": {
+                    "color": "#000037"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "header": {
+                  "fill": {
+                    "color": "#000040"
+                  },
+                  "font": {
+                    "color": "#000036"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "type": "table"
+              }
+            ],
+            "waterfall": [
+              {
+                "connector": {
+                  "line": {
+                    "color": "#000036",
+                    "width": 2
+                  }
+                },
+                "decreasing": {
+                  "marker": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "marker": {
+                    "color": "#000032"
+                  }
+                },
+                "totals": {
+                  "marker": {
+                    "color": "#000034"
+                  }
+                },
+                "type": "waterfall"
+              }
+            ]
+          },
+          "layout": {
+            "coloraxis": {
+              "colorscale": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorscale": {
+              "diverging": [
+                [
+                  0.0,
+                  "#000021"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000022"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000023"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000024"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000025"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000026"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000027"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000028"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000029"
+                ],
+                [
+                  1.0,
+                  "#000030"
+                ]
+              ],
+              "sequential": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ],
+              "sequentialminus": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorway": [
+              "#000001",
+              "#000002",
+              "#000003",
+              "#000004",
+              "#000005",
+              "#000006",
+              "#000007",
+              "#000008",
+              "#000009",
+              "#000010"
+            ]
+          }
+        },
+        "xaxis": {
+          "anchor": "y",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "inspection_year"
+          }
+        },
+        "yaxis": {
+          "anchor": "x",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "total_inspections"
+          }
+        },
+        "legend": {
+          "tracegroupgap": 0
+        },
+        "title": {
+          "text": "Health Inspections Timeline (2014 - 2025)"
+        }
+      }
+    },
+    {
+      "data": [
+        {
+          "hovertemplate": "score_range=%{x}<br>inspection_count=%{y}<extra></extra>",
+          "legendgroup": "0 (Clean)",
+          "marker": {
+            "color": "#000001",
+            "pattern": {
+              "shape": ""
+            }
+          },
+          "name": "0 (Clean)",
+          "orientation": "v",
+          "showlegend": true,
+          "textposition": "auto",
+          "x": [
+            "0 (Clean)"
+          ],
+          "xaxis": "x",
+          "y": {
+            "dtype": "i2",
+            "bdata": "xgI="
+          },
+          "yaxis": "y",
+          "type": "bar"
+        },
+        {
+          "hovertemplate": "score_range=%{x}<br>inspection_count=%{y}<extra></extra>",
+          "legendgroup": "1 - 5",
+          "marker": {
+            "color": "#000002",
+            "pattern": {
+              "shape": ""
+            }
+          },
+          "name": "1 - 5",
+          "orientation": "v",
+          "showlegend": true,
+          "textposition": "auto",
+          "x": [
+            "1 - 5"
+          ],
+          "xaxis": "x",
+          "y": {
+            "dtype": "i2",
+            "bdata": "Owk="
+          },
+          "yaxis": "y",
+          "type": "bar"
+        },
+        {
+          "hovertemplate": "score_range=%{x}<br>inspection_count=%{y}<extra></extra>",
+          "legendgroup": "6 - 10",
+          "marker": {
+            "color": "#000003",
+            "pattern": {
+              "shape": ""
+            }
+          },
+          "name": "6 - 10",
+          "orientation": "v",
+          "showlegend": true,
+          "textposition": "auto",
+          "x": [
+            "6 - 10"
+          ],
+          "xaxis": "x",
+          "y": {
+            "dtype": "i2",
+            "bdata": "kgc="
+          },
+          "yaxis": "y",
+          "type": "bar"
+        },
+        {
+          "hovertemplate": "score_range=%{x}<br>inspection_count=%{y}<extra></extra>",
+          "legendgroup": "11 - 20",
+          "marker": {
+            "color": "#000004",
+            "pattern": {
+              "shape": ""
+            }
+          },
+          "name": "11 - 20",
+          "orientation": "v",
+          "showlegend": true,
+          "textposition": "auto",
+          "x": [
+            "11 - 20"
+          ],
+          "xaxis": "x",
+          "y": {
+            "dtype": "i2",
+            "bdata": "Cgc="
+          },
+          "yaxis": "y",
+          "type": "bar"
+        },
+        {
+          "hovertemplate": "score_range=%{x}<br>inspection_count=%{y}<extra></extra>",
+          "legendgroup": "21 - 30",
+          "marker": {
+            "color": "#000005",
+            "pattern": {
+              "shape": ""
+            }
+          },
+          "name": "21 - 30",
+          "orientation": "v",
+          "showlegend": true,
+          "textposition": "auto",
+          "x": [
+            "21 - 30"
+          ],
+          "xaxis": "x",
+          "y": {
+            "dtype": "i2",
+            "bdata": "XAI="
+          },
+          "yaxis": "y",
+          "type": "bar"
+        },
+        {
+          "hovertemplate": "score_range=%{x}<br>inspection_count=%{y}<extra></extra>",
+          "legendgroup": "31 - 50",
+          "marker": {
+            "color": "#000006",
+            "pattern": {
+              "shape": ""
+            }
+          },
+          "name": "31 - 50",
+          "orientation": "v",
+          "showlegend": true,
+          "textposition": "auto",
+          "x": [
+            "31 - 50"
+          ],
+          "xaxis": "x",
+          "y": {
+            "dtype": "i2",
+            "bdata": "NAE="
+          },
+          "yaxis": "y",
+          "type": "bar"
+        },
+        {
+          "hovertemplate": "score_range=%{x}<br>inspection_count=%{y}<extra></extra>",
+          "legendgroup": "51+",
+          "marker": {
+            "color": "#000007",
+            "pattern": {
+              "shape": ""
+            }
+          },
+          "name": "51+",
+          "orientation": "v",
+          "showlegend": true,
+          "textposition": "auto",
+          "x": [
+            "51+"
+          ],
+          "xaxis": "x",
+          "y": {
+            "dtype": "i1",
+            "bdata": "SQ=="
+          },
+          "yaxis": "y",
+          "type": "bar"
+        }
+      ],
+      "layout": {
+        "template": {
+          "data": {
+            "candlestick": [
+              {
+                "decreasing": {
+                  "line": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "line": {
+                    "color": "#000032"
+                  }
+                },
+                "type": "candlestick"
+              }
+            ],
+            "contourcarpet": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contourcarpet"
+              }
+            ],
+            "contour": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contour"
+              }
+            ],
+            "heatmap": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "heatmap"
+              }
+            ],
+            "histogram2d": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "histogram2d"
+              }
+            ],
+            "icicle": [
+              {
+                "textfont": {
+                  "color": "white"
+                },
+                "type": "icicle"
+              }
+            ],
+            "sankey": [
+              {
+                "textfont": {
+                  "color": "#000036"
+                },
+                "type": "sankey"
+              }
+            ],
+            "scatter": [
+              {
+                "marker": {
+                  "line": {
+                    "width": 0
+                  }
+                },
+                "type": "scatter"
+              }
+            ],
+            "table": [
+              {
+                "cells": {
+                  "fill": {
+                    "color": "#000038"
+                  },
+                  "font": {
+                    "color": "#000037"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "header": {
+                  "fill": {
+                    "color": "#000040"
+                  },
+                  "font": {
+                    "color": "#000036"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "type": "table"
+              }
+            ],
+            "waterfall": [
+              {
+                "connector": {
+                  "line": {
+                    "color": "#000036",
+                    "width": 2
+                  }
+                },
+                "decreasing": {
+                  "marker": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "marker": {
+                    "color": "#000032"
+                  }
+                },
+                "totals": {
+                  "marker": {
+                    "color": "#000034"
+                  }
+                },
+                "type": "waterfall"
+              }
+            ]
+          },
+          "layout": {
+            "coloraxis": {
+              "colorscale": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorscale": {
+              "diverging": [
+                [
+                  0.0,
+                  "#000021"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000022"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000023"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000024"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000025"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000026"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000027"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000028"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000029"
+                ],
+                [
+                  1.0,
+                  "#000030"
+                ]
+              ],
+              "sequential": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ],
+              "sequentialminus": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorway": [
+              "#000001",
+              "#000002",
+              "#000003",
+              "#000004",
+              "#000005",
+              "#000006",
+              "#000007",
+              "#000008",
+              "#000009",
+              "#000010"
+            ]
+          }
+        },
+        "xaxis": {
+          "anchor": "y",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "score_range"
+          },
+          "categoryorder": "array",
+          "categoryarray": [
+            "0 (Clean)",
+            "1 - 5",
+            "6 - 10",
+            "11 - 20",
+            "21 - 30",
+            "31 - 50",
+            "51+"
+          ]
+        },
+        "yaxis": {
+          "anchor": "x",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "inspection_count"
+          }
+        },
+        "legend": {
+          "title": {
+            "text": "score_range"
+          },
+          "tracegroupgap": 0
+        },
+        "title": {
+          "text": "Distribution of Health Inspection Scores (0 = Clean, Higher = Worse)"
+        },
+        "barmode": "relative"
+      }
+    },
+    {
+      "data": [
+        {
+          "hovertemplate": "inspection_type=%{x}<br>total_inspections=%{y}<extra></extra>",
+          "legendgroup": "Routine",
+          "marker": {
+            "color": "#000001",
+            "pattern": {
+              "shape": ""
+            }
+          },
+          "name": "Routine",
+          "orientation": "v",
+          "showlegend": true,
+          "textposition": "auto",
+          "x": [
+            "Routine"
+          ],
+          "xaxis": "x",
+          "y": {
+            "dtype": "i2",
+            "bdata": "dx0="
+          },
+          "yaxis": "y",
+          "type": "bar"
+        },
+        {
+          "hovertemplate": "inspection_type=%{x}<br>total_inspections=%{y}<extra></extra>",
+          "legendgroup": "Followup",
+          "marker": {
+            "color": "#000002",
+            "pattern": {
+              "shape": ""
+            }
+          },
+          "name": "Followup",
+          "orientation": "v",
+          "showlegend": true,
+          "textposition": "auto",
+          "x": [
+            "Followup"
+          ],
+          "xaxis": "x",
+          "y": {
+            "dtype": "i2",
+            "bdata": "/gA="
+          },
+          "yaxis": "y",
+          "type": "bar"
+        },
+        {
+          "hovertemplate": "inspection_type=%{x}<br>total_inspections=%{y}<extra></extra>",
+          "legendgroup": "Critical Item",
+          "marker": {
+            "color": "#000003",
+            "pattern": {
+              "shape": ""
+            }
+          },
+          "name": "Critical Item",
+          "orientation": "v",
+          "showlegend": true,
+          "textposition": "auto",
+          "x": [
+            "Critical Item"
+          ],
+          "xaxis": "x",
+          "y": {
+            "dtype": "i2",
+            "bdata": "2AA="
+          },
+          "yaxis": "y",
+          "type": "bar"
+        },
+        {
+          "hovertemplate": "inspection_type=%{x}<br>total_inspections=%{y}<extra></extra>",
+          "legendgroup": "Complaint Investigation",
+          "marker": {
+            "color": "#000004",
+            "pattern": {
+              "shape": ""
+            }
+          },
+          "name": "Complaint Investigation",
+          "orientation": "v",
+          "showlegend": true,
+          "textposition": "auto",
+          "x": [
+            "Complaint Investigation"
+          ],
+          "xaxis": "x",
+          "y": {
+            "dtype": "i1",
+            "bdata": "Bw=="
+          },
+          "yaxis": "y",
+          "type": "bar"
+        }
+      ],
+      "layout": {
+        "template": {
+          "data": {
+            "candlestick": [
+              {
+                "decreasing": {
+                  "line": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "line": {
+                    "color": "#000032"
+                  }
+                },
+                "type": "candlestick"
+              }
+            ],
+            "contourcarpet": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contourcarpet"
+              }
+            ],
+            "contour": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contour"
+              }
+            ],
+            "heatmap": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "heatmap"
+              }
+            ],
+            "histogram2d": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "histogram2d"
+              }
+            ],
+            "icicle": [
+              {
+                "textfont": {
+                  "color": "white"
+                },
+                "type": "icicle"
+              }
+            ],
+            "sankey": [
+              {
+                "textfont": {
+                  "color": "#000036"
+                },
+                "type": "sankey"
+              }
+            ],
+            "scatter": [
+              {
+                "marker": {
+                  "line": {
+                    "width": 0
+                  }
+                },
+                "type": "scatter"
+              }
+            ],
+            "table": [
+              {
+                "cells": {
+                  "fill": {
+                    "color": "#000038"
+                  },
+                  "font": {
+                    "color": "#000037"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "header": {
+                  "fill": {
+                    "color": "#000040"
+                  },
+                  "font": {
+                    "color": "#000036"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "type": "table"
+              }
+            ],
+            "waterfall": [
+              {
+                "connector": {
+                  "line": {
+                    "color": "#000036",
+                    "width": 2
+                  }
+                },
+                "decreasing": {
+                  "marker": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "marker": {
+                    "color": "#000032"
+                  }
+                },
+                "totals": {
+                  "marker": {
+                    "color": "#000034"
+                  }
+                },
+                "type": "waterfall"
+              }
+            ]
+          },
+          "layout": {
+            "coloraxis": {
+              "colorscale": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorscale": {
+              "diverging": [
+                [
+                  0.0,
+                  "#000021"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000022"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000023"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000024"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000025"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000026"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000027"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000028"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000029"
+                ],
+                [
+                  1.0,
+                  "#000030"
+                ]
+              ],
+              "sequential": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ],
+              "sequentialminus": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorway": [
+              "#000001",
+              "#000002",
+              "#000003",
+              "#000004",
+              "#000005",
+              "#000006",
+              "#000007",
+              "#000008",
+              "#000009",
+              "#000010"
+            ]
+          }
+        },
+        "xaxis": {
+          "anchor": "y",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "inspection_type"
+          },
+          "categoryorder": "array",
+          "categoryarray": [
+            "Routine",
+            "Followup",
+            "Critical Item",
+            "Complaint Investigation"
+          ]
+        },
+        "yaxis": {
+          "anchor": "x",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "total_inspections"
+          }
+        },
+        "legend": {
+          "title": {
+            "text": "inspection_type"
+          },
+          "tracegroupgap": 0
+        },
+        "title": {
+          "text": "Distribution of Inspections by Inspection Type"
+        },
+        "barmode": "relative"
+      }
+    }
+  ],
+  "candidate_pool_raw": [],
+  "duration_seconds": 20.5,
+  "usage": {
+    "available": true,
+    "per_call": [
+      {
+        "input_tokens": 3340,
+        "output_tokens": 91,
+        "total_tokens": 3431
+      },
+      {
+        "input_tokens": 4460,
+        "output_tokens": 388,
+        "total_tokens": 4848
+      },
+      {
+        "input_tokens": 4954,
+        "output_tokens": 362,
+        "total_tokens": 5316
+      },
+      {
+        "input_tokens": 5395,
+        "output_tokens": 269,
+        "total_tokens": 5664
+      },
+      {
+        "input_tokens": 5742,
+        "output_tokens": 557,
+        "total_tokens": 6299
+      },
+      {
+        "input_tokens": 6345,
+        "output_tokens": 243,
+        "total_tokens": 6588
+      },
+      {
+        "input_tokens": 6636,
+        "output_tokens": 912,
+        "total_tokens": 7548
+      },
+      {
+        "input_tokens": 7565,
+        "output_tokens": 364,
+        "total_tokens": 7929
+      },
+      {
+        "input_tokens": 8677,
+        "output_tokens": 263,
+        "total_tokens": 8940
+      },
+      {
+        "input_tokens": 9104,
+        "output_tokens": 106,
+        "total_tokens": 9210
+      },
+      {
+        "input_tokens": 9305,
+        "output_tokens": 146,
+        "total_tokens": 9451
+      },
+      {
+        "input_tokens": 9746,
+        "output_tokens": 256,
+        "total_tokens": 10002
+      },
+      {
+        "input_tokens": 10054,
+        "output_tokens": 295,
+        "total_tokens": 10349
+      },
+      {
+        "input_tokens": 10398,
+        "output_tokens": 220,
+        "total_tokens": 10618
+      },
+      {
+        "input_tokens": 10661,
+        "output_tokens": 1306,
+        "total_tokens": 11967
+      }
+    ],
+    "input_tokens": 112382,
+    "output_tokens": 5778,
+    "total_tokens": 118160
+  },
+  "tokens_per_minute": 345912.2,
+  "estimated_cost_usd": 0.211908,
+  "success": true,
+  "error": null,
+  "chart_image_files": [
+    "2026-08-15T07-48-08.539399+00-00_v3_memory_92d2ee7c_chart0.png",
+    "2026-08-15T07-48-08.539399+00-00_v3_memory_92d2ee7c_chart1.png",
+    "2026-08-15T07-48-08.539399+00-00_v3_memory_92d2ee7c_chart2.png"
+  ]
+}

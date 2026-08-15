@@ -1,0 +1,179 @@
+Question: Is there any correlation between ratings and violations among the restaurants?
+
+Variant: v1_memory | Provider: google | Model: gemini-3.6-flash
+Timestamp: 2026-08-15T09:40:03.113365+00:00 | Duration: 102.04s
+
+--- Answer ---
+Among restaurants in Salt Lake County with matched Salt Lake County Health Department (SLCHD) inspection records (**139 restaurants**, representing **1.62%** of the 8,592 Google Maps establishments in the dataset; **98.38%** have no matched SLCHD inspection history), there is **only a weak-to-negligible correlation** between consumer Google ratings and health violations.
+
+---
+
+### **Key Correlation Statistics**
+
+* **Overall Violations per Inspection vs. Google Rating:** **$r = -0.230$** (weak negative correlation)
+  * Higher-rated restaurants average slightly fewer total violations per inspection, but the relationship is weak.
+* **Total Violations vs. Google Rating:** **$r = -0.246$**
+* **Critical Violations per Inspection vs. Google Rating:** **$r = -0.066$** (no meaningful correlation)
+  * A high Google rating does **not** indicate fewer critical health/food safety violations.
+* **Average Inspection Score vs. Google Rating:** **$r = -0.041$** (no correlation)
+
+---
+
+### **Breakdown by Google Rating Tier**
+
+| Rating Tier | Restaurant Count | Avg Violations / Inspection | Avg Critical Violations / Inspection | Avg Inspection Score |
+| :--- | :---: | :---: | :---: | :---: |
+| **< 3.5** | 5 | **6.10** | **1.59** | 22.61 |
+| **3.5 – 3.9** | 31 | **4.70** | **1.21** | 13.81 |
+| **4.0 – 4.4** | 52 | **4.51** | **1.24** | 13.52 |
+| **4.5 – 5.0** | 51 | **3.81** | **1.21** | 14.68 |
+
+---
+
+### **Summary Insights**
+1. **Total Violations:** Restaurants rated **< 3.5** average **6.10 violations per inspection**, whereas top-rated restaurants (**4.5–5.0**) average **3.81 violations per inspection**.
+2. **Critical Violations:** Across all rating tiers between **3.5 and 5.0**, critical violation rates remain almost constant at **1.21 to 1.24 per inspection**.
+3. **Takeaway:** Customer reviews primarily reflect food quality, service, and ambiance rather than back-of-house sanitation or critical food safety compliance.
+
+--- Reasoning trace ---
+Action: get_schema({})
+
+Observation: Project food_health_viz {
+  database_type: 'DuckDB'
+}
+
+Table establishment_keys {
+  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']
+  name varchar [not null]
+  address varchar [not null]
+  city varchar [not null]
+  city_state_zip varchar
+  establishment_type varchar
+  source varchar [note: 'friend_slc | own_scrape']
+  slchd_lat double
+  slchd_lon double
+  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']
+
+  Note: 'SLCHD establishment list, one row per portal listing.'
+}
+
+Table category {
+  category_id integer [pk]
+  category varchar
+}
+
+Table establishments {
+  gmap_id varchar [pk]
+  name varchar
+  address varchar
+  description varchar
+  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']
+  avg_rating double
+  num_of_reviews integer
+  price varchar
+  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']
+
+  Note: 'One row per Google Local place — all restaurants, not just SLCHD-matched.'
+}
+
+Table establishment_attributes {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  attribute varchar [not null]
+
+  indexes { (gmap_id, attribute) [pk] }
+
+  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. "Service options") dropped.'
+}
+
+Table establishment_categories {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  category_id integer [ref: > category.category_id, not null]
+
+  indexes { (gmap_id, category_id) [pk] }
+}
+
+Table gmap_hours {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  day integer [not null, note: '0=Sun … 6=Sat']
+  open_min bigint
+  open_max bigint
+
+  indexes { (gmap_id, day) [pk] }
+
+  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'
+}
+
+Table review {
+  user_id varchar
+  name varchar
+  time bigint
+  rating double
+  text varchar
+  resp varchar
+  gmap_id varchar [ref: > establishments.gmap_id]
+}
+
+Table inspection_types {
+  inspection_type_id integer [pk, note: 'parsed leading number, e.g. "01 - Routine" -> 1']
+  description varchar [note: 'e.g. "Routine"']
+}
+
+Table inspections {
+  inspection_id bigint [pk, increment]
+  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]
+  inspection_date date [not null]
+  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable — 27 rows have no type']
+  inspection_score integer
+
+  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'
+}
+
+Table violation_codes {
+  violation_code_id integer [pk, increment]
+  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. "4.5.18"']
+  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']
+  critical boolean [not null]
+}
+
+Table violations {
+  violation_id bigint [pk, increment]
+  inspection_id bigint [ref: > inspections.inspection_id, not null]
+  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]
+  violation_description varchar [note: 'per-occurrence free text']
+  violation_occurrences integer
+  violation_cos boolean [note: 'corrected on site']
+  violation_phr varchar [note: 'public health rationale']
+
+  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'
+}
+
+
+Action: run_sql({'query': 'SELECT \n    COUNT(*) as total_matched_establishments,\n    CORR(e.avg_rating, v_stats.total_violations) as corr_rating_total_violations,\n    CORR(e.avg_rating, v_stats.critical_violations) as corr_rating_critical_violations,\n    CORR(e.avg_rating, v_stats.avg_inspection_score) as corr_rating_avg_inspection_score,\n    CORR(e.avg_rating, v_stats.num_inspections) as corr_rating_num_inspections\nFROM establishments e\nJOIN (\n    SELECT \n        i.slchd_establishment_key,\n        COUNT(DISTINCT i.inspection_id) as num_inspections,\n        AVG(i.inspection_score) as avg_inspection_score,\n        COUNT(v.violation_id) as total_violations,\n        SUM(CASE WHEN vc.critical THEN 1 ELSE 0 END) as critical_violations\n    FROM inspections i\n    LEFT JOIN violations v ON i.inspection_id = v.inspection_id\n    LEFT JOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\n    GROUP BY i.slchd_establishment_key\n) v_stats ON e.slchd_establishment_key = v_stats.slchd_establishment_key\nWHERE e.avg_rating IS NOT NULL;'})
+
+Observation: {"row_count": 1, "truncated": false, "rows": [{"total_matched_establishments": 139, "corr_rating_total_violations": -0.24627922451723222, "corr_rating_critical_violations": -0.10129094508229458, "corr_rating_avg_inspection_score": -0.04140536458951757, "corr_rating_num_inspections": -0.31471229394160466}]}
+
+Action: run_sql({'query': 'SELECT \n    CORR(e.avg_rating, v_stats.violations_per_inspection) as corr_rating_violations_per_insp,\n    CORR(e.avg_rating, v_stats.critical_per_inspection) as corr_rating_critical_per_insp,\n    CORR(e.avg_rating, v_stats.avg_score) as corr_rating_avg_score\nFROM establishments e\nJOIN (\n    SELECT \n        i.slchd_establishment_key,\n        COUNT(DISTINCT i.inspection_id) as num_inspections,\n        AVG(i.inspection_score) as avg_score,\n        CAST(COUNT(v.violation_id) AS DOUBLE) / COUNT(DISTINCT i.inspection_id) as violations_per_inspection,\n        CAST(SUM(CASE WHEN vc.critical THEN 1 ELSE 0 END) AS DOUBLE) / COUNT(DISTINCT i.inspection_id) as critical_per_inspection\n    FROM inspections i\n    LEFT JOIN violations v ON i.inspection_id = v.inspection_id\n    LEFT JOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\n    GROUP BY i.slchd_establishment_key\n) v_stats ON e.slchd_establishment_key = v_stats.slchd_establishment_key\nWHERE e.avg_rating IS NOT NULL;'})
+
+Observation: {"row_count": 1, "truncated": false, "rows": [{"corr_rating_violations_per_insp": -0.22996020413411108, "corr_rating_critical_per_insp": -0.06578524831388512, "corr_rating_avg_score": -0.04140536458951757}]}
+
+Action: run_sql({'query': "SELECT \n    CASE \n        WHEN e.avg_rating < 3.5 THEN '< 3.5'\n        WHEN e.avg_rating >= 3.5 AND e.avg_rating < 4.0 THEN '3.5 - 3.9'\n        WHEN e.avg_rating >= 4.0 AND e.avg_rating < 4.5 THEN '4.0 - 4.4'\n        ELSE '4.5 - 5.0'\n    END as rating_bucket,\n    COUNT(DISTINCT e.gmap_id) as restaurant_count,\n    ROUND(AVG(v_stats.violations_per_inspection), 2) as avg_violations_per_inspection,\n    ROUND(AVG(v_stats.critical_per_inspection), 2) as avg_critical_per_inspection,\n    ROUND(AVG(v_stats.avg_score), 2) as avg_inspection_score\nFROM establishments e\nJOIN (\n    SELECT \n        i.slchd_establishment_key,\n        COUNT(DISTINCT i.inspection_id) as num_inspections,\n        AVG(i.inspection_score) as avg_score,\n        CAST(COUNT(v.violation_id) AS DOUBLE) / COUNT(DISTINCT i.inspection_id) as violations_per_inspection,\n        CAST(SUM(CASE WHEN vc.critical THEN 1 ELSE 0 END) AS DOUBLE) / COUNT(DISTINCT i.inspection_id) as critical_per_inspection\n    FROM inspections i\n    LEFT JOIN violations v ON i.inspection_id = v.inspection_id\n    LEFT JOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\n    GROUP BY i.slchd_establishment_key\n) v_stats ON e.slchd_establishment_key = v_stats.slchd_establishment_key\nWHERE e.avg_rating IS NOT NULL\nGROUP BY 1\nORDER BY MIN(e.avg_rating);"})
+
+Observation: {"row_count": 4, "truncated": false, "rows": [{"rating_bucket": "< 3.5", "restaurant_count": 5, "avg_violations_per_inspection": 6.1, "avg_critical_per_inspection": 1.59, "avg_inspection_score": 22.61}, {"rating_bucket": "3.5 - 3.9", "restaurant_count": 31, "avg_violations_per_inspection": 4.7, "avg_critical_per_inspection": 1.21, "avg_inspection_score": 13.81}, {"rating_bucket": "4.0 - 4.4", "restaurant_count": 52, "avg_violations_per_inspection": 4.51, "avg_critical_per_inspection": 1.24, "avg_inspection_score": 13.52}, {"rating_bucket": "4.5 - 5.0", "restaurant_count": 51, "avg_violations_per_inspection": 3.81, "avg_critical_per_inspection": 1.21, "avg_inspection_score": 14.68}]}
+
+Action: run_sql({'query': 'SELECT \n    COUNT(*) as matched_total,\n    COUNT(avg_rating) as matched_with_rating\nFROM establishments \nWHERE slchd_establishment_key IS NOT NULL;'})
+
+Observation: {"row_count": 1, "truncated": false, "rows": [{"matched_total": 139, "matched_with_rating": 139}]}
+
+Action: run_sql({'query': 'SELECT \n    COUNT(*) as total_establishments,\n    COUNT(slchd_establishment_key) as matched_establishments,\n    ROUND(100.0 * COUNT(slchd_establishment_key) / COUNT(*), 2) as pct_matched\nFROM establishments;'})
+
+Observation: {"row_count": 1, "truncated": false, "rows": [{"total_establishments": 8592, "matched_establishments": 139, "pct_matched": 1.62}]}
+
+Action: plot_chart({'query': 'SELECT \n    e.name,\n    e.avg_rating as google_rating,\n    ROUND(CAST(COUNT(v.violation_id) AS DOUBLE) / COUNT(DISTINCT i.inspection_id), 2) as violations_per_inspection\nFROM establishments e\nJOIN inspections i ON e.slchd_establishment_key = i.slchd_establishment_key\nLEFT JOIN violations v ON i.inspection_id = v.inspection_id\nWHERE e.avg_rating IS NOT NULL\nGROUP BY e.gmap_id, e.name, e.avg_rating\nHAVING COUNT(DISTINCT i.inspection_id) > 0;', 'x': 'google_rating', 'y': 'violations_per_inspection', 'chart_type': 'scatter', 'title': 'Google Rating vs. Violations per Inspection'})
+
+Observation: Chart created: 'Google Rating vs. Violations per Inspection' (scatter, 139 rows). It will be shown to the user below your answer.
+
+Action: plot_chart({'chart_type': 'bar', 'query': "SELECT \n    CASE \n        WHEN e.avg_rating < 3.5 THEN '< 3.5'\n        WHEN e.avg_rating >= 3.5 AND e.avg_rating < 4.0 THEN '3.5 - 3.9'\n        WHEN e.avg_rating >= 4.0 AND e.avg_rating < 4.5 THEN '4.0 - 4.4'\n        ELSE '4.5 - 5.0'\n    END as rating_tier,\n    ROUND(AVG(CAST(v_counts.v_count AS DOUBLE) / v_counts.i_count), 2) as avg_violations_per_inspection\nFROM establishments e\nJOIN (\n    SELECT \n        i.slchd_establishment_key,\n        COUNT(DISTINCT i.inspection_id) as i_count,\n        COUNT(v.violation_id) as v_count\n    FROM inspections i\n    LEFT JOIN violations v ON i.inspection_id = v.inspection_id\n    GROUP BY i.slchd_establishment_key\n) v_counts ON e.slchd_establishment_key = v_counts.slchd_establishment_key\nWHERE e.avg_rating IS NOT NULL\nGROUP BY rating_tier\nORDER BY MIN(e.avg_rating);", 'x': 'rating_tier', 'y': 'avg_violations_per_inspection', 'title': 'Average Violations per Inspection by Google Rating Tier'})
+
+Observation: Chart created: 'Average Violations per Inspection by Google Rating Tier' (bar, 4 rows). It will be shown to the user below your answer.
+
+--- Usage: 47531 tokens, ~$0.0984 ---

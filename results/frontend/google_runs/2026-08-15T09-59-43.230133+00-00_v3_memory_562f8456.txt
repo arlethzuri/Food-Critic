@@ -1,0 +1,283 @@
+Question: What does an inspection score mean?
+
+Variant: v3_memory | Provider: google | Model: gemini-3.6-flash
+Timestamp: 2026-08-15T09:59:43.230133+00:00 | Duration: 122.09s
+
+--- Answer ---
+In Salt Lake County health inspections, an **inspection score** represents the total cumulative violation points assigned to an establishment during a health inspection visit.
+
+### Key Principles of Inspection Scoring:
+1. **Lower is Better (0 is Clean):** Unlike customer rating systems where higher numbers are desirable, health inspection scores measure non-compliance. A score of **0** indicates a completely clean inspection with zero cited violations.
+2. **Violation Point Accumulation:** Points are assessed based on health code violations observed by Salt Lake County Health Department (SLCHD) inspectors. Critical violations (such as improper temperature control or cross-contamination risk) contribute more heavily to elevated inspection scores compared to non-critical core item violations.
+3. **Score Interpretation in Salt Lake County Data (7,798 Scored Inspections):**
+   - **0 (Clean):** 710 inspections (9.1%) had no violation points.
+   - **1–10 (Low Severity):** 4,301 inspections (55.2%) had minor infractions, with an average score of 5.04.
+   - **11–25 (Moderate Severity):** 2,183 inspections (28.0%) had an average score of 16.04.
+   - **26–50 (Elevated Risk):** 531 inspections (6.8%) had significant compliance issues, with an average score of 33.07.
+   - **51+ (High Severity/Risk):** 73 inspections (0.9%) exhibited severe or systemic failures, averaging 82.11 points (peak score recorded: 297).
+
+Across all routine inspections in the dataset (7,543 visits), the overall average inspection score is **10.45** with a median score of **8**.
+
+Hypothesis: none (confidence: high)
+
+--- Reasoning trace ---
+Action: retrieve_regulation({'query': 'inspection score scoring calculation risk evaluation'})
+
+Action: get_schema({})
+
+Observation: [R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 8-406 Core Item Violation, p.214]
+211  
+8-4 INSPECTION AND CORRECTION OF VIOLATIONS 
+ 
+Subparts 
+ 
+8-401 Frequency 
+8-402 Competency and Access 
+8-403 Report of Findings 
+8-404 Imminent Health Hazard 
+8-405 Violation of Priority Item or Priority 
+Foundation Item 
+8-406 Core Item Violation 
+ 
+ 
+ 
+Frequency 8-401.10 Establishing Inspection Interval. 
+ 
+(A) Except as specified in ¶¶ (B) and (C) of this section, the 
+REGULATORY AUTHORITY shall inspect a FOOD ESTABLISHMENT at 
+least once every 6 months and twice in a season for seasonal 
+operations. 
+ 
+(B) The REGULATORY AUTHORITY may increase the interval 
+between inspections beyond 6 months if: 
+ 
+(1) The FOOD ESTABLISHMENT is fully operating under an 
+APPROVED and validated HACCP PLAN as specified under 
+§ 8-201.14 and ¶¶ 8-103.12(A) and (B); 
+ 
+(2) The FOOD ESTABLISHMENT is assigned a less frequent 
+inspection frequency based on a written RISK-based 
+inspection schedule that is being uniformly applied 
+throughout the jurisdiction or
+
+---
+
+[R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 8-405.20 Verification and Documentation of, p.220]
+(2) 10 calendar days after the inspection, for the PERMIT 
+HOLDER to correct violations of a PRIORITY FOUNDATION 
+ITEM or HACCP PLAN deviations. 
+ 
+8-405.20 Verification and Documentation of 
+Correction. 
+ 
+(A) After observing at the time of inspection a correction of a 
+violation of a PRIORITY ITEM or PRIORITY FOUNDATION ITEM or a 
+HACCP PLAN deviation, the REGULATORY AUTHORITY shall enter 
+the violation and information about the corrective action on 
+the inspection report. 
+ 
+(B) As specified under ¶ 8-405.11(B), after receiving 
+notification that the PERMIT HOLDER has corrected a violation of 
+a PRIORITY ITEM OR PRIORITY FOUNDATION ITEM or HACCP PLAN 
+deviation, or at the end of the specified period of time, the 
+REGULATORY AUTHORITY shall verify correction of the violation, 
+document the information on an inspection report, and enter 
+the report in the REGULATORY AUTHORITY'S records. 
+ 
+ 
+ 
+8-406.11 Time Frame for Correction.
+
+---
+
+[R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 2-103 Duties, p.27]
+26  
+Knowledge 2-102.11 Demonstration. 
+ 
+Based on the RISKS inherent to the FOOD operation, during 
+inspections and upon request the PERSON IN CHARGE shall 
+demonstrate to the REGULATORY AUTHORITY knowledge of 
+foodborne disease prevention, application of the HAZARD 
+Analysis and CRITICAL CONTROL POINT principles, and the 
+requirements of this Code.  The PERSON IN CHARGE shall 
+demonstrate this knowledge by: 
+ 
+(A) Complying with this Code by having no violations of 
+PRIORITY ITEMS during the current inspection; Pf 
+ 
+(B) Being a certified FOOD protection manager who has 
+shown proficiency of required information through passing a 
+test that is part of an ACCREDITED PROGRAM;Pf or 
+ 
+(C) Responding correctly to the inspector's questions as they 
+relate to the specific FOOD operation. The areas of 
+knowledge include: 
+ 
+(1) Describing the relationship between the prevention of 
+foodborne disease and the personal hygiene of a FOOD 
+EMPLOYEE; Pf
+
+---
+
+[R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 8-406 Core Item Violation, p.215]
+212  
+(1) Has improvised rather than permanent facilities or 
+EQUIPMENT for accomplishing functions such as 
+handwashing, FOOD preparation and protection, FOOD 
+temperature control, WAREWASHING, providing DRINKING 
+WATER, waste retention and disposal, and insect and 
+rodent control; or 
+ 
+(2) Has inexperienced FOOD EMPLOYEES. 
+ 
+ 
+ 
+8-401.20 Performance- and Risk-Based. 
+ 
+Within the parameters specified in § 8-401.10, the 
+REGULATORY AUTHORITY shall prioritize, and conduct more 
+frequent inspections based upon its assessment of a FOOD 
+ESTABLISHMENT'S history of compliance with this Code and the 
+establishment's potential as a vector of foodborne illness by 
+evaluating: 
+ 
+(A) Past performance, for nonconformance with Code or 
+HACCP PLAN requirements that are PRIORITY ITEMS or 
+PRIORITY FOUNDATION ITEMS; 
+ 
+(B) Past performance, for numerous or repeat violations 
+of Code or HACCP PLAN requirements that are CORE ITEMS; 
+ 
+(C) Past performance, for complaints investigated and
+
+Observation: Project food_health_viz {
+  database_type: 'DuckDB'
+}
+
+Table establishment_keys {
+  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']
+  name varchar [not null]
+  address varchar [not null]
+  city varchar [not null]
+  city_state_zip varchar
+  establishment_type varchar
+  source varchar [note: 'friend_slc | own_scrape']
+  slchd_lat double
+  slchd_lon double
+  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']
+
+  Note: 'SLCHD establishment list, one row per portal listing.'
+}
+
+Table category {
+  category_id integer [pk]
+  category varchar
+}
+
+Table establishments {
+  gmap_id varchar [pk]
+  name varchar
+  address varchar
+  description varchar
+  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']
+  avg_rating double
+  num_of_reviews integer
+  price varchar
+  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']
+
+  Note: 'One row per Google Local place — all restaurants, not just SLCHD-matched.'
+}
+
+Table establishment_attributes {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  attribute varchar [not null]
+
+  indexes { (gmap_id, attribute) [pk] }
+
+  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. "Service options") dropped.'
+}
+
+Table establishment_categories {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  category_id integer [ref: > category.category_id, not null]
+
+  indexes { (gmap_id, category_id) [pk] }
+}
+
+Table gmap_hours {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  day integer [not null, note: '0=Sun … 6=Sat']
+  open_min bigint
+  open_max bigint
+
+  indexes { (gmap_id, day) [pk] }
+
+  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'
+}
+
+Table review {
+  user_id varchar
+  name varchar
+  time bigint
+  rating double
+  text varchar
+  resp varchar
+  gmap_id varchar [ref: > establishments.gmap_id]
+}
+
+Table inspection_types {
+  inspection_type_id integer [pk, note: 'parsed leading number, e.g. "01 - Routine" -> 1']
+  description varchar [note: 'e.g. "Routine"']
+}
+
+Table inspections {
+  inspection_id bigint [pk, increment]
+  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]
+  inspection_date date [not null]
+  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable — 27 rows have no type']
+  inspection_score integer
+
+  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'
+}
+
+Table violation_codes {
+  violation_code_id integer [pk, increment]
+  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. "4.5.18"']
+  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']
+  critical boolean [not null]
+}
+
+Table violations {
+  violation_id bigint [pk, increment]
+  inspection_id bigint [ref: > inspections.inspection_id, not null]
+  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]
+  violation_description varchar [note: 'per-occurrence free text']
+  violation_occurrences integer
+  violation_cos boolean [note: 'corrected on site']
+  violation_phr varchar [note: 'public health rationale']
+
+  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'
+}
+
+
+Action: get_column_glossary({'table_dot_column': 'inspections.inspection_score'})
+
+Observation: {"description": "Total violation points for this inspection. 0 = clean. Higher = worse (confirmed: inspections with any cited violation average score 17.6 vs 1.7 for clean ones).", "reference": "slchd_portal"}
+
+Action: run_sql({'query': "SELECT \n    CASE \n        WHEN inspection_score = 0 THEN '0 (Clean)'\n        WHEN inspection_score BETWEEN 1 AND 10 THEN '1-10 (Low)'\n        WHEN inspection_score BETWEEN 11 AND 25 THEN '11-25 (Moderate)'\n        WHEN inspection_score BETWEEN 26 AND 50 THEN '26-50 (Elevated)'\n        ELSE '51+ (High)'\n    END AS score_bracket,\n    COUNT(*) AS count,\n    ROUND(AVG(inspection_score), 2) AS avg_score\nFROM inspections\nWHERE inspection_score IS NOT NULL\nGROUP BY 1\nORDER BY MIN(inspection_score);"})
+
+Observation: {"row_count": 5, "truncated": false, "rows": [{"score_bracket": "0 (Clean)", "count": 710, "avg_score": 0.0}, {"score_bracket": "1-10 (Low)", "count": 4301, "avg_score": 5.04}, {"score_bracket": "11-25 (Moderate)", "count": 2183, "avg_score": 16.04}, {"score_bracket": "26-50 (Elevated)", "count": 531, "avg_score": 33.07}, {"score_bracket": "51+ (High)", "count": 73, "avg_score": 82.11}]}
+
+Action: run_sql({'query': 'SELECT \n    it.description AS inspection_type,\n    COUNT(i.inspection_id) AS total_inspections,\n    ROUND(AVG(i.inspection_score), 2) AS avg_score,\n    ROUND(MEDIAN(i.inspection_score), 2) AS median_score,\n    MAX(i.inspection_score) AS max_score\nFROM inspections i\nLEFT JOIN inspection_types it ON i.inspection_type_id = it.inspection_type_id\nGROUP BY it.description\nORDER BY total_inspections DESC;'})
+
+Observation: {"row_count": 4, "truncated": false, "rows": [{"inspection_type": "Routine", "total_inspections": 7543, "avg_score": 10.45, "median_score": 8.0, "max_score": 297}, {"inspection_type": "Followup", "total_inspections": 254, "avg_score": 6.19, "median_score": 3.0, "max_score": 68}, {"inspection_type": "Critical Item", "total_inspections": 216, "avg_score": 9.02, "median_score": 3.0, "max_score": 186}, {"inspection_type": "Complaint Investigation", "total_inspections": 7, "avg_score": 1.8, "median_score": 0.0, "max_score": 6}]}
+
+Action: run_sql({'query': 'SELECT \n    vc.critical,\n    COUNT(v.violation_id) AS violation_count,\n    ROUND(AVG(i.inspection_score), 2) AS avg_inspection_score\nFROM violations v\nJOIN inspections i ON v.inspection_id = i.inspection_id\nJOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\nGROUP BY vc.critical;'})
+
+Observation: {"row_count": 2, "truncated": false, "rows": [{"critical": false, "violation_count": 22339, "avg_inspection_score": 15.91}, {"critical": true, "violation_count": 9690, "avg_inspection_score": 21.62}]}
+
+Action: plot_chart({'title': 'Distribution of SLCHD Inspection Scores Across Salt Lake County', 'x': 'score_bracket', 'chart_type': 'bar', 'y': 'inspection_count', 'query': "SELECT \n    CASE \n        WHEN inspection_score = 0 THEN '0 (Clean)'\n        WHEN inspection_score BETWEEN 1 AND 10 THEN '1-10 (Low)'\n        WHEN inspection_score BETWEEN 11 AND 25 THEN '11-25 (Moderate)'\n        WHEN inspection_score BETWEEN 26 AND 50 THEN '26-50 (Elevated)'\n        ELSE '51+ (High Risk)'\n    END AS score_bracket,\n    COUNT(*) AS inspection_count\nFROM inspections\nWHERE inspection_score IS NOT NULL\nGROUP BY score_bracket, CASE \n        WHEN inspection_score = 0 THEN 0\n        WHEN inspection_score BETWEEN 1 AND 10 THEN 1\n        WHEN inspection_score BETWEEN 11 AND 25 THEN 2\n        WHEN inspection_score BETWEEN 26 AND 50 THEN 3\n        ELSE 4\n    END\nORDER BY CASE \n        WHEN inspection_score = 0 THEN 0\n        WHEN inspection_score BETWEEN 1 AND 10 THEN 1\n        WHEN inspection_score BETWEEN 11 AND 25 THEN 2\n        WHEN inspection_score BETWEEN 26 AND 50 THEN 3\n        ELSE 4\n    END"})
+
+Observation: Chart created: 'Distribution of SLCHD Inspection Scores Across Salt Lake County' (bar, 5 rows). It will be shown to the user below your answer.
+
+--- Usage: 47180 tokens, ~$0.0874 ---

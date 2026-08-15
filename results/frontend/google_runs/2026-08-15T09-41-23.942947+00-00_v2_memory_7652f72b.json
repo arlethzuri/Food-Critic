@@ -1,0 +1,1477 @@
+{
+  "source": "frontend",
+  "run_id": "7652f72b",
+  "timestamp": "2026-08-15T09:41:23.942947+00:00",
+  "variant": "v2_memory",
+  "provider": "google",
+  "model": "gemini-3.6-flash",
+  "question": "Is there any correlation between ratings and violations among the restaurants?",
+  "output_text": "### Executive Summary\n\nAcross Salt Lake County restaurants, there is **virtually no correlation** between a restaurant's **Google customer rating** and its **health department inspection performance** (critical violations or overall inspection score). \n\nWhile there is a slight negative correlation with total violation counts per inspection ($r = -0.230$), critical health violations\u2014the violations that pose direct risk to food safety\u2014show almost zero correlation with consumer ratings ($r = -0.066$).\n\n---\n\n### Key Data & Correlation Metrics\n\nThe statistical analysis across the 139 Salt Lake County establishments with matched SLCHD inspection history reveals the following Pearson correlation coefficients ($r$):\n\n| Relationship Metric | Correlation Coefficient ($r$) | Interpretation |\n| :--- | :---: | :--- |\n| **Google Rating vs. Inspection Score** | **$-0.041$** | **No correlation** |\n| **Google Rating vs. Critical Violations / Inspection** | **$-0.066$** | **No correlation** |\n| **Google Rating vs. Total Violations / Inspection** | **$-0.230$** | **Weak negative correlation** |\n| **Google Rating vs. Total Lifetime Violations** | **$-0.246$** | **Weak negative correlation** |\n| **Google Rating vs. Number of Inspections** | **$-0.315$** | **Weak negative correlation** |\n\n---\n\n### Breakdown by Google Rating Bracket\n\nGrouping restaurants by Google star rating highlights how inspection outcomes vary across consumer rating tiers:\n\n| Google Rating Tier | Matched Restaurants | Avg. Total Violations / Insp. | Avg. Critical Violations / Insp. | Avg. Inspection Score |\n| :--- | :---: | :---: | :---: | :---: |\n| **Under 3.5 Stars** | 5 | **6.10** | **1.59** | **22.61** |\n| **3.5 \u2013 3.9 Stars** | 31 | **4.70** | **1.21** | **13.81** |\n| **4.0 \u2013 4.4 Stars** | 52 | **4.51** | **1.24** | **13.52** |\n| **4.5 \u2013 5.0 Stars** | 51 | **3.81** | **1.21** | **14.68** |\n\n#### Observations:\n1. **Critical Violations are Identical Across Rating Tiers:** Whether a restaurant is rated 3.5\u20133.9 stars, 4.0\u20134.4 stars, or 4.5\u20135.0 stars, it averages approximately **1.21 to 1.24 critical violations per inspection**. High customer ratings do not shield a restaurant from critical safety citations.\n2. **Lowest Rated Tier (< 3.5 Stars):** Restaurants in the lowest star tier exhibit higher total violations (6.10/inspection) and higher average inspection scores (22.61), but represent a small subset (5 restaurants).\n3. **High Ratings Do Not Mean Clean Inspections:** Top-rated restaurants (4.5\u20135.0 stars) actually average a slightly higher inspection score (14.68) than mid-tier restaurants (13.52 in the 4.0\u20134.4 range), demonstrating that consumer praise is uncorrelated with health inspection severity.\n\n---\n\n### Regulatory Context & Why Customer Ratings Diverge\n\nUnder Utah\u2019s **R392-100 Food Service Sanitation Rule** (adopting the FDA Food Code):\n* **Inspection Focus:** Environmental health inspectors evaluate back-of-house compliance, such as cold/hot food holding temperatures, cross-contamination hazards, dishwashing chemical concentrations, handwashing sink accessibility, and date marking for perishable foods.\n* **Consumer Perspective:** Google ratings reflect front-of-house customer experiences\u2014flavor, portion size, pricing, order speed, staff friendliness, and seating atmosphere.\n* **Visibility Gap:** Because customers rarely observe food preparation procedures, chemical storage, or walk-in cooler temperatures, a restaurant can receive 5-star customer reviews while simultaneously receiving critical health citations.\n\n---\n\n### Dataset Scope Notice\n\n* **Data Availability:** Out of **8,592 total establishments** in the database, **139 establishments (1.6%)** currently have matched Salt Lake County Health Department (SLCHD) inspection records.\n* **Unmatched Establishments:** The remaining **98.4% (8,453 establishments)** have no matched SLCHD inspection history in the dataset. Unmatched records indicate a lack of linked health department inspection data, rather than a clean inspection record.",
+  "structured_response": null,
+  "trace_text": "Action: get_schema({})\n\nObservation: Project food_health_viz {\n  database_type: 'DuckDB'\n}\n\nTable establishment_keys {\n  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']\n  name varchar [not null]\n  address varchar [not null]\n  city varchar [not null]\n  city_state_zip varchar\n  establishment_type varchar\n  source varchar [note: 'friend_slc | own_scrape']\n  slchd_lat double\n  slchd_lon double\n  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']\n\n  Note: 'SLCHD establishment list, one row per portal listing.'\n}\n\nTable category {\n  category_id integer [pk]\n  category varchar\n}\n\nTable establishments {\n  gmap_id varchar [pk]\n  name varchar\n  address varchar\n  description varchar\n  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']\n  avg_rating double\n  num_of_reviews integer\n  price varchar\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']\n\n  Note: 'One row per Google Local place \u2014 all restaurants, not just SLCHD-matched.'\n}\n\nTable establishment_attributes {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  attribute varchar [not null]\n\n  indexes { (gmap_id, attribute) [pk] }\n\n  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. \"Service options\") dropped.'\n}\n\nTable establishment_categories {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  category_id integer [ref: > category.category_id, not null]\n\n  indexes { (gmap_id, category_id) [pk] }\n}\n\nTable gmap_hours {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  day integer [not null, note: '0=Sun \u2026 6=Sat']\n  open_min bigint\n  open_max bigint\n\n  indexes { (gmap_id, day) [pk] }\n\n  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'\n}\n\nTable review {\n  user_id varchar\n  name varchar\n  time bigint\n  rating double\n  text varchar\n  resp varchar\n  gmap_id varchar [ref: > establishments.gmap_id]\n}\n\nTable inspection_types {\n  inspection_type_id integer [pk, note: 'parsed leading number, e.g. \"01 - Routine\" -> 1']\n  description varchar [note: 'e.g. \"Routine\"']\n}\n\nTable inspections {\n  inspection_id bigint [pk, increment]\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]\n  inspection_date date [not null]\n  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable \u2014 27 rows have no type']\n  inspection_score integer\n\n  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'\n}\n\nTable violation_codes {\n  violation_code_id integer [pk, increment]\n  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. \"4.5.18\"']\n  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']\n  critical boolean [not null]\n}\n\nTable violations {\n  violation_id bigint [pk, increment]\n  inspection_id bigint [ref: > inspections.inspection_id, not null]\n  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]\n  violation_description varchar [note: 'per-occurrence free text']\n  violation_occurrences integer\n  violation_cos boolean [note: 'corrected on site']\n  violation_phr varchar [note: 'public health rationale']\n\n  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'\n}\n\n\nAction: run_sql({'query': 'SELECT \\n    CORR(e.avg_rating, agg.total_violations) as corr_avg_rating_total_violations,\\n    CORR(e.avg_rating, agg.critical_violations) as corr_avg_rating_critical_violations,\\n    CORR(e.avg_rating, agg.avg_inspection_score) as corr_avg_rating_avg_inspection_score,\\n    CORR(e.avg_rating, agg.num_inspections) as corr_avg_rating_num_inspections,\\n    COUNT(*) as matched_restaurant_count\\nFROM establishments e\\nJOIN (\\n    SELECT \\n        i.slchd_establishment_key,\\n        COUNT(DISTINCT i.inspection_id) as num_inspections,\\n        AVG(i.inspection_score) as avg_inspection_score,\\n        COUNT(v.violation_id) as total_violations,\\n        SUM(CASE WHEN vc.critical THEN 1 ELSE 0 END) as critical_violations\\n    FROM inspections i\\n    LEFT JOIN violations v ON i.inspection_id = v.inspection_id\\n    LEFT JOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\\n    GROUP BY i.slchd_establishment_key\\n) agg ON e.slchd_establishment_key = agg.slchd_establishment_key\\nWHERE e.avg_rating IS NOT NULL;'})\n\nObservation: {\"row_count\": 1, \"truncated\": false, \"rows\": [{\"corr_avg_rating_total_violations\": -0.24627922451723222, \"corr_avg_rating_critical_violations\": -0.10129094508229458, \"corr_avg_rating_avg_inspection_score\": -0.04140536458951757, \"corr_avg_rating_num_inspections\": -0.31471229394160466, \"matched_restaurant_count\": 139}]}\n\nAction: run_sql({'query': \"SELECT \\n    CASE \\n        WHEN e.avg_rating < 3.5 THEN '< 3.5'\\n        WHEN e.avg_rating < 4.0 THEN '3.5 - 3.9'\\n        WHEN e.avg_rating < 4.5 THEN '4.0 - 4.4'\\n        ELSE '4.5 - 5.0'\\n    END as rating_bracket,\\n    COUNT(DISTINCT e.gmap_id) as establishment_count,\\n    ROUND(AVG(agg.avg_violations_per_inspection), 2) as mean_violations_per_insp,\\n    ROUND(AVG(agg.avg_critical_per_inspection), 2) as mean_critical_per_insp,\\n    ROUND(AVG(agg.avg_inspection_score), 2) as mean_inspection_score\\nFROM establishments e\\nJOIN (\\n    SELECT \\n        i.slchd_establishment_key,\\n        AVG(i.inspection_score) as avg_inspection_score,\\n        CAST(COUNT(v.violation_id) AS DOUBLE) / COUNT(DISTINCT i.inspection_id) as avg_violations_per_inspection,\\n        CAST(SUM(CASE WHEN vc.critical THEN 1 ELSE 0 END) AS DOUBLE) / COUNT(DISTINCT i.inspection_id) as avg_critical_per_inspection\\n    FROM inspections i\\n    LEFT JOIN violations v ON i.inspection_id = v.inspection_id\\n    LEFT JOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\\n    GROUP BY i.slchd_establishment_key\\n) agg ON e.slchd_establishment_key = agg.slchd_establishment_key\\nWHERE e.avg_rating IS NOT NULL\\nGROUP BY rating_bracket\\nORDER BY rating_bracket;\"})\n\nObservation: {\"row_count\": 4, \"truncated\": false, \"rows\": [{\"rating_bracket\": \"3.5 - 3.9\", \"establishment_count\": 31, \"mean_violations_per_insp\": 4.7, \"mean_critical_per_insp\": 1.21, \"mean_inspection_score\": 13.81}, {\"rating_bracket\": \"4.0 - 4.4\", \"establishment_count\": 52, \"mean_violations_per_insp\": 4.51, \"mean_critical_per_insp\": 1.24, \"mean_inspection_score\": 13.52}, {\"rating_bracket\": \"4.5 - 5.0\", \"establishment_count\": 51, \"mean_violations_per_insp\": 3.81, \"mean_critical_per_insp\": 1.21, \"mean_inspection_score\": 14.68}, {\"rating_bracket\": \"< 3.5\", \"establishment_count\": 5, \"mean_violations_per_insp\": 6.1, \"mean_critical_per_insp\": 1.59, \"mean_inspection_score\": 22.61}]}\n\nAction: run_sql({'query': 'SELECT \\n    ROUND(CORR(e.avg_rating, agg.avg_violations_per_inspection), 4) as corr_rating_vs_violations_per_insp,\\n    ROUND(CORR(e.avg_rating, agg.avg_critical_per_inspection), 4) as corr_rating_vs_critical_per_insp,\\n    ROUND(CORR(e.avg_rating, agg.avg_inspection_score), 4) as corr_rating_vs_insp_score,\\n    ROUND(CORR(e.avg_rating, agg.total_violations), 4) as corr_rating_vs_total_violations,\\n    ROUND(CORR(e.avg_rating, agg.total_critical), 4) as corr_rating_vs_total_critical\\nFROM establishments e\\nJOIN (\\n    SELECT \\n        i.slchd_establishment_key,\\n        AVG(i.inspection_score) as avg_inspection_score,\\n        COUNT(v.violation_id) as total_violations,\\n        SUM(CASE WHEN vc.critical THEN 1 ELSE 0 END) as total_critical,\\n        CAST(COUNT(v.violation_id) AS DOUBLE) / COUNT(DISTINCT i.inspection_id) as avg_violations_per_inspection,\\n        CAST(SUM(CASE WHEN vc.critical THEN 1 ELSE 0 END) AS DOUBLE) / COUNT(DISTINCT i.inspection_id) as avg_critical_per_inspection\\n    FROM inspections i\\n    LEFT JOIN violations v ON i.inspection_id = v.inspection_id\\n    LEFT JOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\\n    GROUP BY i.slchd_establishment_key\\n) agg ON e.slchd_establishment_key = agg.slchd_establishment_key\\nWHERE e.avg_rating IS NOT NULL;'})\n\nObservation: {\"row_count\": 1, \"truncated\": false, \"rows\": [{\"corr_rating_vs_violations_per_insp\": -0.23, \"corr_rating_vs_critical_per_insp\": -0.0658, \"corr_rating_vs_insp_score\": -0.0414, \"corr_rating_vs_total_violations\": -0.2463, \"corr_rating_vs_total_critical\": -0.1013}]}\n\nAction: run_sql({'query': 'SELECT \\n    COUNT(*) as total_establishments,\\n    COUNT(slchd_establishment_key) as matched_establishments,\\n    ROUND(100.0 * COUNT(slchd_establishment_key) / COUNT(*), 1) as pct_matched\\nFROM establishments;'})\n\nObservation: {\"row_count\": 1, \"truncated\": false, \"rows\": [{\"total_establishments\": 8592, \"matched_establishments\": 139, \"pct_matched\": 1.6}]}\n\nAction: retrieve_regulation({'query': 'inspection score violation severity health department risk rating'})\n\nObservation: [R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 8-406 Core Item Violation, p.214]\n211  \n8-4 INSPECTION AND CORRECTION OF VIOLATIONS \n \nSubparts \n \n8-401 Frequency \n8-402 Competency and Access \n8-403 Report of Findings \n8-404 Imminent Health Hazard \n8-405 Violation of Priority Item or Priority \nFoundation Item \n8-406 Core Item Violation \n \n \n \nFrequency 8-401.10 Establishing Inspection Interval. \n \n(A) Except as specified in \u00b6\u00b6 (B) and (C) of this section, the \nREGULATORY AUTHORITY shall inspect a FOOD ESTABLISHMENT at \nleast once every 6 months and twice in a season for seasonal \noperations. \n \n(B) The REGULATORY AUTHORITY may increase the interval \nbetween inspections beyond 6 months if: \n \n(1) The FOOD ESTABLISHMENT is fully operating under an \nAPPROVED and validated HACCP PLAN as specified under \n\u00a7 8-201.14 and \u00b6\u00b6 8-103.12(A) and (B); \n \n(2) The FOOD ESTABLISHMENT is assigned a less frequent \ninspection frequency based on a written RISK-based \ninspection schedule that is being uniformly applied \nthroughout the jurisdiction or\n\n---\n\n[R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 8-908.20 Respondent Acceptance of Consent Agreement, p.247]\nAnnex 1 \u2013 Compliance & Enforcement \n244 \n \n8-909.40 Contents of an Order. \n \nUpon petition of the REGULATORY AUTHORITY, the court may issue \nan inspection order that: \n \n(A) Includes the information specified in \u00b6\u00b6 8-902.20(A) - (C); \nand \n \n(B) Orders or authorizes any other identified agencies and \npersons including LAW enforcement agencies to execute, or \nassist with the execution of, the order. \n \n \n \n8-909.50 Optional Contents of an Order. \n \nUpon petition of the REGULATORY AUTHORITY, the court may \nfurther issue an inspection order that:\n\n---\n\n[R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 8-403.30 Issuing Report and Obtaining, p.218]\n215  \n(3) Nonconformance with PRIORITY ITEMS OR PRIORITY \nFOUNDATION ITEMS of this Code, \n \n(4) Failure of the appropriate FOOD EMPLOYEES to \ndemonstrate their knowledge of, and ability to perform \nin accordance with, the procedural, monitoring, \nverification, and corrective action practices required by \nthe REGULATORY AUTHORITY as specified under \n\u00a7 8-103.12, \n \n(5) Failure of the PERSON IN CHARGE to provide records \nrequired by the REGULATORY AUTHORITY for determining \nconformance with a HACCP PLAN as specified under \nSubparagraph 8-201.14(D)(6), and \n \n(6) Nonconformance with CRITICAL LIMITS of a HACCP \nPLAN. \n \n \n \n8-403.20 Specifying Time Frame for Corrections. \n \nThe REGULATORY AUTHORITY shall specify on the inspection \nreport form the time frame for correction of the violations as \nspecified under \u00a7\u00a7 8-404.11, 8-405.11, and 8-406.11. \n \n \n \n8-403.30 Issuing Report and Obtaining \nAcknowledgment of Receipt. \n \n \nAt the conclusion of the inspection and according to LAW, the\n\n---\n\n[R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 8-913 Civil Proceedings, p.231]\nAnnex 1 \u2013 Compliance & Enforcement \n228 \n \n(D) Fails to comply with a REGULATORY AUTHORITY order \nissued as specified in \u00a7 8-501.20 concerning an EMPLOYEE or \nCONDITIONAL EMPLOYEE suspected of having a disease \ntransmissible through FOOD by infected PERSONS; \n \n(E) Fails to comply with a hold order as specified in \n\u00a7 8-903.10; \n \n(F) Fails to comply with an order issued as a result of a \nhearing for an administrative remedy as specified in \n\u00a7 8-906.40; or \n \n(G) Fails to comply with a summary suspension order issued \nby the REGULATORY AUTHORITY as specified in \u00a7\u00a7 8-801.20 \nand 8-904.10. \n \n \n \nAdministrative \n \nInspection \nOrders \n8-902.10 Gaining Access to Premises and Records. \n \n(Note: Adoption of this section provides the basis for \nSubparagraph 8-402.20(A)(3) and \u00a7 8-402.40 and would be \ncited there.) \n \nThe REGULATORY AUTHORITY may order access for one or more of \nthe following purposes, subject to LAW for gaining access:\n\nAction: run_sql({'query': 'SELECT \\n    e.name,\\n    ROUND(e.avg_rating, 2) as rating,\\n    ROUND(CAST(COUNT(v.violation_id) AS DOUBLE) / COUNT(DISTINCT i.inspection_id), 2) as avg_violations_per_inspection,\\n    ROUND(CAST(SUM(CASE WHEN vc.critical THEN 1 ELSE 0 END) AS DOUBLE) / COUNT(DISTINCT i.inspection_id), 2) as avg_critical_violations_per_inspection,\\n    ROUND(AVG(i.inspection_score), 2) as avg_inspection_score\\nFROM establishments e\\nJOIN inspections i ON e.slchd_establishment_key = i.slchd_establishment_key\\nLEFT JOIN violations v ON i.inspection_id = v.inspection_id\\nLEFT JOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\\nWHERE e.avg_rating IS NOT NULL\\nGROUP BY e.gmap_id, e.name, e.avg_rating;'})\n\nObservation: {\"row_count\": 139, \"truncated\": true, \"rows\": [{\"name\": \"Burger King\", \"rating\": 3.2, \"avg_violations_per_inspection\": 10.4, \"avg_critical_violations_per_inspection\": 2.8, \"avg_inspection_score\": 15.67}, {\"name\": \"Chick-fil-A\", \"rating\": 4.3, \"avg_violations_per_inspection\": 5.0, \"avg_critical_violations_per_inspection\": 2.5, \"avg_inspection_score\": 16.4}, {\"name\": \"Don Daniel's Mexican Grill & Cantina\", \"rating\": 4.2, \"avg_violations_per_inspection\": 6.89, \"avg_critical_violations_per_inspection\": 1.67, \"avg_inspection_score\": 17.95}, {\"name\": \"IHOP\", \"rating\": 3.8, \"avg_violations_per_inspection\": 3.7, \"avg_critical_violations_per_inspection\": 0.5, \"avg_inspection_score\": 7.62}, {\"name\": \"Subway\", \"rating\": 3.9, \"avg_violations_per_inspection\": 4.4, \"avg_critical_violations_per_inspection\": 1.3, \"avg_inspection_score\": 11.75}, {\"name\": \"Wingstop\", \"rating\": 4.4, \"avg_violations_per_inspection\": 3.4, \"avg_critical_violations_per_inspection\": 1.0, \"avg_inspection_score\": 8.59}, {\"name\": \"Hub and Spoke Diner\", \"rating\": 4.3, \"avg_violations_per_inspection\": 0.0, \"avg_critical_violations_per_inspection\": 0.0, \"avg_inspection_score\": 0.0}, {\"name\": \"Chick-fil-A\", \"rating\": 4.4, \"avg_violations_per_inspection\": 3.4, \"avg_critical_violations_per_inspection\": 0.7, \"avg_inspection_score\": 19.83}, {\"name\": \"Chick-fil-A\", \"rating\": 4.6, \"avg_violations_per_inspection\": 4.7, \"avg_critical_violations_per_inspection\": 0.8, \"avg_inspection_score\": 8.81}, {\"name\": \"Del Taco\", \"rating\": 3.8, \"avg_violations_per_inspection\": 5.1, \"avg_critical_violations_per_inspection\": 1.9, \"avg_inspection_score\": 18.61}, {\"name\": \"Sonic Drive-In\", \"rating\": 3.6, \"avg_violations_per_inspection\": 6.5, \"avg_critical_violations_per_inspection\": 1.67, \"avg_inspection_score\": 24.31}, {\"name\": \"Vessel Kitchen\", \"rating\": 4.5, \"avg_violations_per_inspection\": 8.5, \"avg_critical_violations_per_inspection\": 2.8, \"avg_inspection_score\": 28.82}, {\"name\": \"Chipotle Mexican Grill\", \"rating\": 3.9, \"avg_violations_per_inspection\": 3.3, \"avg_critical_violations_per_inspection\": 0.9, \"avg_inspection_score\": 7.85}, {\"name\": \"El Pollo Loco\", \"rating\": 4.3, \"avg_violations_per_inspection\": 5.0, \"avg_critical_violations_per_inspection\": 1.56, \"avg_inspection_score\": 16.62}, {\"name\": \"Lee Sushi\", \"rating\": 4.6, \"avg_violations_per_inspection\": 7.2, \"avg_critical_violations_per_inspection\": 2.8, \"avg_inspection_score\": 21.19}, {\"name\": \"Starbucks\", \"rating\": 3.9, \"avg_violations_per_inspection\": 3.5, \"avg_critical_violations_per_inspection\": 0.8, \"avg_inspection_score\": 10.4}, {\"name\": \"Cafe Zupas\", \"rating\": 4.3, \"avg_violations_per_inspection\": 8.8, \"avg_critical_violations_per_inspection\": 2.3, \"avg_inspection_score\": 20.76}, {\"name\": \"City Cafe\", \"rating\": 4.8, \"avg_violations_per_inspection\": 6.7, \"avg_critical_violations_per_inspection\": 1.5, \"avg_inspection_score\": 13.28}, {\"name\": \"Burger King\", \"rating\": 3.7, \"avg_violations_per_inspection\": 1.11, \"avg_critical_violations_per_inspection\": 0.22, \"avg_inspection_score\": 5.29}, {\"name\": \"Cracker Barrel Old Country Store\", \"rating\": 4.3, \"avg_violations_per_inspection\": 7.9, \"avg_critical_violations_per_inspection\": 1.5, \"avg_inspection_score\": 23.73}, {\"name\": \"MOD Pizza\", \"rating\": 4.4, \"avg_violations_per_inspection\": 1.5, \"avg_critical_violations_per_inspection\": 0.5, \"avg_inspection_score\": 6.0}, {\"name\": \"Noodles and Company\", \"rating\": 3.9, \"avg_violations_per_inspection\": 4.7, \"avg_critical_violations_per_inspection\": 0.9, \"avg_inspection_score\": 10.68}, {\"name\": \"Panda Express\", \"rating\": 3.7, \"avg_violations_per_inspection\": 3.0, \"avg_critical_violations_per_inspection\": 0.9, \"avg_inspection_score\": 7.27}, {\"name\": \"The Point After\", \"rating\": 4.2, \"avg_violations_per_inspection\": 0.29, \"avg_critical_violations_per_inspection\": 0.0, \"avg_inspection_score\": 0.5}, {\"name\": \"Red Lobster\", \"rating\": 4.2, \"avg_violations_per_inspection\": 8.0, \"avg_critical_violations_per_inspection\": 2.2, \"avg_inspection_score\": 22.5}, {\"name\": \"Swig\", \"rating\": 4.4, \"avg_violations_per_inspection\": 5.4, \"avg_critical_violations_per_inspection\": 1.1, \"avg_inspection_score\": 14.61}, {\"name\": \"Tram Club\", \"rating\": 4.2, \"avg_violations_per_inspection\": 2.0, \"avg_critical_violations_per_inspection\": 1.0, \"avg_inspection_score\": 4.0}, {\"name\": \"Zao Asian Cafe\", \"rating\": 4.4, \"avg_violations_per_inspection\": 5.3, \"avg_critical_violations_per_inspection\": 1.4, \"avg_inspection_score\": 14.64}, {\"name\": \"The Black Sheep Bar & Grill Foothill\", \"rating\": 4.5, \"avg_violations_per_inspection\": 0.0, \"avg_critical_violations_per_inspection\": 0.0, \"avg_inspection_score\": 0.0}, {\"name\": \"Chick-fil-A\", \"rating\": 4.5, \"avg_violations_per_inspection\": 5.5, \"avg_critical_violations_per_inspection\": 1.1, \"avg_inspection_score\": 12.29}, {\"name\": \"Golden Gyros\", \"rating\": 4.7, \"avg_violations_per_inspection\": 6.2, \"avg_critical_violations_per_inspection\": 2.2, \"avg_inspection_score\": 18.13}, {\"name\": \"Noodles and Company\", \"rating\": 4.1, \"avg_violations_per_inspection\": 3.5, \"avg_critical_violations_per_inspection\": 0.9, \"avg_inspection_score\": 8.51}, {\"name\": \"Panda Express\", \"rating\": 3.7, \"avg_violations_per_inspection\": 4.1, \"avg_critical_violations_per_inspection\": 0.6, \"avg_inspection_score\": 10.39}, {\"name\": \"Roots Coffee & Co.\", \"rating\": 5.0, \"avg_violations_per_inspection\": 3.67, \"avg_critical_violations_per_inspection\": 0.33, \"avg_inspection_score\": 4.73}, {\"name\": \"Table X\", \"rating\": 4.5, \"avg_violations_per_inspection\": 6.43, \"avg_critical_violations_per_inspection\": 2.29, \"avg_inspection_score\": 20.71}, {\"name\": \"Texas Roadhouse\", \"rating\": 4.4, \"avg_violations_per_inspection\": 11.3, \"avg_critical_violations_per_inspection\": 3.8, \"avg_inspection_score\": 30.87}, {\"name\": \"Walmart Neighborhood Market\", \"rating\": 4.2, \"avg_violations_per_inspection\": 3.9, \"avg_critical_violations_per_inspection\": 0.7, \"avg_inspection_score\": 8.31}, {\"name\": \"Ice Haus\", \"rating\": 4.5, \"avg_violations_per_inspection\": 0.0, \"avg_critical_violations_per_inspection\": 0.0, \"avg_inspection_score\": 0.0}, {\"name\": \"Real Taqueria\", \"rating\": 4.7, \"avg_violations_per_inspection\": 0.0, \"avg_critical_violations_per_inspection\": 0.0, \"avg_inspection_score\": 0.0}, {\"name\": \"Zest Kitchen & Bar\", \"rating\": 4.5, \"avg_violations_per_inspection\": 0.0, \"avg_critical_violations_per_inspection\": 0.0, \"avg_inspection_score\": 0.0}, {\"name\": \"Bad Ass Coffee of Hawaii\", \"rating\": 4.7, \"avg_violations_per_inspection\": 2.83, \"avg_critical_violations_per_inspection\": 0.83, \"avg_inspection_score\": 8.5}, {\"name\": \"Bongo Lounge\", \"rating\": 4.6, \"avg_violations_per_inspection\": 3.7, \"avg_critical_violations_per_inspection\": 0.7, \"avg_inspection_score\": 9.05}, {\"name\": \"Cafe Rio Mexican Grill\", \"rating\": 3.3, \"avg_violations_per_inspection\": 6.1, \"avg_critical_violations_per_inspection\": 1.9, \"avg_inspection_score\": 22.32}, {\"name\": \"In-N-Out Burger\", \"rating\": 4.5, \"avg_violations_per_inspection\": 1.7, \"avg_critical_violations_per_inspection\": 0.5, \"avg_inspection_score\": 6.11}, {\"name\": \"Subway\", \"rating\": 3.7, \"avg_violations_per_inspection\": 5.0, \"avg_critical_violations_per_inspection\": 1.6, \"avg_inspection_score\": 13.88}, {\"name\": \"Subway\", \"rating\": 3.4, \"avg_violations_per_inspection\": 3.4, \"avg_critical_violations_per_inspection\": 0.6, \"avg_inspection_score\": 7.47}, {\"name\": \"Tacos El Pariente\", \"rating\": 4.6, \"avg_violations_per_inspection\": 2.2, \"avg_critical_violations_per_inspection\": 0.9, \"avg_inspection_score\": 9.74}, {\"name\": \"Ab's Drive-In\", \"rating\": 4.1, \"avg_violations_per_inspection\": 5.9, \"avg_critical_violations_per_inspection\": 2.3, \"avg_inspection_score\": 20.15}, {\"name\": \"Arctic Circle\", \"rating\": 3.9, \"avg_violations_per_inspection\": 9.5, \"avg_critical_violations_per_inspection\": 2.7, \"avg_inspection_score\": 32.96}, {\"name\": \"Mountain West Cider\", \"rating\": 4.7, \"avg_violations_per_inspection\": 0.0, \"avg_critical_violations_per_inspection\": 0.0, \"avg_inspection_score\": 0.0}]}\n\nAction: plot_chart({'x': 'rating_bracket', 'chart_type': 'bar', 'query': \"SELECT \\n    CASE \\n        WHEN e.avg_rating < 3.5 THEN '1. Under 3.5'\\n        WHEN e.avg_rating < 4.0 THEN '2. 3.5 - 3.9'\\n        WHEN e.avg_rating < 4.5 THEN '3. 4.0 - 4.4'\\n        ELSE '4. 4.5 - 5.0'\\n    END as rating_bracket,\\n    ROUND(AVG(agg.avg_violations_per_inspection), 2) as avg_violations_per_inspection\\nFROM establishments e\\nJOIN (\\n    SELECT \\n        i.slchd_establishment_key,\\n        CAST(COUNT(v.violation_id) AS DOUBLE) / COUNT(DISTINCT i.inspection_id) as avg_violations_per_inspection\\n    FROM inspections i\\n    LEFT JOIN violations v ON i.inspection_id = v.inspection_id\\n    LEFT JOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\\n    GROUP BY i.slchd_establishment_key\\n) agg ON e.slchd_establishment_key = agg.slchd_establishment_key\\nWHERE e.avg_rating IS NOT NULL\\nGROUP BY rating_bracket\\nORDER BY rating_bracket;\", 'y': 'avg_violations_per_inspection', 'title': 'Average Violations per Inspection by Google Rating Bracket'})\n\nObservation: Chart created: 'Average Violations per Inspection by Google Rating Bracket' (bar, 4 rows). It will be shown to the user below your answer.\n\nAction: plot_chart({'title': 'Google Rating vs. Health Inspection Score (SLCHD Matched Restaurants)', 'x': 'google_rating', 'query': 'SELECT \\n    ROUND(e.avg_rating, 2) as google_rating,\\n    ROUND(AVG(i.inspection_score), 2) as avg_inspection_score\\nFROM establishments e\\nJOIN inspections i ON e.slchd_establishment_key = i.slchd_establishment_key\\nWHERE e.avg_rating IS NOT NULL\\nGROUP BY e.gmap_id, e.avg_rating;', 'y': 'avg_inspection_score', 'chart_type': 'scatter'})\n\nObservation: Chart created: 'Google Rating vs. Health Inspection Score (SLCHD Matched Restaurants)' (scatter, 139 rows). It will be shown to the user below your answer.",
+  "timeline": [],
+  "messages": [
+    {
+      "type": "HumanMessage",
+      "content": "Is there any correlation between ratings and violations among the restaurants?"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "get_schema",
+          "args": {},
+          "id": "call_889849",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 2145,
+        "output_tokens": 102,
+        "total_tokens": 2247,
+        "input_token_details": {
+          "cache_read": 0
+        },
+        "output_token_details": {
+          "reasoning": 92
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "Project food_health_viz {\n  database_type: 'DuckDB'\n}\n\nTable establishment_keys {\n  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']\n  name varchar [not null]\n  address varchar [not null]\n  city varchar [not null]\n  city_state_zip varchar\n  establishment_type varchar\n  source varchar [note: 'friend_slc | own_scrape']\n  slchd_lat double\n  slchd_lon double\n  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']\n\n  Note: 'SLCHD establishment list, one row per portal listing.'\n}\n\nTable category {\n  category_id integer [pk]\n  category varchar\n}\n\nTable establishments {\n  gmap_id varchar [pk]\n  name varchar\n  address varchar\n  description varchar\n  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']\n  avg_rating double\n  num_of_reviews integer\n  price varchar\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']\n\n  Note: 'One row per Google Local place \u2014 all restaurants, not just SLCHD-matched.'\n}\n\nTable establishment_attributes {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  attribute varchar [not null]\n\n  indexes { (gmap_id, attribute) [pk] }\n\n  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. \"Service options\") dropped.'\n}\n\nTable establishment_categories {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  category_id integer [ref: > category.category_id, not null]\n\n  indexes { (gmap_id, category_id) [pk] }\n}\n\nTable gmap_hours {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  day integer [not null, note: '0=Sun \u2026 6=Sat']\n  open_min bigint\n  open_max bigint\n\n  indexes { (gmap_id, day) [pk] }\n\n  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'\n}\n\nTable review {\n  user_id varchar\n  name varchar\n  time bigint\n  rating double\n  text varchar\n  resp varchar\n  gmap_id varchar [ref: > establishments.gmap_id]\n}\n\nTable inspection_types {\n  inspection_type_id integer [pk, note: 'parsed leading number, e.g. \"01 - Routine\" -> 1']\n  description varchar [note: 'e.g. \"Routine\"']\n}\n\nTable inspections {\n  inspection_id bigint [pk, increment]\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]\n  inspection_date date [not null]\n  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable \u2014 27 rows have no type']\n  inspection_score integer\n\n  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'\n}\n\nTable violation_codes {\n  violation_code_id integer [pk, increment]\n  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. \"4.5.18\"']\n  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']\n  critical boolean [not null]\n}\n\nTable violations {\n  violation_id bigint [pk, increment]\n  inspection_id bigint [ref: > inspections.inspection_id, not null]\n  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]\n  violation_description varchar [note: 'per-occurrence free text']\n  violation_occurrences integer\n  violation_cos boolean [note: 'corrected on site']\n  violation_phr varchar [note: 'public health rationale']\n\n  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'\n}\n",
+      "tool_call_id": "call_889849",
+      "name": "get_schema"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "SELECT \n    CORR(e.avg_rating, agg.total_violations) as corr_avg_rating_total_violations,\n    CORR(e.avg_rating, agg.critical_violations) as corr_avg_rating_critical_violations,\n    CORR(e.avg_rating, agg.avg_inspection_score) as corr_avg_rating_avg_inspection_score,\n    CORR(e.avg_rating, agg.num_inspections) as corr_avg_rating_num_inspections,\n    COUNT(*) as matched_restaurant_count\nFROM establishments e\nJOIN (\n    SELECT \n        i.slchd_establishment_key,\n        COUNT(DISTINCT i.inspection_id) as num_inspections,\n        AVG(i.inspection_score) as avg_inspection_score,\n        COUNT(v.violation_id) as total_violations,\n        SUM(CASE WHEN vc.critical THEN 1 ELSE 0 END) as critical_violations\n    FROM inspections i\n    LEFT JOIN violations v ON i.inspection_id = v.inspection_id\n    LEFT JOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\n    GROUP BY i.slchd_establishment_key\n) agg ON e.slchd_establishment_key = agg.slchd_establishment_key\nWHERE e.avg_rating IS NOT NULL;"
+          },
+          "id": "call_622944",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 3276,
+        "output_tokens": 473,
+        "total_tokens": 3749,
+        "input_token_details": {
+          "cache_read": 0
+        },
+        "output_token_details": {
+          "reasoning": 134
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 1, \"truncated\": false, \"rows\": [{\"corr_avg_rating_total_violations\": -0.24627922451723222, \"corr_avg_rating_critical_violations\": -0.10129094508229458, \"corr_avg_rating_avg_inspection_score\": -0.04140536458951757, \"corr_avg_rating_num_inspections\": -0.31471229394160466, \"matched_restaurant_count\": 139}]}",
+      "tool_call_id": "call_622944",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "SELECT \n    CASE \n        WHEN e.avg_rating < 3.5 THEN '< 3.5'\n        WHEN e.avg_rating < 4.0 THEN '3.5 - 3.9'\n        WHEN e.avg_rating < 4.5 THEN '4.0 - 4.4'\n        ELSE '4.5 - 5.0'\n    END as rating_bracket,\n    COUNT(DISTINCT e.gmap_id) as establishment_count,\n    ROUND(AVG(agg.avg_violations_per_inspection), 2) as mean_violations_per_insp,\n    ROUND(AVG(agg.avg_critical_per_inspection), 2) as mean_critical_per_insp,\n    ROUND(AVG(agg.avg_inspection_score), 2) as mean_inspection_score\nFROM establishments e\nJOIN (\n    SELECT \n        i.slchd_establishment_key,\n        AVG(i.inspection_score) as avg_inspection_score,\n        CAST(COUNT(v.violation_id) AS DOUBLE) / COUNT(DISTINCT i.inspection_id) as avg_violations_per_inspection,\n        CAST(SUM(CASE WHEN vc.critical THEN 1 ELSE 0 END) AS DOUBLE) / COUNT(DISTINCT i.inspection_id) as avg_critical_per_inspection\n    FROM inspections i\n    LEFT JOIN violations v ON i.inspection_id = v.inspection_id\n    LEFT JOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\n    GROUP BY i.slchd_establishment_key\n) agg ON e.slchd_establishment_key = agg.slchd_establishment_key\nWHERE e.avg_rating IS NOT NULL\nGROUP BY rating_bracket\nORDER BY rating_bracket;"
+          },
+          "id": "call_780179",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 3897,
+        "output_tokens": 594,
+        "total_tokens": 4491,
+        "input_token_details": {
+          "cache_read": 0
+        },
+        "output_token_details": {
+          "reasoning": 162
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 4, \"truncated\": false, \"rows\": [{\"rating_bracket\": \"3.5 - 3.9\", \"establishment_count\": 31, \"mean_violations_per_insp\": 4.7, \"mean_critical_per_insp\": 1.21, \"mean_inspection_score\": 13.81}, {\"rating_bracket\": \"4.0 - 4.4\", \"establishment_count\": 52, \"mean_violations_per_insp\": 4.51, \"mean_critical_per_insp\": 1.24, \"mean_inspection_score\": 13.52}, {\"rating_bracket\": \"4.5 - 5.0\", \"establishment_count\": 51, \"mean_violations_per_insp\": 3.81, \"mean_critical_per_insp\": 1.21, \"mean_inspection_score\": 14.68}, {\"rating_bracket\": \"< 3.5\", \"establishment_count\": 5, \"mean_violations_per_insp\": 6.1, \"mean_critical_per_insp\": 1.59, \"mean_inspection_score\": 22.61}]}",
+      "tool_call_id": "call_780179",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "SELECT \n    ROUND(CORR(e.avg_rating, agg.avg_violations_per_inspection), 4) as corr_rating_vs_violations_per_insp,\n    ROUND(CORR(e.avg_rating, agg.avg_critical_per_inspection), 4) as corr_rating_vs_critical_per_insp,\n    ROUND(CORR(e.avg_rating, agg.avg_inspection_score), 4) as corr_rating_vs_insp_score,\n    ROUND(CORR(e.avg_rating, agg.total_violations), 4) as corr_rating_vs_total_violations,\n    ROUND(CORR(e.avg_rating, agg.total_critical), 4) as corr_rating_vs_total_critical\nFROM establishments e\nJOIN (\n    SELECT \n        i.slchd_establishment_key,\n        AVG(i.inspection_score) as avg_inspection_score,\n        COUNT(v.violation_id) as total_violations,\n        SUM(CASE WHEN vc.critical THEN 1 ELSE 0 END) as total_critical,\n        CAST(COUNT(v.violation_id) AS DOUBLE) / COUNT(DISTINCT i.inspection_id) as avg_violations_per_inspection,\n        CAST(SUM(CASE WHEN vc.critical THEN 1 ELSE 0 END) AS DOUBLE) / COUNT(DISTINCT i.inspection_id) as avg_critical_per_inspection\n    FROM inspections i\n    LEFT JOIN violations v ON i.inspection_id = v.inspection_id\n    LEFT JOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\n    GROUP BY i.slchd_establishment_key\n) agg ON e.slchd_establishment_key = agg.slchd_establishment_key\nWHERE e.avg_rating IS NOT NULL;"
+          },
+          "id": "call_895820",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 4746,
+        "output_tokens": 532,
+        "total_tokens": 5278,
+        "input_token_details": {
+          "cache_read": 0
+        },
+        "output_token_details": {
+          "reasoning": 86
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 1, \"truncated\": false, \"rows\": [{\"corr_rating_vs_violations_per_insp\": -0.23, \"corr_rating_vs_critical_per_insp\": -0.0658, \"corr_rating_vs_insp_score\": -0.0414, \"corr_rating_vs_total_violations\": -0.2463, \"corr_rating_vs_total_critical\": -0.1013}]}",
+      "tool_call_id": "call_895820",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "SELECT \n    COUNT(*) as total_establishments,\n    COUNT(slchd_establishment_key) as matched_establishments,\n    ROUND(100.0 * COUNT(slchd_establishment_key) / COUNT(*), 1) as pct_matched\nFROM establishments;"
+          },
+          "id": "call_837755",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 5386,
+        "output_tokens": 112,
+        "total_tokens": 5498,
+        "input_token_details": {
+          "cache_read": 0
+        },
+        "output_token_details": {
+          "reasoning": 32
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 1, \"truncated\": false, \"rows\": [{\"total_establishments\": 8592, \"matched_establishments\": 139, \"pct_matched\": 1.6}]}",
+      "tool_call_id": "call_837755",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "retrieve_regulation",
+          "args": {
+            "query": "inspection score violation severity health department risk rating"
+          },
+          "id": "call_750588",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 5546,
+        "output_tokens": 133,
+        "total_tokens": 5679,
+        "input_token_details": {
+          "cache_read": 0
+        },
+        "output_token_details": {
+          "reasoning": 110
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "[R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 8-406 Core Item Violation, p.214]\n211  \n8-4 INSPECTION AND CORRECTION OF VIOLATIONS \n \nSubparts \n \n8-401 Frequency \n8-402 Competency and Access \n8-403 Report of Findings \n8-404 Imminent Health Hazard \n8-405 Violation of Priority Item or Priority \nFoundation Item \n8-406 Core Item Violation \n \n \n \nFrequency 8-401.10 Establishing Inspection Interval. \n \n(A) Except as specified in \u00b6\u00b6 (B) and (C) of this section, the \nREGULATORY AUTHORITY shall inspect a FOOD ESTABLISHMENT at \nleast once every 6 months and twice in a season for seasonal \noperations. \n \n(B) The REGULATORY AUTHORITY may increase the interval \nbetween inspections beyond 6 months if: \n \n(1) The FOOD ESTABLISHMENT is fully operating under an \nAPPROVED and validated HACCP PLAN as specified under \n\u00a7 8-201.14 and \u00b6\u00b6 8-103.12(A) and (B); \n \n(2) The FOOD ESTABLISHMENT is assigned a less frequent \ninspection frequency based on a written RISK-based \ninspection schedule that is being uniformly applied \nthroughout the jurisdiction or\n\n---\n\n[R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 8-908.20 Respondent Acceptance of Consent Agreement, p.247]\nAnnex 1 \u2013 Compliance & Enforcement \n244 \n \n8-909.40 Contents of an Order. \n \nUpon petition of the REGULATORY AUTHORITY, the court may issue \nan inspection order that: \n \n(A) Includes the information specified in \u00b6\u00b6 8-902.20(A) - (C); \nand \n \n(B) Orders or authorizes any other identified agencies and \npersons including LAW enforcement agencies to execute, or \nassist with the execution of, the order. \n \n \n \n8-909.50 Optional Contents of an Order. \n \nUpon petition of the REGULATORY AUTHORITY, the court may \nfurther issue an inspection order that:\n\n---\n\n[R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 8-403.30 Issuing Report and Obtaining, p.218]\n215  \n(3) Nonconformance with PRIORITY ITEMS OR PRIORITY \nFOUNDATION ITEMS of this Code, \n \n(4) Failure of the appropriate FOOD EMPLOYEES to \ndemonstrate their knowledge of, and ability to perform \nin accordance with, the procedural, monitoring, \nverification, and corrective action practices required by \nthe REGULATORY AUTHORITY as specified under \n\u00a7 8-103.12, \n \n(5) Failure of the PERSON IN CHARGE to provide records \nrequired by the REGULATORY AUTHORITY for determining \nconformance with a HACCP PLAN as specified under \nSubparagraph 8-201.14(D)(6), and \n \n(6) Nonconformance with CRITICAL LIMITS of a HACCP \nPLAN. \n \n \n \n8-403.20 Specifying Time Frame for Corrections. \n \nThe REGULATORY AUTHORITY shall specify on the inspection \nreport form the time frame for correction of the violations as \nspecified under \u00a7\u00a7 8-404.11, 8-405.11, and 8-406.11. \n \n \n \n8-403.30 Issuing Report and Obtaining \nAcknowledgment of Receipt. \n \n \nAt the conclusion of the inspection and according to LAW, the\n\n---\n\n[R392-100 Food Service Sanitation Rule (Utah Admin Code / FDA Food Code 2013), near 8-913 Civil Proceedings, p.231]\nAnnex 1 \u2013 Compliance & Enforcement \n228 \n \n(D) Fails to comply with a REGULATORY AUTHORITY order \nissued as specified in \u00a7 8-501.20 concerning an EMPLOYEE or \nCONDITIONAL EMPLOYEE suspected of having a disease \ntransmissible through FOOD by infected PERSONS; \n \n(E) Fails to comply with a hold order as specified in \n\u00a7 8-903.10; \n \n(F) Fails to comply with an order issued as a result of a \nhearing for an administrative remedy as specified in \n\u00a7 8-906.40; or \n \n(G) Fails to comply with a summary suspension order issued \nby the REGULATORY AUTHORITY as specified in \u00a7\u00a7 8-801.20 \nand 8-904.10. \n \n \n \nAdministrative \n \nInspection \nOrders \n8-902.10 Gaining Access to Premises and Records. \n \n(Note: Adoption of this section provides the basis for \nSubparagraph 8-402.20(A)(3) and \u00a7 8-402.40 and would be \ncited there.) \n \nThe REGULATORY AUTHORITY may order access for one or more of \nthe following purposes, subject to LAW for gaining access:",
+      "tool_call_id": "call_750588",
+      "name": "retrieve_regulation"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "SELECT \n    e.name,\n    ROUND(e.avg_rating, 2) as rating,\n    ROUND(CAST(COUNT(v.violation_id) AS DOUBLE) / COUNT(DISTINCT i.inspection_id), 2) as avg_violations_per_inspection,\n    ROUND(CAST(SUM(CASE WHEN vc.critical THEN 1 ELSE 0 END) AS DOUBLE) / COUNT(DISTINCT i.inspection_id), 2) as avg_critical_violations_per_inspection,\n    ROUND(AVG(i.inspection_score), 2) as avg_inspection_score\nFROM establishments e\nJOIN inspections i ON e.slchd_establishment_key = i.slchd_establishment_key\nLEFT JOIN violations v ON i.inspection_id = v.inspection_id\nLEFT JOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\nWHERE e.avg_rating IS NOT NULL\nGROUP BY e.gmap_id, e.name, e.avg_rating;"
+          },
+          "id": "call_798071",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 6983,
+        "output_tokens": 905,
+        "total_tokens": 7888,
+        "input_token_details": {
+          "cache_read": 0
+        },
+        "output_token_details": {
+          "reasoning": 655
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 139, \"truncated\": true, \"rows\": [{\"name\": \"Burger King\", \"rating\": 3.2, \"avg_violations_per_inspection\": 10.4, \"avg_critical_violations_per_inspection\": 2.8, \"avg_inspection_score\": 15.67}, {\"name\": \"Chick-fil-A\", \"rating\": 4.3, \"avg_violations_per_inspection\": 5.0, \"avg_critical_violations_per_inspection\": 2.5, \"avg_inspection_score\": 16.4}, {\"name\": \"Don Daniel's Mexican Grill & Cantina\", \"rating\": 4.2, \"avg_violations_per_inspection\": 6.89, \"avg_critical_violations_per_inspection\": 1.67, \"avg_inspection_score\": 17.95}, {\"name\": \"IHOP\", \"rating\": 3.8, \"avg_violations_per_inspection\": 3.7, \"avg_critical_violations_per_inspection\": 0.5, \"avg_inspection_score\": 7.62}, {\"name\": \"Subway\", \"rating\": 3.9, \"avg_violations_per_inspection\": 4.4, \"avg_critical_violations_per_inspection\": 1.3, \"avg_inspection_score\": 11.75}, {\"name\": \"Wingstop\", \"rating\": 4.4, \"avg_violations_per_inspection\": 3.4, \"avg_critical_violations_per_inspection\": 1.0, \"avg_inspection_score\": 8.59}, {\"name\": \"Hub and Spoke Diner\", \"rating\": 4.3, \"avg_violations_per_inspection\": 0.0, \"avg_critical_violations_per_inspection\": 0.0, \"avg_inspection_score\": 0.0}, {\"name\": \"Chick-fil-A\", \"rating\": 4.4, \"avg_violations_per_inspection\": 3.4, \"avg_critical_violations_per_inspection\": 0.7, \"avg_inspection_score\": 19.83}, {\"name\": \"Chick-fil-A\", \"rating\": 4.6, \"avg_violations_per_inspection\": 4.7, \"avg_critical_violations_per_inspection\": 0.8, \"avg_inspection_score\": 8.81}, {\"name\": \"Del Taco\", \"rating\": 3.8, \"avg_violations_per_inspection\": 5.1, \"avg_critical_violations_per_inspection\": 1.9, \"avg_inspection_score\": 18.61}, {\"name\": \"Sonic Drive-In\", \"rating\": 3.6, \"avg_violations_per_inspection\": 6.5, \"avg_critical_violations_per_inspection\": 1.67, \"avg_inspection_score\": 24.31}, {\"name\": \"Vessel Kitchen\", \"rating\": 4.5, \"avg_violations_per_inspection\": 8.5, \"avg_critical_violations_per_inspection\": 2.8, \"avg_inspection_score\": 28.82}, {\"name\": \"Chipotle Mexican Grill\", \"rating\": 3.9, \"avg_violations_per_inspection\": 3.3, \"avg_critical_violations_per_inspection\": 0.9, \"avg_inspection_score\": 7.85}, {\"name\": \"El Pollo Loco\", \"rating\": 4.3, \"avg_violations_per_inspection\": 5.0, \"avg_critical_violations_per_inspection\": 1.56, \"avg_inspection_score\": 16.62}, {\"name\": \"Lee Sushi\", \"rating\": 4.6, \"avg_violations_per_inspection\": 7.2, \"avg_critical_violations_per_inspection\": 2.8, \"avg_inspection_score\": 21.19}, {\"name\": \"Starbucks\", \"rating\": 3.9, \"avg_violations_per_inspection\": 3.5, \"avg_critical_violations_per_inspection\": 0.8, \"avg_inspection_score\": 10.4}, {\"name\": \"Cafe Zupas\", \"rating\": 4.3, \"avg_violations_per_inspection\": 8.8, \"avg_critical_violations_per_inspection\": 2.3, \"avg_inspection_score\": 20.76}, {\"name\": \"City Cafe\", \"rating\": 4.8, \"avg_violations_per_inspection\": 6.7, \"avg_critical_violations_per_inspection\": 1.5, \"avg_inspection_score\": 13.28}, {\"name\": \"Burger King\", \"rating\": 3.7, \"avg_violations_per_inspection\": 1.11, \"avg_critical_violations_per_inspection\": 0.22, \"avg_inspection_score\": 5.29}, {\"name\": \"Cracker Barrel Old Country Store\", \"rating\": 4.3, \"avg_violations_per_inspection\": 7.9, \"avg_critical_violations_per_inspection\": 1.5, \"avg_inspection_score\": 23.73}, {\"name\": \"MOD Pizza\", \"rating\": 4.4, \"avg_violations_per_inspection\": 1.5, \"avg_critical_violations_per_inspection\": 0.5, \"avg_inspection_score\": 6.0}, {\"name\": \"Noodles and Company\", \"rating\": 3.9, \"avg_violations_per_inspection\": 4.7, \"avg_critical_violations_per_inspection\": 0.9, \"avg_inspection_score\": 10.68}, {\"name\": \"Panda Express\", \"rating\": 3.7, \"avg_violations_per_inspection\": 3.0, \"avg_critical_violations_per_inspection\": 0.9, \"avg_inspection_score\": 7.27}, {\"name\": \"The Point After\", \"rating\": 4.2, \"avg_violations_per_inspection\": 0.29, \"avg_critical_violations_per_inspection\": 0.0, \"avg_inspection_score\": 0.5}, {\"name\": \"Red Lobster\", \"rating\": 4.2, \"avg_violations_per_inspection\": 8.0, \"avg_critical_violations_per_inspection\": 2.2, \"avg_inspection_score\": 22.5}, {\"name\": \"Swig\", \"rating\": 4.4, \"avg_violations_per_inspection\": 5.4, \"avg_critical_violations_per_inspection\": 1.1, \"avg_inspection_score\": 14.61}, {\"name\": \"Tram Club\", \"rating\": 4.2, \"avg_violations_per_inspection\": 2.0, \"avg_critical_violations_per_inspection\": 1.0, \"avg_inspection_score\": 4.0}, {\"name\": \"Zao Asian Cafe\", \"rating\": 4.4, \"avg_violations_per_inspection\": 5.3, \"avg_critical_violations_per_inspection\": 1.4, \"avg_inspection_score\": 14.64}, {\"name\": \"The Black Sheep Bar & Grill Foothill\", \"rating\": 4.5, \"avg_violations_per_inspection\": 0.0, \"avg_critical_violations_per_inspection\": 0.0, \"avg_inspection_score\": 0.0}, {\"name\": \"Chick-fil-A\", \"rating\": 4.5, \"avg_violations_per_inspection\": 5.5, \"avg_critical_violations_per_inspection\": 1.1, \"avg_inspection_score\": 12.29}, {\"name\": \"Golden Gyros\", \"rating\": 4.7, \"avg_violations_per_inspection\": 6.2, \"avg_critical_violations_per_inspection\": 2.2, \"avg_inspection_score\": 18.13}, {\"name\": \"Noodles and Company\", \"rating\": 4.1, \"avg_violations_per_inspection\": 3.5, \"avg_critical_violations_per_inspection\": 0.9, \"avg_inspection_score\": 8.51}, {\"name\": \"Panda Express\", \"rating\": 3.7, \"avg_violations_per_inspection\": 4.1, \"avg_critical_violations_per_inspection\": 0.6, \"avg_inspection_score\": 10.39}, {\"name\": \"Roots Coffee & Co.\", \"rating\": 5.0, \"avg_violations_per_inspection\": 3.67, \"avg_critical_violations_per_inspection\": 0.33, \"avg_inspection_score\": 4.73}, {\"name\": \"Table X\", \"rating\": 4.5, \"avg_violations_per_inspection\": 6.43, \"avg_critical_violations_per_inspection\": 2.29, \"avg_inspection_score\": 20.71}, {\"name\": \"Texas Roadhouse\", \"rating\": 4.4, \"avg_violations_per_inspection\": 11.3, \"avg_critical_violations_per_inspection\": 3.8, \"avg_inspection_score\": 30.87}, {\"name\": \"Walmart Neighborhood Market\", \"rating\": 4.2, \"avg_violations_per_inspection\": 3.9, \"avg_critical_violations_per_inspection\": 0.7, \"avg_inspection_score\": 8.31}, {\"name\": \"Ice Haus\", \"rating\": 4.5, \"avg_violations_per_inspection\": 0.0, \"avg_critical_violations_per_inspection\": 0.0, \"avg_inspection_score\": 0.0}, {\"name\": \"Real Taqueria\", \"rating\": 4.7, \"avg_violations_per_inspection\": 0.0, \"avg_critical_violations_per_inspection\": 0.0, \"avg_inspection_score\": 0.0}, {\"name\": \"Zest Kitchen & Bar\", \"rating\": 4.5, \"avg_violations_per_inspection\": 0.0, \"avg_critical_violations_per_inspection\": 0.0, \"avg_inspection_score\": 0.0}, {\"name\": \"Bad Ass Coffee of Hawaii\", \"rating\": 4.7, \"avg_violations_per_inspection\": 2.83, \"avg_critical_violations_per_inspection\": 0.83, \"avg_inspection_score\": 8.5}, {\"name\": \"Bongo Lounge\", \"rating\": 4.6, \"avg_violations_per_inspection\": 3.7, \"avg_critical_violations_per_inspection\": 0.7, \"avg_inspection_score\": 9.05}, {\"name\": \"Cafe Rio Mexican Grill\", \"rating\": 3.3, \"avg_violations_per_inspection\": 6.1, \"avg_critical_violations_per_inspection\": 1.9, \"avg_inspection_score\": 22.32}, {\"name\": \"In-N-Out Burger\", \"rating\": 4.5, \"avg_violations_per_inspection\": 1.7, \"avg_critical_violations_per_inspection\": 0.5, \"avg_inspection_score\": 6.11}, {\"name\": \"Subway\", \"rating\": 3.7, \"avg_violations_per_inspection\": 5.0, \"avg_critical_violations_per_inspection\": 1.6, \"avg_inspection_score\": 13.88}, {\"name\": \"Subway\", \"rating\": 3.4, \"avg_violations_per_inspection\": 3.4, \"avg_critical_violations_per_inspection\": 0.6, \"avg_inspection_score\": 7.47}, {\"name\": \"Tacos El Pariente\", \"rating\": 4.6, \"avg_violations_per_inspection\": 2.2, \"avg_critical_violations_per_inspection\": 0.9, \"avg_inspection_score\": 9.74}, {\"name\": \"Ab's Drive-In\", \"rating\": 4.1, \"avg_violations_per_inspection\": 5.9, \"avg_critical_violations_per_inspection\": 2.3, \"avg_inspection_score\": 20.15}, {\"name\": \"Arctic Circle\", \"rating\": 3.9, \"avg_violations_per_inspection\": 9.5, \"avg_critical_violations_per_inspection\": 2.7, \"avg_inspection_score\": 32.96}, {\"name\": \"Mountain West Cider\", \"rating\": 4.7, \"avg_violations_per_inspection\": 0.0, \"avg_critical_violations_per_inspection\": 0.0, \"avg_inspection_score\": 0.0}]}",
+      "tool_call_id": "call_798071",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "plot_chart",
+          "args": {
+            "x": "rating_bracket",
+            "chart_type": "bar",
+            "query": "SELECT \n    CASE \n        WHEN e.avg_rating < 3.5 THEN '1. Under 3.5'\n        WHEN e.avg_rating < 4.0 THEN '2. 3.5 - 3.9'\n        WHEN e.avg_rating < 4.5 THEN '3. 4.0 - 4.4'\n        ELSE '4. 4.5 - 5.0'\n    END as rating_bracket,\n    ROUND(AVG(agg.avg_violations_per_inspection), 2) as avg_violations_per_inspection\nFROM establishments e\nJOIN (\n    SELECT \n        i.slchd_establishment_key,\n        CAST(COUNT(v.violation_id) AS DOUBLE) / COUNT(DISTINCT i.inspection_id) as avg_violations_per_inspection\n    FROM inspections i\n    LEFT JOIN violations v ON i.inspection_id = v.inspection_id\n    LEFT JOIN violation_codes vc ON v.violation_code_id = vc.violation_code_id\n    GROUP BY i.slchd_establishment_key\n) agg ON e.slchd_establishment_key = agg.slchd_establishment_key\nWHERE e.avg_rating IS NOT NULL\nGROUP BY rating_bracket\nORDER BY rating_bracket;",
+            "y": "avg_violations_per_inspection",
+            "title": "Average Violations per Inspection by Google Rating Bracket"
+          },
+          "id": "call_753282",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 10459,
+        "output_tokens": 1405,
+        "total_tokens": 11864,
+        "input_token_details": {
+          "cache_read": 0
+        },
+        "output_token_details": {
+          "reasoning": 1048
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "Chart created: 'Average Violations per Inspection by Google Rating Bracket' (bar, 4 rows). It will be shown to the user below your answer.",
+      "tool_call_id": "call_753282",
+      "name": "plot_chart"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "plot_chart",
+          "args": {
+            "title": "Google Rating vs. Health Inspection Score (SLCHD Matched Restaurants)",
+            "x": "google_rating",
+            "query": "SELECT \n    ROUND(e.avg_rating, 2) as google_rating,\n    ROUND(AVG(i.inspection_score), 2) as avg_inspection_score\nFROM establishments e\nJOIN inspections i ON e.slchd_establishment_key = i.slchd_establishment_key\nWHERE e.avg_rating IS NOT NULL\nGROUP BY e.gmap_id, e.avg_rating;",
+            "y": "avg_inspection_score",
+            "chart_type": "scatter"
+          },
+          "id": "call_753505",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 11909,
+        "output_tokens": 176,
+        "total_tokens": 12085,
+        "input_token_details": {
+          "cache_read": 8093
+        },
+        "output_token_details": {
+          "reasoning": 21
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "Chart created: 'Google Rating vs. Health Inspection Score (SLCHD Matched Restaurants)' (scatter, 139 rows). It will be shown to the user below your answer.",
+      "tool_call_id": "call_753505",
+      "name": "plot_chart"
+    },
+    {
+      "type": "AIMessage",
+      "content": "### Executive Summary\n\nAcross Salt Lake County restaurants, there is **virtually no correlation** between a restaurant's **Google customer rating** and its **health department inspection performance** (critical violations or overall inspection score). \n\nWhile there is a slight negative correlation with total violation counts per inspection ($r = -0.230$), critical health violations\u2014the violations that pose direct risk to food safety\u2014show almost zero correlation with consumer ratings ($r = -0.066$).\n\n---\n\n### Key Data & Correlation Metrics\n\nThe statistical analysis across the 139 Salt Lake County establishments with matched SLCHD inspection history reveals the following Pearson correlation coefficients ($r$):\n\n| Relationship Metric | Correlation Coefficient ($r$) | Interpretation |\n| :--- | :---: | :--- |\n| **Google Rating vs. Inspection Score** | **$-0.041$** | **No correlation** |\n| **Google Rating vs. Critical Violations / Inspection** | **$-0.066$** | **No correlation** |\n| **Google Rating vs. Total Violations / Inspection** | **$-0.230$** | **Weak negative correlation** |\n| **Google Rating vs. Total Lifetime Violations** | **$-0.246$** | **Weak negative correlation** |\n| **Google Rating vs. Number of Inspections** | **$-0.315$** | **Weak negative correlation** |\n\n---\n\n### Breakdown by Google Rating Bracket\n\nGrouping restaurants by Google star rating highlights how inspection outcomes vary across consumer rating tiers:\n\n| Google Rating Tier | Matched Restaurants | Avg. Total Violations / Insp. | Avg. Critical Violations / Insp. | Avg. Inspection Score |\n| :--- | :---: | :---: | :---: | :---: |\n| **Under 3.5 Stars** | 5 | **6.10** | **1.59** | **22.61** |\n| **3.5 \u2013 3.9 Stars** | 31 | **4.70** | **1.21** | **13.81** |\n| **4.0 \u2013 4.4 Stars** | 52 | **4.51** | **1.24** | **13.52** |\n| **4.5 \u2013 5.0 Stars** | 51 | **3.81** | **1.21** | **14.68** |\n\n#### Observations:\n1. **Critical Violations are Identical Across Rating Tiers:** Whether a restaurant is rated 3.5\u20133.9 stars, 4.0\u20134.4 stars, or 4.5\u20135.0 stars, it averages approximately **1.21 to 1.24 critical violations per inspection**. High customer ratings do not shield a restaurant from critical safety citations.\n2. **Lowest Rated Tier (< 3.5 Stars):** Restaurants in the lowest star tier exhibit higher total violations (6.10/inspection) and higher average inspection scores (22.61), but represent a small subset (5 restaurants).\n3. **High Ratings Do Not Mean Clean Inspections:** Top-rated restaurants (4.5\u20135.0 stars) actually average a slightly higher inspection score (14.68) than mid-tier restaurants (13.52 in the 4.0\u20134.4 range), demonstrating that consumer praise is uncorrelated with health inspection severity.\n\n---\n\n### Regulatory Context & Why Customer Ratings Diverge\n\nUnder Utah\u2019s **R392-100 Food Service Sanitation Rule** (adopting the FDA Food Code):\n* **Inspection Focus:** Environmental health inspectors evaluate back-of-house compliance, such as cold/hot food holding temperatures, cross-contamination hazards, dishwashing chemical concentrations, handwashing sink accessibility, and date marking for perishable foods.\n* **Consumer Perspective:** Google ratings reflect front-of-house customer experiences\u2014flavor, portion size, pricing, order speed, staff friendliness, and seating atmosphere.\n* **Visibility Gap:** Because customers rarely observe food preparation procedures, chemical storage, or walk-in cooler temperatures, a restaurant can receive 5-star customer reviews while simultaneously receiving critical health citations.\n\n---\n\n### Dataset Scope Notice\n\n* **Data Availability:** Out of **8,592 total establishments** in the database, **139 establishments (1.6%)** currently have matched Salt Lake County Health Department (SLCHD) inspection records.\n* **Unmatched Establishments:** The remaining **98.4% (8,453 establishments)** have no matched SLCHD inspection history in the dataset. Unmatched records indicate a lack of linked health department inspection data, rather than a clean inspection record.",
+      "raw_content": [
+        {
+          "type": "text",
+          "text": "### Executive Summary\n\nAcross Salt Lake County restaurants, there is **virtually no correlation** between a restaurant's **Google customer rating** and its **health department inspection performance** (critical violations or overall inspection score). \n\nWhile there is a slight negative correlation with total violation counts per inspection ($r = -0.230$), critical health violations\u2014the violations that pose direct risk to food safety\u2014show almost zero correlation with consumer ratings ($r = -0.066$).\n\n---\n\n### Key Data & Correlation Metrics\n\nThe statistical analysis across the 139 Salt Lake County establishments with matched SLCHD inspection history reveals the following Pearson correlation coefficients ($r$):\n\n| Relationship Metric | Correlation Coefficient ($r$) | Interpretation |\n| :--- | :---: | :--- |\n| **Google Rating vs. Inspection Score** | **$-0.041$** | **No correlation** |\n| **Google Rating vs. Critical Violations / Inspection** | **$-0.066$** | **No correlation** |\n| **Google Rating vs. Total Violations / Inspection** | **$-0.230$** | **Weak negative correlation** |\n| **Google Rating vs. Total Lifetime Violations** | **$-0.246$** | **Weak negative correlation** |\n| **Google Rating vs. Number of Inspections** | **$-0.315$** | **Weak negative correlation** |\n\n---\n\n### Breakdown by Google Rating Bracket\n\nGrouping restaurants by Google star rating highlights how inspection outcomes vary across consumer rating tiers:\n\n| Google Rating Tier | Matched Restaurants | Avg. Total Violations / Insp. | Avg. Critical Violations / Insp. | Avg. Inspection Score |\n| :--- | :---: | :---: | :---: | :---: |\n| **Under 3.5 Stars** | 5 | **6.10** | **1.59** | **22.61** |\n| **3.5 \u2013 3.9 Stars** | 31 | **4.70** | **1.21** | **13.81** |\n| **4.0 \u2013 4.4 Stars** | 52 | **4.51** | **1.24** | **13.52** |\n| **4.5 \u2013 5.0 Stars** | 51 | **3.81** | **1.21** | **14.68** |\n\n#### Observations:\n1. **Critical Violations are Identical Across Rating Tiers:** Whether a restaurant is rated 3.5\u20133.9 stars, 4.0\u20134.4 stars, or 4.5\u20135.0 stars, it averages approximately **1.21 to 1.24 critical violations per inspection**. High customer ratings do not shield a restaurant from critical safety citations.\n2. **Lowest Rated Tier (< 3.5 Stars):** Restaurants in the lowest star tier exhibit higher total violations (6.10/inspection) and higher average inspection scores (22.61), but represent a small subset (5 restaurants).\n3. **High Ratings Do Not Mean Clean Inspections:** Top-rated restaurants (4.5\u20135.0 stars) actually average a slightly higher inspection score (14.68) than mid-tier restaurants (13.52 in the 4.0\u20134.4 range), demonstrating that consumer praise is uncorrelated with health inspection severity.\n\n---\n\n### Regulatory Context & Why Customer Ratings Diverge\n\nUnder Utah\u2019s **R392-100 Food Service Sanitation Rule** (adopting the FDA Food Code):\n* **Inspection Focus:** Environmental health inspectors evaluate back-of-house compliance, such as cold/hot food holding temperatures, cross-contamination hazards, dishwashing chemical concentrations, handwashing sink accessibility, and date marking for perishable foods.\n* **Consumer Perspective:** Google ratings reflect front-of-house customer experiences\u2014flavor, portion size, pricing, order speed, staff friendliness, and seating atmosphere.\n* **Visibility Gap:** Because customers rarely observe food preparation procedures, chemical storage, or walk-in cooler temperatures, a restaurant can receive 5-star customer reviews while simultaneously receiving critical health citations.\n\n---\n\n### Dataset Scope Notice\n\n* **Data Availability:** Out of **8,592 total establishments** in the database, **139 establishments (1.6%)** currently have matched Salt Lake County Health Department (SLCHD) inspection records.\n* **Unmatched Establishments:** The remaining **98.4% (8,453 establishments)** have no matched SLCHD inspection history in the dataset. Unmatched records indicate a lack of linked health department inspection data, rather than a clean inspection record.",
+          "extras": {
+            "signature": "EoIQCv8PARFNMg8aHtDsHSS35ppaKugkUrsrBYNOLvoIDmBQ0RFnluZ2On74C+2x28KO68LUeGpXN9TitsZBPHJ1cfFcZLUEybU7sk3WPMvY17pNf5gMRCr8KPLd8sCxY5aQF8ncnFaa05VTVgzqNuTD4dT5WTwoVZFjscLqpnI2jXFEuBlSpRuolUfgGsFZoomY3VQ8ncOxQYqOgUNWC5fLF65cpEs/iZELzZwvwGjPSGsjdranURE5sAcrrQC3UYcRLldPosaI4P0WTcZNZQsgrtn0anj1sDJOj5sK3mVjzki7AcPpaoWGbXtzYSrShgK5N6WKMmgJC8vihqxhA9xtt8Nq0b+WePVa1bDhcY9/tcc0CNRpQXi/C1B23C7payzBidtY2P2G6YbOafxrSMsFX1EGax8hS4/BrI75c4RcaPG/Zud/TSuex4KJdl5I4jW95nKD7V288FE+wTMJkkqCB35/7f1EaHysFShFcKQKm7Nf/laffzcvayw6015X3OP8hxwLbnlbwtdDKmtUa9fhfQu6yE83LIFeosIZ//XxEJ7hKxC1jAMEExw1NIF6lMorSp97n9aHVfw0Ro4iHHkLjuWqf3OvBCXl6JEGRaJdIzyJsO1EppAcoQYg02dIfF+fmMPi+jeSuq9r96S0xVT2veWS+FLzUm9Cb9JUxfGogpnimicKR4YhMx2RZSJJXmk1h3wJ9S26lxZjyJ1s8omrtnyIHJVmwTevwtt+JRmwucqcW7kQ5/pa1+b4cqOhN3tUQKfG5sosnetwspnAB48NSsZEvulWXwCIzgHVfUfMpVh11k4l17eo0skPv4ZE4lRGgwHtjlyxEggNykK+MqIwsdp5qmFYdJ6nQ/ptutXo5Zr5wh/M2h6xa5lMrVgwAlnaVX7c74wlQp8T9HxZb1hAiic4uFJD3oVtaGOi+TFg5zo+aFRK2PDl5T6QDBkvYqNztKHCnVPmI/GnDyH3sJSg0Hs3kPxFHZYUTRjHdPfCDKG9t1VE4m8/P8maUMwQveAJK851P/YFi+upDkEyE29U0dWwS56MYxzrkjYXAD/iALBgwA9TsgYLQ0oRQKXb8kYFNwUHf6mJVBpFykbHuOSzYujNeXfHdw4WN1I26CEC7JT3Pb4pVEJFYsCRpgPujx32pvx88mO90feNBRxubpLBNyydokSbcVwmbFi+7t6RBs4o4rIhfJGDsZuSlUHWiihn6wjD8hfoZvL69+70ccxNmrquYKhzGkhX1a+BKhW9vHXGgir/5kVFC85ZBeluPbBw4LDQZZxvY0W2EE/TQOJ/u+7sJDgd4o6UokKBhWUFxQG6qVxCey0958+iltsscRnph5tyrNB2/g8B8jVgXGo14yTe60mYdJUYebbje7Jbz4GUsCKZa0I2sQ0xsixGPQsOijL9v1zE3VZ8Z6IMJ/o+Hhd5NcPOxSxSI9mTw/wB9SIxVhol+JDVebZ9ZrfRokApjM2pVxsh9NZTs2L820FeeOLSv9150/GipJmH+ZdynEQ/sknbua9ZMRkX+iOSoEB8mWrxDYT8NBNoyE7ZURufuOt0O0DA5fk0X9ztPwC6xaKBxVFQkshPxkoj8nkxB57JbfIxEP/60vLlMrSqNcEC8VBweos/vHnZp+LV5RivPgrB4OynhB60dipCeAPlffbsSi4h0jgYHJ739cAnlc6X32V0fTAhcIAR993YcWkvcV8M88g8ii7bfYYjqgldrIKAw09sBYmfIXQVhKwqCyRw9yHDZx3puU3Q3W638K+20P1oA4+r8f7X3ZJNv+o2MqD8s2qLySZRn+yolyO6ahvBtTCI6vd+Nz8UZqU7oXkxOMps6okmH34EtoEbc5BHNCYoxCKchkHh1ctY8XjbTsizOMKysVfI37ATBWVD/y+wIWSicmp1M8lFa8GICy0dKYL7/y2sdRvcw2ziEMU1qLwkxJrmnlDD60BW5pzGJY599+lqamSl2obecYeUoojsa8et0uMdrq0NgRtbx7SU/7lKcPaO6uAMrFmFm6XRT87FO2V1KidlqbSeuOwsr2C1NYsMEUP75dii6+ttz6o15A38ghy14ugWGehIktpRCetnPZUNtJxB8iA9yCrjbhe9Cmk32RmURNsErgz7H67Gd/h7eMEhW96z/zvfXsbKZkY3o5S+/HhgEUyNv60eEOSe6jc86DrDZd3tbrivVmId93CZoAnu/BWrMdkiwkFIfr52zPgnrPMz3qySJLQaSqclYlgBk8fXzD/ZJUKd2YL4vYGLGUmCEMZjek7JT0fu9cENhKCcZgol/Rdls19SO6nUBOOkEFePyy5UvUO1wLKgqqPxB0gxZYB4F7YU7U1wvwznEVwxfxTCFz02K30tJKp6gYBr0cpOnvyeuVhKSuCy7NDTtsNr4r9Zs52MNXDVheSCzqZ9ZbanlS+8iEHgn2Pt39iSdZ35pWg/Rttk83tr+9OzU5HkGWKg9WFGZNG6vXvAQEaGdp0NuKuU/dY3p5UC8iIkFjHi7DRhitW38xJ0AlvWP83zzRVSjI2TDyfmIHWnNO1RzFfurSthSxzkRbFDRx/qRCjjLzloEr7zndgRplvinU8sNcSc6GaPVu8TOs0FPhXpu5ZkaOAOpuz5cYhaGBvZh8RyVzF7fHb0gBKl019BAIz7ZsKtHG4PWxhKgYjlR3DGoCWqs3bSjVNFs3At2oaVALvWiSy6OtZkkrQyNkTafIsZTUMYkS3wV+VODaz3KpCkaQ=="
+          }
+        }
+      ],
+      "tool_calls": [],
+      "usage_metadata": {
+        "input_tokens": 12136,
+        "output_tokens": 1589,
+        "total_tokens": 13725,
+        "input_token_details": {
+          "cache_read": 8088
+        },
+        "output_token_details": {
+          "reasoning": 559
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    }
+  ],
+  "charts": [
+    {
+      "data": [
+        {
+          "hovertemplate": "rating_bracket=%{x}<br>avg_violations_per_inspection=%{y}<extra></extra>",
+          "legendgroup": "",
+          "marker": {
+            "color": "#000001",
+            "pattern": {
+              "shape": ""
+            }
+          },
+          "name": "",
+          "orientation": "v",
+          "showlegend": false,
+          "textposition": "auto",
+          "x": [
+            "1. Under 3.5",
+            "2. 3.5 - 3.9",
+            "3. 4.0 - 4.4",
+            "4. 4.5 - 5.0"
+          ],
+          "xaxis": "x",
+          "y": {
+            "dtype": "f8",
+            "bdata": "ZmZmZmZmGEDNzMzMzMwSQArXo3A9ChJAexSuR+F6DkA="
+          },
+          "yaxis": "y",
+          "type": "bar"
+        }
+      ],
+      "layout": {
+        "template": {
+          "data": {
+            "candlestick": [
+              {
+                "decreasing": {
+                  "line": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "line": {
+                    "color": "#000032"
+                  }
+                },
+                "type": "candlestick"
+              }
+            ],
+            "contourcarpet": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contourcarpet"
+              }
+            ],
+            "contour": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contour"
+              }
+            ],
+            "heatmap": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "heatmap"
+              }
+            ],
+            "histogram2d": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "histogram2d"
+              }
+            ],
+            "icicle": [
+              {
+                "textfont": {
+                  "color": "white"
+                },
+                "type": "icicle"
+              }
+            ],
+            "sankey": [
+              {
+                "textfont": {
+                  "color": "#000036"
+                },
+                "type": "sankey"
+              }
+            ],
+            "scatter": [
+              {
+                "marker": {
+                  "line": {
+                    "width": 0
+                  }
+                },
+                "type": "scatter"
+              }
+            ],
+            "table": [
+              {
+                "cells": {
+                  "fill": {
+                    "color": "#000038"
+                  },
+                  "font": {
+                    "color": "#000037"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "header": {
+                  "fill": {
+                    "color": "#000040"
+                  },
+                  "font": {
+                    "color": "#000036"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "type": "table"
+              }
+            ],
+            "waterfall": [
+              {
+                "connector": {
+                  "line": {
+                    "color": "#000036",
+                    "width": 2
+                  }
+                },
+                "decreasing": {
+                  "marker": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "marker": {
+                    "color": "#000032"
+                  }
+                },
+                "totals": {
+                  "marker": {
+                    "color": "#000034"
+                  }
+                },
+                "type": "waterfall"
+              }
+            ]
+          },
+          "layout": {
+            "coloraxis": {
+              "colorscale": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorscale": {
+              "diverging": [
+                [
+                  0.0,
+                  "#000021"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000022"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000023"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000024"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000025"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000026"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000027"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000028"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000029"
+                ],
+                [
+                  1.0,
+                  "#000030"
+                ]
+              ],
+              "sequential": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ],
+              "sequentialminus": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorway": [
+              "#000001",
+              "#000002",
+              "#000003",
+              "#000004",
+              "#000005",
+              "#000006",
+              "#000007",
+              "#000008",
+              "#000009",
+              "#000010"
+            ]
+          }
+        },
+        "xaxis": {
+          "anchor": "y",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "rating_bracket"
+          }
+        },
+        "yaxis": {
+          "anchor": "x",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "avg_violations_per_inspection"
+          }
+        },
+        "legend": {
+          "tracegroupgap": 0
+        },
+        "title": {
+          "text": "Average Violations per Inspection by Google Rating Bracket"
+        },
+        "barmode": "relative"
+      }
+    },
+    {
+      "data": [
+        {
+          "hovertemplate": "google_rating=%{x}<br>avg_inspection_score=%{y}<extra></extra>",
+          "legendgroup": "",
+          "marker": {
+            "color": "#000001",
+            "symbol": "circle"
+          },
+          "mode": "markers",
+          "name": "",
+          "orientation": "v",
+          "showlegend": false,
+          "x": {
+            "dtype": "f8",
+            "bdata": "MzMzMzMzEUCamZmZmZkJQAAAAAAAABJAMzMzMzMzEUAzMzMzMzMRQDMzMzMzMxNAmpmZmZmZDUCamZmZmZkRQJqZmZmZmQ1AAAAAAAAAFEAzMzMzMzMPQM3MzMzMzBBAZmZmZmZmEEAAAAAAAAASQJqZmZmZmRFAZmZmZmZmEkAAAAAAAAASQDMzMzMzMw9AZmZmZmZmDkAAAAAAAAAQQAAAAAAAABJAmpmZmZmZCUDNzMzMzMwQQJqZmZmZmRFAmpmZmZmZEUCamZmZmZkRQM3MzMzMzBBAmpmZmZmZEUAAAAAAAAASQGZmZmZmZhJAzczMzMzMDECamZmZmZkRQGZmZmZmZg5AmpmZmZmZDUDNzMzMzMwMQDMzMzMzMxFAMzMzMzMzE0AzMzMzMzMPQAAAAAAAABJAzczMzMzMEkDNzMzMzMwSQDMzMzMzMwtAMzMzMzMzEUAAAAAAAAAQQM3MzMzMzBJAMzMzMzMzD0AzMzMzMzMTQAAAAAAAABBAAAAAAAAAEkBmZmZmZmYKQDMzMzMzMxFAzczMzMzMEkBmZmZmZmYQQDMzMzMzMw9AmpmZmZmZDUDNzMzMzMwMQJqZmZmZmQ1AzczMzMzMEEAAAAAAAAASQAAAAAAAABJAMzMzMzMzD0CamZmZmZkNQDMzMzMzMxNAMzMzMzMzEUAAAAAAAAASQDMzMzMzMxFAzczMzMzMDEAAAAAAAAAQQAAAAAAAAAxAZmZmZmZmEkAzMzMzMzMPQM3MzMzMzBBAmpmZmZmZEUDNzMzMzMwQQGZmZmZmZhJAmpmZmZmZEUCamZmZmZkNQAAAAAAAABJAZmZmZmZmEkAAAAAAAAASQAAAAAAAABJAmpmZmZmZEUBmZmZmZmYQQM3MzMzMzBBAAAAAAAAAEkDNzMzMzMwSQAAAAAAAABJAZmZmZmZmDkDNzMzMzMwQQGZmZmZmZhJAZmZmZmZmEkCamZmZmZkRQAAAAAAAABJAAAAAAAAADEAzMzMzMzMPQM3MzMzMzBBAAAAAAAAAFEAAAAAAAAASQDMzMzMzMxNAZmZmZmZmEEBmZmZmZmYSQDMzMzMzMw9AAAAAAAAADEAzMzMzMzMLQM3MzMzMzBBAmpmZmZmZEUDNzMzMzMwSQGZmZmZmZhJAzczMzMzMEEAzMzMzMzMPQJqZmZmZmQ1AAAAAAAAAEECamZmZmZkRQM3MzMzMzBBAzczMzMzMEECamZmZmZkTQAAAAAAAABJAMzMzMzMzEUBmZmZmZmYOQAAAAAAAABBAzczMzMzMEkAAAAAAAAASQJqZmZmZmRNAmpmZmZmZEUBmZmZmZmYQQDMzMzMzMxFAAAAAAAAAEkAzMzMzMzMRQGZmZmZmZhBAZmZmZmZmEkBmZmZmZmYSQDMzMzMzMxFAMzMzMzMzD0AAAAAAAAASQAAAAAAAABRAZmZmZmZmEkDNzMzMzMwSQJqZmZmZmRFAMzMzMzMzD0A="
+          },
+          "xaxis": "x",
+          "y": {
+            "dtype": "f8",
+            "bdata": "MzMzMzMzNUDNzMzMzMwsQJqZmZmZmSVAj8L1KFyPLUC4HoXrUbjyP1K4HoXrURVAAAAAAAAALkAAAAAAAAAQQJqZmZmZmRtArkfhehSuEkDhehSuR2E4QAAAAAAAABxAmpmZmZmZOEDNzMzMzMwnQFyPwvUoXAFAZmZmZmZmLUAAAAAAAEAzQM3MzMzMzD5AMzMzMzMzL0AzMzMzMzMsQAAAAAAAACxAUrgehetRGUBmZmZmZmY0QAAAAAAAAAAAmpmZmZmZKEBmZmZmZmYhQB+F61G4HilAAAAAAAAAHkAzMzMzMzMDQAAAAAAAAAAAMzMzMzMzNkAAAAAAAAAmQAAAAAAAACFAMzMzMzMzH0AUrkfhetQ0QAAAAAAAABVAAAAAAAAAKEAAAAAAAAAvQJqZmZmZmRNAAAAAAAAAAABmZmZmZmY2QNejcD0Kt0BAZmZmZmbmM0AAAAAAAIAwQDMzMzMzMzBAZmZmZmZmJEBmZmZmZmYlQAAAAAAAADxAZmZmZmZmIkBmZmZmZmYvQAAAAAAAADBAAAAAAAAAFUBmZmZmZmYgQM3MzMzMzB5AzczMzMzMIEAAAAAAAAAgQDMzMzMzMylAAAAAAAAAG0AAAAAAAAAAAJqZmZmZmSVAMzMzMzMzHUBSuB6F61ERQGZmZmZmZilAAAAAAAAA4D9mZmZmZmYOQJqZmZmZmTZAzczMzMzMFEDNzMzMzMwkQAAAAAAAABhAAAAAAAAAHEAAAAAAAIA4QM3MzMzMzChAmpmZmZmZMkCamZmZmZkXQGZmZmZmZvY/MzMzMzOzMUDNzMzMzMwcQJqZmZmZmUBAAAAAAACAL0DsUbgehWstQDMzMzMzMzlAAAAAAAAAAADNzMzMzEw1QAAAAAAAQDNAzczMzMzMIkAAAAAAAAAAAJqZmZmZmSBAH4XrUbgeJ0AAAAAAAAAcQDMzMzMzMyFAMzMzMzMzGUCamZmZmZnJPwAAAAAAAAAAmpmZmZmZJkCamZmZmZkiQM3MzMzMzBpAUrgehetRGUCamZmZmZkfQAAAAAAAAOA/zczMzMzMI0AAAAAAAAAkQGZmZmZmZiVAMzMzMzMzG0CamZmZmZkXQAAAAAAAABBAAAAAAAAAHECuR+F6FK4aQGZmZmZmZiBAj8L1KFyP0j/Xo3A9ClcgQAAAAAAAACRAZmZmZmZmJUBmZmZmZmYkQAAAAAAAgDJAAAAAAAAAEEBmZmZmZmYaQJqZmZmZmSRAAAAAAAAAAADNzMzMzMwYQDMzMzMzMyxAAAAAAAAAAABmZmZmZmZGQAAAAAAAAAAAmpmZmZmZO0CamZmZmRkxQAAAAAAAAPA/ZmZmZmZmJ0CamZmZmZkyQDMzMzMzMxVAAAAAAAAAKUAAAAAAAAAlQB+F61G4HhNAMzMzMzMzG0AAAAAAAAAAAAAAAAAAAD1AMzMzMzMzMkBmZmZmZuZFQAAAAAAAACRAAAAAAAAADEA="
+          },
+          "yaxis": "y",
+          "type": "scatter"
+        }
+      ],
+      "layout": {
+        "template": {
+          "data": {
+            "candlestick": [
+              {
+                "decreasing": {
+                  "line": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "line": {
+                    "color": "#000032"
+                  }
+                },
+                "type": "candlestick"
+              }
+            ],
+            "contourcarpet": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contourcarpet"
+              }
+            ],
+            "contour": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contour"
+              }
+            ],
+            "heatmap": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "heatmap"
+              }
+            ],
+            "histogram2d": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "histogram2d"
+              }
+            ],
+            "icicle": [
+              {
+                "textfont": {
+                  "color": "white"
+                },
+                "type": "icicle"
+              }
+            ],
+            "sankey": [
+              {
+                "textfont": {
+                  "color": "#000036"
+                },
+                "type": "sankey"
+              }
+            ],
+            "scatter": [
+              {
+                "marker": {
+                  "line": {
+                    "width": 0
+                  }
+                },
+                "type": "scatter"
+              }
+            ],
+            "table": [
+              {
+                "cells": {
+                  "fill": {
+                    "color": "#000038"
+                  },
+                  "font": {
+                    "color": "#000037"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "header": {
+                  "fill": {
+                    "color": "#000040"
+                  },
+                  "font": {
+                    "color": "#000036"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "type": "table"
+              }
+            ],
+            "waterfall": [
+              {
+                "connector": {
+                  "line": {
+                    "color": "#000036",
+                    "width": 2
+                  }
+                },
+                "decreasing": {
+                  "marker": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "marker": {
+                    "color": "#000032"
+                  }
+                },
+                "totals": {
+                  "marker": {
+                    "color": "#000034"
+                  }
+                },
+                "type": "waterfall"
+              }
+            ]
+          },
+          "layout": {
+            "coloraxis": {
+              "colorscale": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorscale": {
+              "diverging": [
+                [
+                  0.0,
+                  "#000021"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000022"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000023"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000024"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000025"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000026"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000027"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000028"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000029"
+                ],
+                [
+                  1.0,
+                  "#000030"
+                ]
+              ],
+              "sequential": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ],
+              "sequentialminus": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorway": [
+              "#000001",
+              "#000002",
+              "#000003",
+              "#000004",
+              "#000005",
+              "#000006",
+              "#000007",
+              "#000008",
+              "#000009",
+              "#000010"
+            ]
+          }
+        },
+        "xaxis": {
+          "anchor": "y",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "google_rating"
+          }
+        },
+        "yaxis": {
+          "anchor": "x",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "avg_inspection_score"
+          }
+        },
+        "legend": {
+          "tracegroupgap": 0
+        },
+        "title": {
+          "text": "Google Rating vs. Health Inspection Score (SLCHD Matched Restaurants)"
+        }
+      }
+    }
+  ],
+  "candidate_pool_raw": [],
+  "duration_seconds": 181.9,
+  "usage": {
+    "available": true,
+    "per_call": [
+      {
+        "input_tokens": 2145,
+        "output_tokens": 102,
+        "total_tokens": 2247
+      },
+      {
+        "input_tokens": 3276,
+        "output_tokens": 473,
+        "total_tokens": 3749
+      },
+      {
+        "input_tokens": 3897,
+        "output_tokens": 594,
+        "total_tokens": 4491
+      },
+      {
+        "input_tokens": 4746,
+        "output_tokens": 532,
+        "total_tokens": 5278
+      },
+      {
+        "input_tokens": 5386,
+        "output_tokens": 112,
+        "total_tokens": 5498
+      },
+      {
+        "input_tokens": 5546,
+        "output_tokens": 133,
+        "total_tokens": 5679
+      },
+      {
+        "input_tokens": 6983,
+        "output_tokens": 905,
+        "total_tokens": 7888
+      },
+      {
+        "input_tokens": 10459,
+        "output_tokens": 1405,
+        "total_tokens": 11864
+      },
+      {
+        "input_tokens": 11909,
+        "output_tokens": 176,
+        "total_tokens": 12085
+      },
+      {
+        "input_tokens": 12136,
+        "output_tokens": 1589,
+        "total_tokens": 13725
+      }
+    ],
+    "input_tokens": 66483,
+    "output_tokens": 6021,
+    "total_tokens": 72504
+  },
+  "tokens_per_minute": 23915.3,
+  "estimated_cost_usd": 0.144882,
+  "success": true,
+  "error": null,
+  "chart_image_files": [
+    "2026-08-15T09-41-23.942947+00-00_v2_memory_7652f72b_chart0.png",
+    "2026-08-15T09-41-23.942947+00-00_v2_memory_7652f72b_chart1.png"
+  ]
+}

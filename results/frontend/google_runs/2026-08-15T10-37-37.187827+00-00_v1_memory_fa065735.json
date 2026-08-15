@@ -1,0 +1,1760 @@
+{
+  "source": "frontend",
+  "run_id": "fa065735",
+  "timestamp": "2026-08-15T10:37:37.187827+00:00",
+  "variant": "v1_memory",
+  "provider": "google",
+  "model": "gemini-3.6-flash",
+  "question": "\u2060Which street has the highest number of 3 star restaurants?",
+  "output_text": "Based on the Google Local rating data across Utah, **Main Street** has the highest number of 3-star restaurants overall, followed by **State Street** and **Redwood Road**. \n\nDepending on how street names, directional prefixes, city boundaries, and star rating ranges are grouped, the breakdown is as follows:\n\n---\n\n### 1. Overall Base Street Name (3.0\u20133.9 Star Range)\nCombining directional variations (N, S, E, W) and all municipality segments:\n\n* **Main Street (`Main St`)**: **211 restaurants** (64 rounded to 3 stars, 9 exact 3.0 stars)\n* **State Street (`State St`)**: **157 restaurants** (57 rounded to 3 stars, 10 exact 3.0 stars)\n* **Redwood Road (`Redwood Rd`)**: **71 restaurants** (28 rounded to 3 stars, 5 exact 3.0 stars)\n* **3500 S**: **26 restaurants**\n* **5600 W**: **25 restaurants**\n* **2100 S**: **24 restaurants**\n* **400 S**: **23 restaurants**\n\n---\n\n### 2. Directional Street Breakdown\nIf directional prefixes are preserved as separate thoroughfares:\n\n* **N Main St**: **85 restaurants**\n* **State St** (unprefixed): **71 restaurants**\n* **S Main St**: **58 restaurants**\n* **S Redwood Rd**: **51 restaurants**\n* **S State St**: **38 restaurants**\n\n---\n\n### 3. Top City-Specific Street Corridors\nWhen looking at individual street corridors within specific cities:\n\n1. **State St (Orem)**: 29 restaurants\n2. **State St (Sandy)**: 26 restaurants\n3. **State St (Salt Lake City)**: 26 restaurants\n4. **State St (Murray)**: 21 restaurants\n5. **3500 S (West Valley City)**: 19 restaurants\n6. **Main St (Logan)**: 19 restaurants\n7. **2100 S (Salt Lake City)**: 19 restaurants\n\n---\n\n*Note: 98.4% of establishments in the database do not have matched SLCHD inspection records, but rating distributions (`avg_rating`) are drawn from Google Local data across all listed food establishments.*",
+  "structured_response": null,
+  "trace_text": "Action: get_schema({})\n\nObservation: Project food_health_viz {\n  database_type: 'DuckDB'\n}\n\nTable establishment_keys {\n  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']\n  name varchar [not null]\n  address varchar [not null]\n  city varchar [not null]\n  city_state_zip varchar\n  establishment_type varchar\n  source varchar [note: 'friend_slc | own_scrape']\n  slchd_lat double\n  slchd_lon double\n  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']\n\n  Note: 'SLCHD establishment list, one row per portal listing.'\n}\n\nTable category {\n  category_id integer [pk]\n  category varchar\n}\n\nTable establishments {\n  gmap_id varchar [pk]\n  name varchar\n  address varchar\n  description varchar\n  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']\n  avg_rating double\n  num_of_reviews integer\n  price varchar\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']\n\n  Note: 'One row per Google Local place \u2014 all restaurants, not just SLCHD-matched.'\n}\n\nTable establishment_attributes {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  attribute varchar [not null]\n\n  indexes { (gmap_id, attribute) [pk] }\n\n  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. \"Service options\") dropped.'\n}\n\nTable establishment_categories {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  category_id integer [ref: > category.category_id, not null]\n\n  indexes { (gmap_id, category_id) [pk] }\n}\n\nTable gmap_hours {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  day integer [not null, note: '0=Sun \u2026 6=Sat']\n  open_min bigint\n  open_max bigint\n\n  indexes { (gmap_id, day) [pk] }\n\n  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'\n}\n\nTable review {\n  user_id varchar\n  name varchar\n  time bigint\n  rating double\n  text varchar\n  resp varchar\n  gmap_id varchar [ref: > establishments.gmap_id]\n}\n\nTable inspection_types {\n  inspection_type_id integer [pk, note: 'parsed leading number, e.g. \"01 - Routine\" -> 1']\n  description varchar [note: 'e.g. \"Routine\"']\n}\n\nTable inspections {\n  inspection_id bigint [pk, increment]\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]\n  inspection_date date [not null]\n  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable \u2014 27 rows have no type']\n  inspection_score integer\n\n  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'\n}\n\nTable violation_codes {\n  violation_code_id integer [pk, increment]\n  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. \"4.5.18\"']\n  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']\n  critical boolean [not null]\n}\n\nTable violations {\n  violation_id bigint [pk, increment]\n  inspection_id bigint [ref: > inspections.inspection_id, not null]\n  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]\n  violation_description varchar [note: 'per-occurrence free text']\n  violation_occurrences integer\n  violation_cos boolean [note: 'corrected on site']\n  violation_phr varchar [note: 'public health rationale']\n\n  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'\n}\n\n\nAction: run_sql({'query': 'SELECT avg_rating, count(*) \\nFROM establishments \\nWHERE avg_rating IS NOT NULL\\nGROUP BY avg_rating \\nORDER BY avg_rating;'})\n\nObservation: {\"row_count\": 37, \"truncated\": false, \"rows\": [{\"avg_rating\": 1.0, \"count_star()\": 5}, {\"avg_rating\": 1.3, \"count_star()\": 1}, {\"avg_rating\": 1.5, \"count_star()\": 5}, {\"avg_rating\": 1.7, \"count_star()\": 1}, {\"avg_rating\": 1.8, \"count_star()\": 2}, {\"avg_rating\": 1.9, \"count_star()\": 2}, {\"avg_rating\": 2.0, \"count_star()\": 11}, {\"avg_rating\": 2.1, \"count_star()\": 4}, {\"avg_rating\": 2.2, \"count_star()\": 5}, {\"avg_rating\": 2.3, \"count_star()\": 12}, {\"avg_rating\": 2.4, \"count_star()\": 9}, {\"avg_rating\": 2.5, \"count_star()\": 21}, {\"avg_rating\": 2.6, \"count_star()\": 16}, {\"avg_rating\": 2.7, \"count_star()\": 24}, {\"avg_rating\": 2.8, \"count_star()\": 42}, {\"avg_rating\": 2.9, \"count_star()\": 52}, {\"avg_rating\": 3.0, \"count_star()\": 78}, {\"avg_rating\": 3.1, \"count_star()\": 78}, {\"avg_rating\": 3.2, \"count_star()\": 102}, {\"avg_rating\": 3.3, \"count_star()\": 161}, {\"avg_rating\": 3.4, \"count_star()\": 168}, {\"avg_rating\": 3.5, \"count_star()\": 204}, {\"avg_rating\": 3.6, \"count_star()\": 203}, {\"avg_rating\": 3.7, \"count_star()\": 262}, {\"avg_rating\": 3.8, \"count_star()\": 345}, {\"avg_rating\": 3.9, \"count_star()\": 412}, {\"avg_rating\": 4.0, \"count_star()\": 522}, {\"avg_rating\": 4.1, \"count_star()\": 562}, {\"avg_rating\": 4.2, \"count_star()\": 721}, {\"avg_rating\": 4.3, \"count_star()\": 785}, {\"avg_rating\": 4.4, \"count_star()\": 862}, {\"avg_rating\": 4.5, \"count_star()\": 857}, {\"avg_rating\": 4.6, \"count_star()\": 666}, {\"avg_rating\": 4.7, \"count_star()\": 548}, {\"avg_rating\": 4.8, \"count_star()\": 407}, {\"avg_rating\": 4.9, \"count_star()\": 215}, {\"avg_rating\": 5.0, \"count_star()\": 222}]}\n\nAction: run_sql({'query': 'SELECT address FROM establishments WHERE address IS NOT NULL LIMIT 20;'})\n\nObservation: {\"row_count\": 20, \"truncated\": false, \"rows\": [{\"address\": \"Maverik Adventure's First Stop, 3330 S 500 W, South Salt Lake, UT 84115\"}, {\"address\": \"Wingstop, 2275 N University Pkwy, Provo, UT 84604\"}, {\"address\": \"Metropolitan Restaurant, 173 Broadway, Salt Lake City, UT 84101\"}, {\"address\": \"Mara's Mexican Cafe, 22 Main St, Layton, UT 84041\"}, {\"address\": \"The Granite Club, 3820 Highland Dr, Millcreek, UT 84106\"}, {\"address\": \"Taqueria La Caba\\u00f1a De Le\\u00f3n Mexican Food, 1303 Washington Blvd, Ogden, UT 84404\"}, {\"address\": \"Zion Hawaiian, 932 Zion \\u2013 Mount Carmel Hwy, Springdale, UT 84767\"}, {\"address\": \"Frigid Frogg Shaved Ice, 1400 W Hwy 40 Frontage Road by Esquire RV, Vernal, UT 84078\"}, {\"address\": \"Sno Biz, 332 W Main St, Vernal, UT 84078\"}, {\"address\": \"The Valley Steakhouse, 1684 US-40, Vernal, UT 84078\"}, {\"address\": \"JJ's Shave Ice, 195 W Main St, Richmond, UT 84333\"}, {\"address\": \"Big Z Motel, 1123 W 2150 S, West Haven, UT 84401\"}, {\"address\": \"stefano's gelato, 12652 2700 W, Riverton, UT 84065\"}, {\"address\": \"M&C BURGER, 57 W Center St, Midvale, UT 84047\"}, {\"address\": \"Wasatch Pizza Company, 820 E 400 S, Salt Lake City, UT 84102\"}, {\"address\": \"Katering Koncepts, Inc., 1495 S Black Ridge Dr #210, St. George, UT 84770\"}, {\"address\": \"HomeMade Family Restaurant, 1155 N Main St, Layton, UT 84041\"}, {\"address\": \"Boston Deli, 450 State St, Salt Lake City, UT 84111\"}, {\"address\": \"The Cake Alley dba Carrie's Cakes (By Appointment Only), 3135 W Wild Flower Ln, Lehi, UT 84043\"}, {\"address\": \"Rocky Mountain Chocolate Factory, 1191 E Main St, Price, UT 84501\"}]}\n\nAction: run_sql({'query': \"SELECT address,\\n       split_part(address, ',', 1) as p1,\\n       split_part(address, ',', 2) as p2,\\n       split_part(address, ',', 3) as p3\\nFROM establishments \\nLIMIT 20;\"})\n\nObservation: {\"row_count\": 20, \"truncated\": false, \"rows\": [{\"address\": \"Maverik Adventure's First Stop, 3330 S 500 W, South Salt Lake, UT 84115\", \"p1\": \"Maverik Adventure's First Stop\", \"p2\": \" 3330 S 500 W\", \"p3\": \" South Salt Lake\"}, {\"address\": \"Wingstop, 2275 N University Pkwy, Provo, UT 84604\", \"p1\": \"Wingstop\", \"p2\": \" 2275 N University Pkwy\", \"p3\": \" Provo\"}, {\"address\": \"Metropolitan Restaurant, 173 Broadway, Salt Lake City, UT 84101\", \"p1\": \"Metropolitan Restaurant\", \"p2\": \" 173 Broadway\", \"p3\": \" Salt Lake City\"}, {\"address\": \"Mara's Mexican Cafe, 22 Main St, Layton, UT 84041\", \"p1\": \"Mara's Mexican Cafe\", \"p2\": \" 22 Main St\", \"p3\": \" Layton\"}, {\"address\": \"The Granite Club, 3820 Highland Dr, Millcreek, UT 84106\", \"p1\": \"The Granite Club\", \"p2\": \" 3820 Highland Dr\", \"p3\": \" Millcreek\"}, {\"address\": \"Taqueria La Caba\\u00f1a De Le\\u00f3n Mexican Food, 1303 Washington Blvd, Ogden, UT 84404\", \"p1\": \"Taqueria La Caba\\u00f1a De Le\\u00f3n Mexican Food\", \"p2\": \" 1303 Washington Blvd\", \"p3\": \" Ogden\"}, {\"address\": \"Zion Hawaiian, 932 Zion \\u2013 Mount Carmel Hwy, Springdale, UT 84767\", \"p1\": \"Zion Hawaiian\", \"p2\": \" 932 Zion \\u2013 Mount Carmel Hwy\", \"p3\": \" Springdale\"}, {\"address\": \"Frigid Frogg Shaved Ice, 1400 W Hwy 40 Frontage Road by Esquire RV, Vernal, UT 84078\", \"p1\": \"Frigid Frogg Shaved Ice\", \"p2\": \" 1400 W Hwy 40 Frontage Road by Esquire RV\", \"p3\": \" Vernal\"}, {\"address\": \"Sno Biz, 332 W Main St, Vernal, UT 84078\", \"p1\": \"Sno Biz\", \"p2\": \" 332 W Main St\", \"p3\": \" Vernal\"}, {\"address\": \"The Valley Steakhouse, 1684 US-40, Vernal, UT 84078\", \"p1\": \"The Valley Steakhouse\", \"p2\": \" 1684 US-40\", \"p3\": \" Vernal\"}, {\"address\": \"JJ's Shave Ice, 195 W Main St, Richmond, UT 84333\", \"p1\": \"JJ's Shave Ice\", \"p2\": \" 195 W Main St\", \"p3\": \" Richmond\"}, {\"address\": \"Big Z Motel, 1123 W 2150 S, West Haven, UT 84401\", \"p1\": \"Big Z Motel\", \"p2\": \" 1123 W 2150 S\", \"p3\": \" West Haven\"}, {\"address\": \"stefano's gelato, 12652 2700 W, Riverton, UT 84065\", \"p1\": \"stefano's gelato\", \"p2\": \" 12652 2700 W\", \"p3\": \" Riverton\"}, {\"address\": \"M&C BURGER, 57 W Center St, Midvale, UT 84047\", \"p1\": \"M&C BURGER\", \"p2\": \" 57 W Center St\", \"p3\": \" Midvale\"}, {\"address\": \"Wasatch Pizza Company, 820 E 400 S, Salt Lake City, UT 84102\", \"p1\": \"Wasatch Pizza Company\", \"p2\": \" 820 E 400 S\", \"p3\": \" Salt Lake City\"}, {\"address\": \"Katering Koncepts, Inc., 1495 S Black Ridge Dr #210, St. George, UT 84770\", \"p1\": \"Katering Koncepts\", \"p2\": \" Inc.\", \"p3\": \" 1495 S Black Ridge Dr #210\"}, {\"address\": \"HomeMade Family Restaurant, 1155 N Main St, Layton, UT 84041\", \"p1\": \"HomeMade Family Restaurant\", \"p2\": \" 1155 N Main St\", \"p3\": \" Layton\"}, {\"address\": null, \"p1\": null, \"p2\": null, \"p3\": null}, {\"address\": \"Boston Deli, 450 State St, Salt Lake City, UT 84111\", \"p1\": \"Boston Deli\", \"p2\": \" 450 State St\", \"p3\": \" Salt Lake City\"}, {\"address\": \"The Cake Alley dba Carrie's Cakes (By Appointment Only), 3135 W Wild Flower Ln, Lehi, UT 84043\", \"p1\": \"The Cake Alley dba Carrie's Cakes (By Appointment Only)\", \"p2\": \" 3135 W Wild Flower Ln\", \"p3\": \" Lehi\"}]}\n\nAction: run_sql({'query': 'SELECT \\n  COUNT(CASE WHEN avg_rating = 3.0 THEN 1 END) as exact_3,\\n  COUNT(CASE WHEN avg_rating >= 3.0 AND avg_rating < 4.0 THEN 1 END) as range_3_to_4,\\n  COUNT(CASE WHEN floor(avg_rating) = 3 THEN 1 END) as floor_3,\\n  COUNT(CASE WHEN round(avg_rating) = 3 THEN 1 END) as round_3\\nFROM establishments;'})\n\nObservation: {\"row_count\": 1, \"truncated\": false, \"rows\": [{\"exact_3\": 78, \"range_3_to_4\": 2013, \"floor_3\": 2013, \"round_3\": 742}]}\n\nAction: run_sql({'query': 'SELECT address FROM establishments WHERE address IS NOT NULL AND avg_rating >= 3.0 AND avg_rating < 4.0 LIMIT 30;'})\n\nObservation: {\"row_count\": 30, \"truncated\": false, \"rows\": [{\"address\": \"Maverik Adventure's First Stop, 3330 S 500 W, South Salt Lake, UT 84115\"}, {\"address\": \"Wasatch Pizza Company, 820 E 400 S, Salt Lake City, UT 84102\"}, {\"address\": \"Boston Deli, 450 State St, Salt Lake City, UT 84111\"}, {\"address\": \"Mrs. Fields, 2070 Layton Hills Mall #11, Layton, UT 84041\"}, {\"address\": \"SUBWAY\\u00aeRestaurants, 5692 S 900 E #7th, Salt Lake City, UT 84117\"}, {\"address\": \"D&R Spirits, 2430 Grant Ave, Ogden, UT 84401\"}, {\"address\": \"Mangia Park City, 1300 Snow Creek Dr, Park City, UT 84060\"}, {\"address\": \"La Puente Restaurant #7 Sandy, 61 W 10600 S, Sandy, UT 84070\"}, {\"address\": \"R&R BBQ, 301 S Temple, Salt Lake City, UT 84101\"}, {\"address\": \"TA, 1889 Pheasant Ln, Tooele, UT 84074\"}, {\"address\": \"Altitude Restaurant & Bar, 440 Main St, Park City, UT 82930\"}, {\"address\": \"Millcreek Grill, 2020 3300 S, Salt Lake City, UT 84109\"}, {\"address\": \"Walmart Deli, Washington, UT 84780\"}, {\"address\": \"French Bakery, Salt Lake City, UT 84109\"}, {\"address\": \"Malt Shoppe, 1290 N University Ave, Provo, UT 84604\"}, {\"address\": \"Starbucks, SG-5-2-21-3103, St. George, UT 84790\"}, {\"address\": \"Pizza Hut Express, Megaplex 20 At The District, 3761 W Parkway Plaza Dr, South Jordan, UT 84095\"}, {\"address\": \"Thai Chili Gardens, 430 W 800 N, Orem, UT 84057\"}, {\"address\": \"La Gigante, 2765 Washington Blvd, Ogden, UT 84401\"}, {\"address\": \"Maverik Adventure's First Stop, 520 W Main St, Lehi, UT 84043\"}, {\"address\": \"Cinnabon, 1078 E State St, American Fork, UT 84003\"}, {\"address\": \"Chaparro's Tamales, 2995 Scott Ln, West Haven, UT 84401\"}, {\"address\": \"Summit Fitness Kitchen Meal Prep, 1532 1450 S St, St. George, UT 84790\"}, {\"address\": \"Rulos Mexican Food, 4740 State St, Murray, UT 84107\"}, {\"address\": \"Virg's Restaurant, 12458 Minuteman Dr, Draper, UT 84020\"}, {\"address\": \"Sonny Bryan's Smokehouse, 3576 Constitution Blvd, West Valley City, UT 84109\"}, {\"address\": \"Open Rice, 3269 W 5400 S, Salt Lake City, UT 84129\"}, {\"address\": \"The Viking Yurt, Unnamed Road, Park City, UT 84060\"}, {\"address\": \"Arctic Circle, 3883 5400 S, Salt Lake City, UT 84118\"}, {\"address\": \"Dining Services, Utah State University, 0190 Old Main Hill, Logan, UT 84322\"}]}\n\nAction: run_sql({'query': \"WITH parsed AS (\\n  SELECT \\n    address,\\n    avg_rating,\\n    -- Extract portion with digits followed by street name\\n    regexp_extract(address, '(\\\\d+\\\\s+[A-Za-z0-9\\\\s\\\\.\\\\\u2013\\\\-]+?)(?:,|$)', 1) as raw_street_part\\n  FROM establishments\\n  WHERE address IS NOT NULL\\n)\\nSELECT address, raw_street_part\\nFROM parsed\\nLIMIT 20;\"})\n\nObservation: SQL error: Invalid Input Error: invalid escape sequence: \\\u2013\n\nAction: run_sql({'query': \"WITH parsed AS (\\n  SELECT \\n    address,\\n    avg_rating,\\n    regexp_extract(address, '(\\\\d+\\\\s+[A-Za-z0-9\\\\s.-]+?)(?:,|$)', 1) as raw_street_part\\n  FROM establishments\\n  WHERE address IS NOT NULL\\n)\\nSELECT address, raw_street_part\\nFROM parsed\\nLIMIT 20;\"})\n\nObservation: {\"row_count\": 20, \"truncated\": false, \"rows\": [{\"address\": \"Maverik Adventure's First Stop, 3330 S 500 W, South Salt Lake, UT 84115\", \"raw_street_part\": \"3330 S 500 W\"}, {\"address\": \"Wingstop, 2275 N University Pkwy, Provo, UT 84604\", \"raw_street_part\": \"2275 N University Pkwy\"}, {\"address\": \"Metropolitan Restaurant, 173 Broadway, Salt Lake City, UT 84101\", \"raw_street_part\": \"173 Broadway\"}, {\"address\": \"Mara's Mexican Cafe, 22 Main St, Layton, UT 84041\", \"raw_street_part\": \"22 Main St\"}, {\"address\": \"The Granite Club, 3820 Highland Dr, Millcreek, UT 84106\", \"raw_street_part\": \"3820 Highland Dr\"}, {\"address\": \"Taqueria La Caba\\u00f1a De Le\\u00f3n Mexican Food, 1303 Washington Blvd, Ogden, UT 84404\", \"raw_street_part\": \"1303 Washington Blvd\"}, {\"address\": \"Zion Hawaiian, 932 Zion \\u2013 Mount Carmel Hwy, Springdale, UT 84767\", \"raw_street_part\": \"\"}, {\"address\": \"Frigid Frogg Shaved Ice, 1400 W Hwy 40 Frontage Road by Esquire RV, Vernal, UT 84078\", \"raw_street_part\": \"1400 W Hwy 40 Frontage Road by Esquire RV\"}, {\"address\": \"Sno Biz, 332 W Main St, Vernal, UT 84078\", \"raw_street_part\": \"332 W Main St\"}, {\"address\": \"The Valley Steakhouse, 1684 US-40, Vernal, UT 84078\", \"raw_street_part\": \"1684 US-40\"}, {\"address\": \"JJ's Shave Ice, 195 W Main St, Richmond, UT 84333\", \"raw_street_part\": \"195 W Main St\"}, {\"address\": \"Big Z Motel, 1123 W 2150 S, West Haven, UT 84401\", \"raw_street_part\": \"1123 W 2150 S\"}, {\"address\": \"stefano's gelato, 12652 2700 W, Riverton, UT 84065\", \"raw_street_part\": \"12652 2700 W\"}, {\"address\": \"M&C BURGER, 57 W Center St, Midvale, UT 84047\", \"raw_street_part\": \"57 W Center St\"}, {\"address\": \"Wasatch Pizza Company, 820 E 400 S, Salt Lake City, UT 84102\", \"raw_street_part\": \"820 E 400 S\"}, {\"address\": \"Katering Koncepts, Inc., 1495 S Black Ridge Dr #210, St. George, UT 84770\", \"raw_street_part\": \"\"}, {\"address\": \"HomeMade Family Restaurant, 1155 N Main St, Layton, UT 84041\", \"raw_street_part\": \"1155 N Main St\"}, {\"address\": \"Boston Deli, 450 State St, Salt Lake City, UT 84111\", \"raw_street_part\": \"450 State St\"}, {\"address\": \"The Cake Alley dba Carrie's Cakes (By Appointment Only), 3135 W Wild Flower Ln, Lehi, UT 84043\", \"raw_street_part\": \"3135 W Wild Flower Ln\"}, {\"address\": \"Rocky Mountain Chocolate Factory, 1191 E Main St, Price, UT 84501\", \"raw_street_part\": \"1191 E Main St\"}]}\n\nAction: run_sql({'query': \"WITH base AS (\\n  SELECT \\n    gmap_id,\\n    name,\\n    address,\\n    avg_rating,\\n    regexp_extract(address, '(?:^|,)\\\\s*(\\\\d+[A-Za-z0-9\\\\s.-]+?)(?:,|$)', 1) as addr_part\\n  FROM establishments\\n  WHERE address IS NOT NULL\\n),\\ncleaned AS (\\n  SELECT \\n    gmap_id,\\n    name,\\n    address,\\n    avg_rating,\\n    addr_part,\\n    -- Strip suite/unit numbers if present\\n    regexp_replace(addr_part, '\\\\s+#.*|\\\\s+Ste.*|\\\\s+Suite.*|\\\\s+Unit.*', '', 'i') as raw_street\\n  FROM base\\n  WHERE addr_part != ''\\n),\\nstreets AS (\\n  SELECT\\n    gmap_id,\\n    name,\\n    address,\\n    avg_rating,\\n    raw_street,\\n    -- Strip leading building number\\n    regexp_replace(raw_street, '^\\\\d+\\\\s+', '') as street_with_dir,\\n    -- Also strip leading N/S/E/W direction if present\\n    regexp_replace(regexp_replace(raw_street, '^\\\\d+\\\\s+', ''), '^(N|S|E|W|NORTH|SOUTH|EAST|WEST)\\\\s+', '', 'i') as street_base\\n  FROM cleaned\\n)\\nSELECT * FROM streets LIMIT 20;\"})\n\nObservation: {\"row_count\": 20, \"truncated\": false, \"rows\": [{\"gmap_id\": \"0x87528bb7ab938cb3:0x5ee996e34cc50715\", \"name\": \"Maverik Adventure's First Stop\", \"address\": \"Maverik Adventure's First Stop, 3330 S 500 W, South Salt Lake, UT 84115\", \"avg_rating\": 3.4, \"raw_street\": \"3330 S 500 W\", \"street_with_dir\": \"S 500 W\", \"street_base\": \"500 W\"}, {\"gmap_id\": \"0x874d9bf9d1db7c85:0xf1c3706a2b497a3\", \"name\": \"Wingstop\", \"address\": \"Wingstop, 2275 N University Pkwy, Provo, UT 84604\", \"avg_rating\": 4.0, \"raw_street\": \"2275 N University Pkwy\", \"street_with_dir\": \"N University Pkwy\", \"street_base\": \"University Pkwy\"}, {\"gmap_id\": \"0x8752f504dc549587:0xae5bc551772b04d1\", \"name\": \"Metropolitan Restaurant\", \"address\": \"Metropolitan Restaurant, 173 Broadway, Salt Lake City, UT 84101\", \"avg_rating\": 4.0, \"raw_street\": \"173 Broadway\", \"street_with_dir\": \"Broadway\", \"street_base\": \"Broadway\"}, {\"gmap_id\": \"0x875302318f2be0bd:0x24204b3f1629becf\", \"name\": \"Mara's Mexican Cafe\", \"address\": \"Mara's Mexican Cafe, 22 Main St, Layton, UT 84041\", \"avg_rating\": 4.0, \"raw_street\": \"22 Main St\", \"street_with_dir\": \"Main St\", \"street_base\": \"Main St\"}, {\"gmap_id\": \"0x875261dcc56289bf:0x87ff2f4dbe87d7be\", \"name\": \"The Granite Club\", \"address\": \"The Granite Club, 3820 Highland Dr, Millcreek, UT 84106\", \"avg_rating\": 4.4, \"raw_street\": \"3820 Highland Dr\", \"street_with_dir\": \"Highland Dr\", \"street_base\": \"Highland Dr\"}, {\"gmap_id\": \"0x87530f390e058629:0x292320115b1705ea\", \"name\": \"Taqueria La Caba\\u00f1a De Le\\u00f3n Mexican Food\", \"address\": \"Taqueria La Caba\\u00f1a De Le\\u00f3n Mexican Food, 1303 Washington Blvd, Ogden, UT 84404\", \"avg_rating\": 4.6, \"raw_street\": \"1303 Washington Blvd\", \"street_with_dir\": \"Washington Blvd\", \"street_base\": \"Washington Blvd\"}, {\"gmap_id\": \"0x8745631c6c92b44f:0x21b255c2107a1c35\", \"name\": \"Frigid Frogg Shaved Ice\", \"address\": \"Frigid Frogg Shaved Ice, 1400 W Hwy 40 Frontage Road by Esquire RV, Vernal, UT 84078\", \"avg_rating\": 5.0, \"raw_street\": \"1400 W Hwy 40 Frontage Road by Esquire RV\", \"street_with_dir\": \"W Hwy 40 Frontage Road by Esquire RV\", \"street_base\": \"Hwy 40 Frontage Road by Esquire RV\"}, {\"gmap_id\": \"0x87456239ad36cd4b:0x837b53961846e468\", \"name\": \"Sno Biz\", \"address\": \"Sno Biz, 332 W Main St, Vernal, UT 84078\", \"avg_rating\": 4.7, \"raw_street\": \"332 W Main St\", \"street_with_dir\": \"W Main St\", \"street_base\": \"Main St\"}, {\"gmap_id\": \"0x8745633eebc9fea1:0x887fcdf0dff6e8f7\", \"name\": \"The Valley Steakhouse\", \"address\": \"The Valley Steakhouse, 1684 US-40, Vernal, UT 84078\", \"avg_rating\": 4.0, \"raw_street\": \"1684 US-40\", \"street_with_dir\": \"US-40\", \"street_base\": \"US-40\"}, {\"gmap_id\": \"0x8754616d6a50ed55:0xa4c7546c416e165a\", \"name\": \"JJ's Shave Ice\", \"address\": \"JJ's Shave Ice, 195 W Main St, Richmond, UT 84333\", \"avg_rating\": 5.0, \"raw_street\": \"195 W Main St\", \"street_with_dir\": \"W Main St\", \"street_base\": \"Main St\"}, {\"gmap_id\": \"0x87530e5dc89088ab:0x85396be731d35f0b\", \"name\": \"Big Z Motel\", \"address\": \"Big Z Motel, 1123 W 2150 S, West Haven, UT 84401\", \"avg_rating\": 4.4, \"raw_street\": \"1123 W 2150 S\", \"street_with_dir\": \"W 2150 S\", \"street_base\": \"2150 S\"}, {\"gmap_id\": \"0x8752842949355163:0x75cf9c3d6d44a674\", \"name\": \"stefano's gelato\", \"address\": \"stefano's gelato, 12652 2700 W, Riverton, UT 84065\", \"avg_rating\": 4.0, \"raw_street\": \"12652 2700 W\", \"street_with_dir\": \"2700 W\", \"street_base\": \"2700 W\"}, {\"gmap_id\": \"0x875289613c18358f:0x7aaf75f9f2b3aaf1\", \"name\": \"M&C BURGER\", \"address\": \"M&C BURGER, 57 W Center St, Midvale, UT 84047\", \"avg_rating\": 4.6, \"raw_street\": \"57 W Center St\", \"street_with_dir\": \"W Center St\", \"street_base\": \"Center St\"}, {\"gmap_id\": \"0x8752f566360bd43b:0x29596486f25fa20d\", \"name\": \"Wasatch Pizza Company\", \"address\": \"Wasatch Pizza Company, 820 E 400 S, Salt Lake City, UT 84102\", \"avg_rating\": 3.3, \"raw_street\": \"820 E 400 S\", \"street_with_dir\": \"E 400 S\", \"street_base\": \"400 S\"}, {\"gmap_id\": \"0x875303fbaaf0c837:0x40b90c5d60395c39\", \"name\": \"HomeMade Family Restaurant\", \"address\": \"HomeMade Family Restaurant, 1155 N Main St, Layton, UT 84041\", \"avg_rating\": 4.6, \"raw_street\": \"1155 N Main St\", \"street_with_dir\": \"N Main St\", \"street_base\": \"Main St\"}, {\"gmap_id\": \"0x8752f51049384697:0x98ee8f9a041373df\", \"name\": \"Boston Deli\", \"address\": \"Boston Deli, 450 State St, Salt Lake City, UT 84111\", \"avg_rating\": 3.2, \"raw_street\": \"450 State St\", \"street_with_dir\": \"State St\", \"street_base\": \"State St\"}, {\"gmap_id\": \"0x875281d588c4591f:0x6942a639cc8cd27\", \"name\": \"The Cake Alley dba Carrie's Cakes (By Appointment Only)\", \"address\": \"The Cake Alley dba Carrie's Cakes (By Appointment Only), 3135 W Wild Flower Ln, Lehi, UT 84043\", \"avg_rating\": 5.0, \"raw_street\": \"3135 W Wild Flower Ln\", \"street_with_dir\": \"W Wild Flower Ln\", \"street_base\": \"Wild Flower Ln\"}, {\"gmap_id\": \"0x874eb9430b0d86e5:0xe219f6069478acbd\", \"name\": \"Rocky Mountain Chocolate Factory\", \"address\": \"Rocky Mountain Chocolate Factory, 1191 E Main St, Price, UT 84501\", \"avg_rating\": 1.0, \"raw_street\": \"1191 E Main St\", \"street_with_dir\": \"E Main St\", \"street_base\": \"Main St\"}, {\"gmap_id\": \"0x87528bb122483115:0x2dd74c4aa24a6a7a\", \"name\": \"The coffee complex\", \"address\": \"The coffee complex, 4515 S Redwood Rd, Taylorsville, UT 84123\", \"avg_rating\": 4.3, \"raw_street\": \"4515 S Redwood Rd\", \"street_with_dir\": \"S Redwood Rd\", \"street_base\": \"Redwood Rd\"}, {\"gmap_id\": \"0x87530fda7aaa7117:0xe86320be513a5d3f\", \"name\": \"O-Town Beach Club\", \"address\": \"O-Town Beach Club, 2350 Lincoln Ave, Ogden, UT 84401\", \"avg_rating\": 5.0, \"raw_street\": \"2350 Lincoln Ave\", \"street_with_dir\": \"Lincoln Ave\", \"street_base\": \"Lincoln Ave\"}]}\n\nAction: run_sql({'query': \"WITH base AS (\\n  SELECT \\n    gmap_id,\\n    name,\\n    address,\\n    avg_rating,\\n    regexp_extract(address, '(?:^|,)\\\\s*(\\\\d+[A-Za-z0-9\\\\s.-]+?)(?:,|$)', 1) as addr_part\\n  FROM establishments\\n  WHERE address IS NOT NULL\\n),\\ncleaned AS (\\n  SELECT \\n    gmap_id,\\n    name,\\n    address,\\n    avg_rating,\\n    regexp_replace(addr_part, '\\\\s+#.*|\\\\s+Ste.*|\\\\s+Suite.*|\\\\s+Unit.*|\\\\s+Bldg.*|\\\\s+Building.*', '', 'i') as raw_street\\n  FROM base\\n  WHERE addr_part != ''\\n),\\nstreets AS (\\n  SELECT\\n    gmap_id,\\n    name,\\n    address,\\n    avg_rating,\\n    -- Strip leading building number\\n    trim(regexp_replace(raw_street, '^\\\\d+\\\\s+', '')) as street_with_dir,\\n    -- Strip directional prefixes like N, S, E, W, North, South, East, West\\n    trim(regexp_replace(regexp_replace(raw_street, '^\\\\d+\\\\s+', ''), '^(N|S|E|W|NORTH|SOUTH|EAST|WEST)\\\\s+', '', 'i')) as street_base\\n  FROM cleaned\\n)\\nSELECT \\n  street_base,\\n  COUNT(CASE WHEN avg_rating >= 3.0 AND avg_rating < 4.0 THEN 1 END) as count_3_to_4_star,\\n  COUNT(CASE WHEN round(avg_rating) = 3 THEN 1 END) as count_round_3_star,\\n  COUNT(CASE WHEN avg_rating = 3.0 THEN 1 END) as count_exact_3_star\\nFROM streets\\nWHERE street_base != ''\\nGROUP BY street_base\\nORDER BY count_3_to_4_star DESC\\nLIMIT 20;\"})\n\nObservation: {\"row_count\": 20, \"truncated\": false, \"rows\": [{\"street_base\": \"Main St\", \"count_3_to_4_star\": 211, \"count_round_3_star\": 64, \"count_exact_3_star\": 9}, {\"street_base\": \"State St\", \"count_3_to_4_star\": 157, \"count_round_3_star\": 57, \"count_exact_3_star\": 10}, {\"street_base\": \"Redwood Rd\", \"count_3_to_4_star\": 71, \"count_round_3_star\": 28, \"count_exact_3_star\": 5}, {\"street_base\": \"3500 S\", \"count_3_to_4_star\": 26, \"count_round_3_star\": 5, \"count_exact_3_star\": 0}, {\"street_base\": \"5600 W\", \"count_3_to_4_star\": 25, \"count_round_3_star\": 9, \"count_exact_3_star\": 2}, {\"street_base\": \"2100 S\", \"count_3_to_4_star\": 24, \"count_round_3_star\": 7, \"count_exact_3_star\": 1}, {\"street_base\": \"400 S\", \"count_3_to_4_star\": 23, \"count_round_3_star\": 7, \"count_exact_3_star\": 1}, {\"street_base\": \"Harrison Blvd\", \"count_3_to_4_star\": 19, \"count_round_3_star\": 9, \"count_exact_3_star\": 1}, {\"street_base\": \"200 N\", \"count_3_to_4_star\": 19, \"count_round_3_star\": 5, \"count_exact_3_star\": 0}, {\"street_base\": \"700 E\", \"count_3_to_4_star\": 19, \"count_round_3_star\": 7, \"count_exact_3_star\": 0}, {\"street_base\": \"1300 E\", \"count_3_to_4_star\": 19, \"count_round_3_star\": 9, \"count_exact_3_star\": 1}, {\"street_base\": \"3300 S\", \"count_3_to_4_star\": 18, \"count_round_3_star\": 5, \"count_exact_3_star\": 1}, {\"street_base\": \"9000 S\", \"count_3_to_4_star\": 18, \"count_round_3_star\": 7, \"count_exact_3_star\": 0}, {\"street_base\": \"Center St\", \"count_3_to_4_star\": 17, \"count_round_3_star\": 11, \"count_exact_3_star\": 1}, {\"street_base\": \"University Pkwy\", \"count_3_to_4_star\": 17, \"count_round_3_star\": 3, \"count_exact_3_star\": 0}, {\"street_base\": \"University Ave\", \"count_3_to_4_star\": 16, \"count_round_3_star\": 9, \"count_exact_3_star\": 0}, {\"street_base\": \"Washington Blvd\", \"count_3_to_4_star\": 16, \"count_round_3_star\": 5, \"count_exact_3_star\": 0}, {\"street_base\": \"2000 W\", \"count_3_to_4_star\": 15, \"count_round_3_star\": 3, \"count_exact_3_star\": 0}, {\"street_base\": \"Highland Dr\", \"count_3_to_4_star\": 15, \"count_round_3_star\": 7, \"count_exact_3_star\": 0}, {\"street_base\": \"500 S\", \"count_3_to_4_star\": 14, \"count_round_3_star\": 6, \"count_exact_3_star\": 1}]}\n\nAction: run_sql({'query': \"WITH base AS (\\n  SELECT \\n    gmap_id,\\n    name,\\n    address,\\n    avg_rating,\\n    regexp_extract(address, '(?:^|,)\\\\s*(\\\\d+[A-Za-z0-9\\\\s.-]+?)(?:,|$)', 1) as addr_part\\n  FROM establishments\\n  WHERE address IS NOT NULL\\n),\\ncleaned AS (\\n  SELECT \\n    gmap_id,\\n    name,\\n    address,\\n    avg_rating,\\n    regexp_replace(addr_part, '\\\\s+#.*|\\\\s+Ste.*|\\\\s+Suite.*|\\\\s+Unit.*|\\\\s+Bldg.*|\\\\s+Building.*', '', 'i') as raw_street\\n  FROM base\\n  WHERE addr_part != ''\\n),\\nstreets AS (\\n  SELECT\\n    gmap_id,\\n    name,\\n    address,\\n    avg_rating,\\n    trim(regexp_replace(raw_street, '^\\\\d+\\\\s+', '')) as street_with_dir\\n  FROM cleaned\\n)\\nSELECT \\n  street_with_dir,\\n  COUNT(CASE WHEN avg_rating >= 3.0 AND avg_rating < 4.0 THEN 1 END) as count_3_to_4_star,\\n  COUNT(CASE WHEN round(avg_rating) = 3 THEN 1 END) as count_round_3_star,\\n  COUNT(CASE WHEN avg_rating = 3.0 THEN 1 END) as count_exact_3_star\\nFROM streets\\nWHERE street_with_dir != ''\\nGROUP BY street_with_dir\\nORDER BY count_3_to_4_star DESC\\nLIMIT 20;\"})\n\nObservation: {\"row_count\": 20, \"truncated\": false, \"rows\": [{\"street_with_dir\": \"N Main St\", \"count_3_to_4_star\": 85, \"count_round_3_star\": 22, \"count_exact_3_star\": 6}, {\"street_with_dir\": \"State St\", \"count_3_to_4_star\": 71, \"count_round_3_star\": 29, \"count_exact_3_star\": 6}, {\"street_with_dir\": \"S Main St\", \"count_3_to_4_star\": 58, \"count_round_3_star\": 17, \"count_exact_3_star\": 0}, {\"street_with_dir\": \"S Redwood Rd\", \"count_3_to_4_star\": 51, \"count_round_3_star\": 20, \"count_exact_3_star\": 4}, {\"street_with_dir\": \"S State St\", \"count_3_to_4_star\": 38, \"count_round_3_star\": 12, \"count_exact_3_star\": 1}, {\"street_with_dir\": \"N State St\", \"count_3_to_4_star\": 29, \"count_round_3_star\": 7, \"count_exact_3_star\": 0}, {\"street_with_dir\": \"Main St\", \"count_3_to_4_star\": 27, \"count_round_3_star\": 9, \"count_exact_3_star\": 1}, {\"street_with_dir\": \"S 5600 W\", \"count_3_to_4_star\": 25, \"count_round_3_star\": 9, \"count_exact_3_star\": 2}, {\"street_with_dir\": \"W 3500 S\", \"count_3_to_4_star\": 24, \"count_round_3_star\": 5, \"count_exact_3_star\": 0}, {\"street_with_dir\": \"E Main St\", \"count_3_to_4_star\": 24, \"count_round_3_star\": 10, \"count_exact_3_star\": 1}, {\"street_with_dir\": \"S 1300 E\", \"count_3_to_4_star\": 19, \"count_round_3_star\": 9, \"count_exact_3_star\": 1}, {\"street_with_dir\": \"S 700 E\", \"count_3_to_4_star\": 19, \"count_round_3_star\": 7, \"count_exact_3_star\": 0}, {\"street_with_dir\": \"N Redwood Rd\", \"count_3_to_4_star\": 16, \"count_round_3_star\": 8, \"count_exact_3_star\": 1}, {\"street_with_dir\": \"E 2100 S\", \"count_3_to_4_star\": 16, \"count_round_3_star\": 7, \"count_exact_3_star\": 1}, {\"street_with_dir\": \"Harrison Blvd\", \"count_3_to_4_star\": 16, \"count_round_3_star\": 7, \"count_exact_3_star\": 1}, {\"street_with_dir\": \"W Main St\", \"count_3_to_4_star\": 16, \"count_round_3_star\": 6, \"count_exact_3_star\": 1}, {\"street_with_dir\": \"E 3300 S\", \"count_3_to_4_star\": 14, \"count_round_3_star\": 4, \"count_exact_3_star\": 1}, {\"street_with_dir\": \"W 9000 S\", \"count_3_to_4_star\": 14, \"count_round_3_star\": 5, \"count_exact_3_star\": 0}, {\"street_with_dir\": \"13400 S\", \"count_3_to_4_star\": 14, \"count_round_3_star\": 10, \"count_exact_3_star\": 0}, {\"street_with_dir\": \"Washington Blvd\", \"count_3_to_4_star\": 14, \"count_round_3_star\": 4, \"count_exact_3_star\": 0}]}\n\nAction: run_sql({'query': \"WITH parsed AS (\\n  SELECT \\n    gmap_id,\\n    name,\\n    address,\\n    avg_rating,\\n    regexp_extract(address, '([^,]+),\\\\s*UT\\\\s+\\\\d{5}', 1) as city,\\n    regexp_extract(address, '(?:^|,)\\\\s*(\\\\d+[A-Za-z0-9\\\\s.-]+?)(?:,|$)', 1) as raw_street\\n  FROM establishments\\n  WHERE address IS NOT NULL\\n)\\nSELECT city, count(*) \\nFROM parsed \\nGROUP BY city \\nORDER BY count(*) DESC \\nLIMIT 15;\"})\n\nObservation: {\"row_count\": 15, \"truncated\": false, \"rows\": [{\"city\": \" Salt Lake City\", \"count_star()\": 1444}, {\"city\": \" Ogden\", \"count_star()\": 388}, {\"city\": \" Provo\", \"count_star()\": 363}, {\"city\": \" St. George\", \"count_star()\": 332}, {\"city\": \" Orem\", \"count_star()\": 319}, {\"city\": \" West Valley City\", \"count_star()\": 277}, {\"city\": \" Sandy\", \"count_star()\": 275}, {\"city\": \" Park City\", \"count_star()\": 243}, {\"city\": \" Layton\", \"count_star()\": 221}, {\"city\": \" West Jordan\", \"count_star()\": 206}, {\"city\": \" Logan\", \"count_star()\": 199}, {\"city\": \" Draper\", \"count_star()\": 173}, {\"city\": \" Midvale\", \"count_star()\": 172}, {\"city\": \" South Jordan\", \"count_star()\": 169}, {\"city\": \" Lehi\", \"count_star()\": 165}]}\n\nAction: run_sql({'query': \"WITH parsed AS (\\n  SELECT \\n    gmap_id,\\n    name,\\n    address,\\n    avg_rating,\\n    trim(regexp_extract(address, '([^,]+),\\\\s*UT\\\\s+\\\\d{5}', 1)) as city,\\n    regexp_extract(address, '(?:^|,)\\\\s*(\\\\d+[A-Za-z0-9\\\\s.-]+?)(?:,|$)', 1) as raw_street\\n  FROM establishments\\n  WHERE address IS NOT NULL\\n),\\ncleaned AS (\\n  SELECT \\n    gmap_id,\\n    name,\\n    address,\\n    avg_rating,\\n    city,\\n    regexp_replace(raw_street, '\\\\s+#.*|\\\\s+Ste.*|\\\\s+Suite.*|\\\\s+Unit.*|\\\\s+Bldg.*|\\\\s+Building.*', '', 'i') as raw_street\\n  FROM parsed\\n  WHERE raw_street != ''\\n),\\nstreets AS (\\n  SELECT\\n    gmap_id,\\n    name,\\n    address,\\n    avg_rating,\\n    city,\\n    trim(regexp_replace(raw_street, '^\\\\d+\\\\s+', '')) as street_with_dir,\\n    trim(regexp_replace(regexp_replace(raw_street, '^\\\\d+\\\\s+', ''), '^(N|S|E|W|NORTH|SOUTH|EAST|WEST)\\\\s+', '', 'i')) as street_base\\n  FROM cleaned\\n)\\nSELECT \\n  street_base,\\n  city,\\n  COUNT(CASE WHEN avg_rating >= 3.0 AND avg_rating < 4.0 THEN 1 END) as count_3_to_4_star,\\n  COUNT(CASE WHEN round(avg_rating) = 3 THEN 1 END) as count_round_3_star,\\n  COUNT(CASE WHEN avg_rating = 3.0 THEN 1 END) as count_exact_3_star\\nFROM streets\\nWHERE street_base != '' AND city IS NOT NULL\\nGROUP BY street_base, city\\nORDER BY count_3_to_4_star DESC\\nLIMIT 20;\"})\n\nObservation: {\"row_count\": 20, \"truncated\": false, \"rows\": [{\"street_base\": \"State St\", \"city\": \"Orem\", \"count_3_to_4_star\": 29, \"count_round_3_star\": 9, \"count_exact_3_star\": 0}, {\"street_base\": \"State St\", \"city\": \"Sandy\", \"count_3_to_4_star\": 26, \"count_round_3_star\": 11, \"count_exact_3_star\": 4}, {\"street_base\": \"State St\", \"city\": \"Salt Lake City\", \"count_3_to_4_star\": 26, \"count_round_3_star\": 12, \"count_exact_3_star\": 0}, {\"street_base\": \"State St\", \"city\": \"Murray\", \"count_3_to_4_star\": 21, \"count_round_3_star\": 8, \"count_exact_3_star\": 2}, {\"street_base\": \"3500 S\", \"city\": \"West Valley City\", \"count_3_to_4_star\": 19, \"count_round_3_star\": 4, \"count_exact_3_star\": 0}, {\"street_base\": \"Main St\", \"city\": \"Logan\", \"count_3_to_4_star\": 19, \"count_round_3_star\": 4, \"count_exact_3_star\": 1}, {\"street_base\": \"2100 S\", \"city\": \"Salt Lake City\", \"count_3_to_4_star\": 19, \"count_round_3_star\": 7, \"count_exact_3_star\": 1}, {\"street_base\": \"400 S\", \"city\": \"Salt Lake City\", \"count_3_to_4_star\": 18, \"count_round_3_star\": 7, \"count_exact_3_star\": 1}, {\"street_base\": \"5600 W\", \"city\": \"West Valley City\", \"count_3_to_4_star\": 18, \"count_round_3_star\": 8, \"count_exact_3_star\": 2}, {\"street_base\": \"University Ave\", \"city\": \"Provo\", \"count_3_to_4_star\": 16, \"count_round_3_star\": 9, \"count_exact_3_star\": 0}, {\"street_base\": \"Main St\", \"city\": \"Moab\", \"count_3_to_4_star\": 16, \"count_round_3_star\": 4, \"count_exact_3_star\": 1}, {\"street_base\": \"Harrison Blvd\", \"city\": \"Ogden\", \"count_3_to_4_star\": 16, \"count_round_3_star\": 8, \"count_exact_3_star\": 1}, {\"street_base\": \"Redwood Rd\", \"city\": \"Salt Lake City\", \"count_3_to_4_star\": 15, \"count_round_3_star\": 8, \"count_exact_3_star\": 2}, {\"street_base\": \"University Pkwy\", \"city\": \"Orem\", \"count_3_to_4_star\": 15, \"count_round_3_star\": 3, \"count_exact_3_star\": 0}, {\"street_base\": \"9000 S\", \"city\": \"West Jordan\", \"count_3_to_4_star\": 15, \"count_round_3_star\": 7, \"count_exact_3_star\": 0}, {\"street_base\": \"Main St\", \"city\": \"Layton\", \"count_3_to_4_star\": 15, \"count_round_3_star\": 6, \"count_exact_3_star\": 1}, {\"street_base\": \"3300 S\", \"city\": \"Salt Lake City\", \"count_3_to_4_star\": 15, \"count_round_3_star\": 4, \"count_exact_3_star\": 1}, {\"street_base\": \"Main St\", \"city\": \"Tooele\", \"count_3_to_4_star\": 15, \"count_round_3_star\": 2, \"count_exact_3_star\": 0}, {\"street_base\": \"Washington Blvd\", \"city\": \"Ogden\", \"count_3_to_4_star\": 14, \"count_round_3_star\": 3, \"count_exact_3_star\": 0}, {\"street_base\": \"Redwood Rd\", \"city\": \"Taylorsville\", \"count_3_to_4_star\": 14, \"count_round_3_star\": 7, \"count_exact_3_star\": 1}]}\n\nAction: run_sql({'query': \"WITH base AS (\\n  SELECT \\n    gmap_id,\\n    name,\\n    address,\\n    avg_rating,\\n    regexp_extract(address, '(?:^|,)\\\\s*(\\\\d+[A-Za-z0-9\\\\s.-]+?)(?:,|$)', 1) as addr_part\\n  FROM establishments\\n  WHERE address IS NOT NULL\\n),\\ncleaned AS (\\n  SELECT \\n    gmap_id,\\n    name,\\n    address,\\n    avg_rating,\\n    regexp_replace(addr_part, '\\\\s+#.*|\\\\s+Ste.*|\\\\s+Suite.*|\\\\s+Unit.*|\\\\s+Bldg.*|\\\\s+Building.*', '', 'i') as raw_street\\n  FROM base\\n  WHERE addr_part != ''\\n),\\nstreets AS (\\n  SELECT\\n    gmap_id,\\n    name,\\n    address,\\n    avg_rating,\\n    trim(regexp_replace(regexp_replace(raw_street, '^\\\\d+\\\\s+', ''), '^(N|S|E|W|NORTH|SOUTH|EAST|WEST)\\\\s+', '', 'i')) as street_name\\n  FROM cleaned\\n)\\nSELECT \\n  street_name,\\n  COUNT(CASE WHEN avg_rating >= 3.0 AND avg_rating < 4.0 THEN 1 END) as star_3_39_count,\\n  COUNT(CASE WHEN round(avg_rating) = 3 THEN 1 END) as rounded_3_count,\\n  COUNT(CASE WHEN avg_rating = 3.0 THEN 1 END) as exact_30_count\\nFROM streets\\nWHERE street_name != ''\\nGROUP BY street_name\\nORDER BY star_3_39_count DESC\\nLIMIT 10;\"})\n\nObservation: {\"row_count\": 10, \"truncated\": false, \"rows\": [{\"street_name\": \"Main St\", \"star_3_39_count\": 211, \"rounded_3_count\": 64, \"exact_30_count\": 9}, {\"street_name\": \"State St\", \"star_3_39_count\": 157, \"rounded_3_count\": 57, \"exact_30_count\": 10}, {\"street_name\": \"Redwood Rd\", \"star_3_39_count\": 71, \"rounded_3_count\": 28, \"exact_30_count\": 5}, {\"street_name\": \"3500 S\", \"star_3_39_count\": 26, \"rounded_3_count\": 5, \"exact_30_count\": 0}, {\"street_name\": \"5600 W\", \"star_3_39_count\": 25, \"rounded_3_count\": 9, \"exact_30_count\": 2}, {\"street_name\": \"2100 S\", \"star_3_39_count\": 24, \"rounded_3_count\": 7, \"exact_30_count\": 1}, {\"street_name\": \"400 S\", \"star_3_39_count\": 23, \"rounded_3_count\": 7, \"exact_30_count\": 1}, {\"street_name\": \"1300 E\", \"star_3_39_count\": 19, \"rounded_3_count\": 9, \"exact_30_count\": 1}, {\"street_name\": \"700 E\", \"star_3_39_count\": 19, \"rounded_3_count\": 7, \"exact_30_count\": 0}, {\"street_name\": \"200 N\", \"star_3_39_count\": 19, \"rounded_3_count\": 5, \"exact_30_count\": 0}]}\n\nAction: plot_chart({'query': \"WITH base AS (\\n  SELECT \\n    address,\\n    avg_rating,\\n    regexp_extract(address, '(?:^|,)\\\\s*(\\\\d+[A-Za-z0-9\\\\s.-]+?)(?:,|$)', 1) as addr_part\\n  FROM establishments\\n  WHERE address IS NOT NULL\\n),\\ncleaned AS (\\n  SELECT \\n    address,\\n    avg_rating,\\n    regexp_replace(addr_part, '\\\\s+#.*|\\\\s+Ste.*|\\\\s+Suite.*|\\\\s+Unit.*|\\\\s+Bldg.*|\\\\s+Building.*', '', 'i') as raw_street\\n  FROM base\\n  WHERE addr_part != ''\\n),\\nstreets AS (\\n  SELECT\\n    avg_rating,\\n    trim(regexp_replace(regexp_replace(raw_street, '^\\\\d+\\\\s+', ''), '^(N|S|E|W|NORTH|SOUTH|EAST|WEST)\\\\s+', '', 'i')) as street_name\\n  FROM cleaned\\n)\\nSELECT \\n  street_name,\\n  COUNT(CASE WHEN avg_rating >= 3.0 AND avg_rating < 4.0 THEN 1 END) as star_3_39_count\\nFROM streets\\nWHERE street_name != ''\\nGROUP BY street_name\\nORDER BY star_3_39_count DESC\\nLIMIT 10;\", 'x': 'street_name', 'chart_type': 'bar', 'title': 'Top 10 Streets by Number of 3-Star Restaurants (3.0-3.9 Star Range)', 'y': 'star_3_39_count'})\n\nObservation: Chart created: 'Top 10 Streets by Number of 3-Star Restaurants (3.0-3.9 Star Range)' (bar, 10 rows). It will be shown to the user below your answer.\n\nAction: plot_chart({'query': \"WITH parsed AS (\\n  SELECT \\n    address,\\n    avg_rating,\\n    trim(regexp_extract(address, '([^,]+),\\\\s*UT\\\\s+\\\\d{5}', 1)) as city,\\n    regexp_extract(address, '(?:^|,)\\\\s*(\\\\d+[A-Za-z0-9\\\\s.-]+?)(?:,|$)', 1) as raw_street\\n  FROM establishments\\n  WHERE address IS NOT NULL\\n),\\ncleaned AS (\\n  SELECT \\n    address,\\n    avg_rating,\\n    city,\\n    regexp_replace(raw_street, '\\\\s+#.*|\\\\s+Ste.*|\\\\s+Suite.*|\\\\s+Unit.*|\\\\s+Bldg.*|\\\\s+Building.*', '', 'i') as raw_street\\n  FROM parsed\\n  WHERE raw_street != ''\\n),\\nstreets AS (\\n  SELECT\\n    avg_rating,\\n    city,\\n    trim(regexp_replace(regexp_replace(raw_street, '^\\\\d+\\\\s+', ''), '^(N|S|E|W|NORTH|SOUTH|EAST|WEST)\\\\s+', '', 'i')) as street_name\\n  FROM cleaned\\n)\\nSELECT \\n  (street_name || ' (' || city || ')') as street_city,\\n  COUNT(CASE WHEN avg_rating >= 3.0 AND avg_rating < 4.0 THEN 1 END) as count_3_star\\nFROM streets\\nWHERE street_name != '' AND city IS NOT NULL\\nGROUP BY street_name, city\\nORDER BY count_3_star DESC\\nLIMIT 10;\", 'y': 'count_3_star', 'title': 'Top 10 Street & City Combinations for 3-Star Restaurants', 'chart_type': 'bar', 'x': 'street_city'})\n\nObservation: Chart created: 'Top 10 Street & City Combinations for 3-Star Restaurants' (bar, 10 rows). It will be shown to the user below your answer.",
+  "timeline": [],
+  "messages": [
+    {
+      "type": "HumanMessage",
+      "content": "\u2060Which street has the highest number of 3 star restaurants?"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "get_schema",
+          "args": {},
+          "id": "call_958464",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 2005,
+        "output_tokens": 42,
+        "total_tokens": 2047,
+        "input_token_details": {
+          "cache_read": 0
+        },
+        "output_token_details": {
+          "reasoning": 32
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "Project food_health_viz {\n  database_type: 'DuckDB'\n}\n\nTable establishment_keys {\n  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']\n  name varchar [not null]\n  address varchar [not null]\n  city varchar [not null]\n  city_state_zip varchar\n  establishment_type varchar\n  source varchar [note: 'friend_slc | own_scrape']\n  slchd_lat double\n  slchd_lon double\n  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']\n\n  Note: 'SLCHD establishment list, one row per portal listing.'\n}\n\nTable category {\n  category_id integer [pk]\n  category varchar\n}\n\nTable establishments {\n  gmap_id varchar [pk]\n  name varchar\n  address varchar\n  description varchar\n  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']\n  avg_rating double\n  num_of_reviews integer\n  price varchar\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']\n\n  Note: 'One row per Google Local place \u2014 all restaurants, not just SLCHD-matched.'\n}\n\nTable establishment_attributes {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  attribute varchar [not null]\n\n  indexes { (gmap_id, attribute) [pk] }\n\n  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. \"Service options\") dropped.'\n}\n\nTable establishment_categories {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  category_id integer [ref: > category.category_id, not null]\n\n  indexes { (gmap_id, category_id) [pk] }\n}\n\nTable gmap_hours {\n  gmap_id varchar [ref: > establishments.gmap_id, not null]\n  day integer [not null, note: '0=Sun \u2026 6=Sat']\n  open_min bigint\n  open_max bigint\n\n  indexes { (gmap_id, day) [pk] }\n\n  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'\n}\n\nTable review {\n  user_id varchar\n  name varchar\n  time bigint\n  rating double\n  text varchar\n  resp varchar\n  gmap_id varchar [ref: > establishments.gmap_id]\n}\n\nTable inspection_types {\n  inspection_type_id integer [pk, note: 'parsed leading number, e.g. \"01 - Routine\" -> 1']\n  description varchar [note: 'e.g. \"Routine\"']\n}\n\nTable inspections {\n  inspection_id bigint [pk, increment]\n  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]\n  inspection_date date [not null]\n  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable \u2014 27 rows have no type']\n  inspection_score integer\n\n  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'\n}\n\nTable violation_codes {\n  violation_code_id integer [pk, increment]\n  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. \"4.5.18\"']\n  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']\n  critical boolean [not null]\n}\n\nTable violations {\n  violation_id bigint [pk, increment]\n  inspection_id bigint [ref: > inspections.inspection_id, not null]\n  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]\n  violation_description varchar [note: 'per-occurrence free text']\n  violation_occurrences integer\n  violation_cos boolean [note: 'corrected on site']\n  violation_phr varchar [note: 'public health rationale']\n\n  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'\n}\n",
+      "tool_call_id": "call_958464",
+      "name": "get_schema"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "SELECT avg_rating, count(*) \nFROM establishments \nWHERE avg_rating IS NOT NULL\nGROUP BY avg_rating \nORDER BY avg_rating;"
+          },
+          "id": "call_688140",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 3076,
+        "output_tokens": 213,
+        "total_tokens": 3289,
+        "input_token_details": {
+          "cache_read": 0
+        },
+        "output_token_details": {
+          "reasoning": 164
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 37, \"truncated\": false, \"rows\": [{\"avg_rating\": 1.0, \"count_star()\": 5}, {\"avg_rating\": 1.3, \"count_star()\": 1}, {\"avg_rating\": 1.5, \"count_star()\": 5}, {\"avg_rating\": 1.7, \"count_star()\": 1}, {\"avg_rating\": 1.8, \"count_star()\": 2}, {\"avg_rating\": 1.9, \"count_star()\": 2}, {\"avg_rating\": 2.0, \"count_star()\": 11}, {\"avg_rating\": 2.1, \"count_star()\": 4}, {\"avg_rating\": 2.2, \"count_star()\": 5}, {\"avg_rating\": 2.3, \"count_star()\": 12}, {\"avg_rating\": 2.4, \"count_star()\": 9}, {\"avg_rating\": 2.5, \"count_star()\": 21}, {\"avg_rating\": 2.6, \"count_star()\": 16}, {\"avg_rating\": 2.7, \"count_star()\": 24}, {\"avg_rating\": 2.8, \"count_star()\": 42}, {\"avg_rating\": 2.9, \"count_star()\": 52}, {\"avg_rating\": 3.0, \"count_star()\": 78}, {\"avg_rating\": 3.1, \"count_star()\": 78}, {\"avg_rating\": 3.2, \"count_star()\": 102}, {\"avg_rating\": 3.3, \"count_star()\": 161}, {\"avg_rating\": 3.4, \"count_star()\": 168}, {\"avg_rating\": 3.5, \"count_star()\": 204}, {\"avg_rating\": 3.6, \"count_star()\": 203}, {\"avg_rating\": 3.7, \"count_star()\": 262}, {\"avg_rating\": 3.8, \"count_star()\": 345}, {\"avg_rating\": 3.9, \"count_star()\": 412}, {\"avg_rating\": 4.0, \"count_star()\": 522}, {\"avg_rating\": 4.1, \"count_star()\": 562}, {\"avg_rating\": 4.2, \"count_star()\": 721}, {\"avg_rating\": 4.3, \"count_star()\": 785}, {\"avg_rating\": 4.4, \"count_star()\": 862}, {\"avg_rating\": 4.5, \"count_star()\": 857}, {\"avg_rating\": 4.6, \"count_star()\": 666}, {\"avg_rating\": 4.7, \"count_star()\": 548}, {\"avg_rating\": 4.8, \"count_star()\": 407}, {\"avg_rating\": 4.9, \"count_star()\": 215}, {\"avg_rating\": 5.0, \"count_star()\": 222}]}",
+      "tool_call_id": "call_688140",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "SELECT address FROM establishments WHERE address IS NOT NULL LIMIT 20;"
+          },
+          "id": "call_1004266",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 3866,
+        "output_tokens": 42,
+        "total_tokens": 3908,
+        "input_token_details": {
+          "cache_read": 0
+        },
+        "output_token_details": {
+          "reasoning": 13
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 20, \"truncated\": false, \"rows\": [{\"address\": \"Maverik Adventure's First Stop, 3330 S 500 W, South Salt Lake, UT 84115\"}, {\"address\": \"Wingstop, 2275 N University Pkwy, Provo, UT 84604\"}, {\"address\": \"Metropolitan Restaurant, 173 Broadway, Salt Lake City, UT 84101\"}, {\"address\": \"Mara's Mexican Cafe, 22 Main St, Layton, UT 84041\"}, {\"address\": \"The Granite Club, 3820 Highland Dr, Millcreek, UT 84106\"}, {\"address\": \"Taqueria La Caba\\u00f1a De Le\\u00f3n Mexican Food, 1303 Washington Blvd, Ogden, UT 84404\"}, {\"address\": \"Zion Hawaiian, 932 Zion \\u2013 Mount Carmel Hwy, Springdale, UT 84767\"}, {\"address\": \"Frigid Frogg Shaved Ice, 1400 W Hwy 40 Frontage Road by Esquire RV, Vernal, UT 84078\"}, {\"address\": \"Sno Biz, 332 W Main St, Vernal, UT 84078\"}, {\"address\": \"The Valley Steakhouse, 1684 US-40, Vernal, UT 84078\"}, {\"address\": \"JJ's Shave Ice, 195 W Main St, Richmond, UT 84333\"}, {\"address\": \"Big Z Motel, 1123 W 2150 S, West Haven, UT 84401\"}, {\"address\": \"stefano's gelato, 12652 2700 W, Riverton, UT 84065\"}, {\"address\": \"M&C BURGER, 57 W Center St, Midvale, UT 84047\"}, {\"address\": \"Wasatch Pizza Company, 820 E 400 S, Salt Lake City, UT 84102\"}, {\"address\": \"Katering Koncepts, Inc., 1495 S Black Ridge Dr #210, St. George, UT 84770\"}, {\"address\": \"HomeMade Family Restaurant, 1155 N Main St, Layton, UT 84041\"}, {\"address\": \"Boston Deli, 450 State St, Salt Lake City, UT 84111\"}, {\"address\": \"The Cake Alley dba Carrie's Cakes (By Appointment Only), 3135 W Wild Flower Ln, Lehi, UT 84043\"}, {\"address\": \"Rocky Mountain Chocolate Factory, 1191 E Main St, Price, UT 84501\"}]}",
+      "tool_call_id": "call_1004266",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "SELECT address,\n       split_part(address, ',', 1) as p1,\n       split_part(address, ',', 2) as p2,\n       split_part(address, ',', 3) as p3\nFROM establishments \nLIMIT 20;"
+          },
+          "id": "call_980498",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 4551,
+        "output_tokens": 250,
+        "total_tokens": 4801,
+        "input_token_details": {
+          "cache_read": 0
+        },
+        "output_token_details": {
+          "reasoning": 175
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 20, \"truncated\": false, \"rows\": [{\"address\": \"Maverik Adventure's First Stop, 3330 S 500 W, South Salt Lake, UT 84115\", \"p1\": \"Maverik Adventure's First Stop\", \"p2\": \" 3330 S 500 W\", \"p3\": \" South Salt Lake\"}, {\"address\": \"Wingstop, 2275 N University Pkwy, Provo, UT 84604\", \"p1\": \"Wingstop\", \"p2\": \" 2275 N University Pkwy\", \"p3\": \" Provo\"}, {\"address\": \"Metropolitan Restaurant, 173 Broadway, Salt Lake City, UT 84101\", \"p1\": \"Metropolitan Restaurant\", \"p2\": \" 173 Broadway\", \"p3\": \" Salt Lake City\"}, {\"address\": \"Mara's Mexican Cafe, 22 Main St, Layton, UT 84041\", \"p1\": \"Mara's Mexican Cafe\", \"p2\": \" 22 Main St\", \"p3\": \" Layton\"}, {\"address\": \"The Granite Club, 3820 Highland Dr, Millcreek, UT 84106\", \"p1\": \"The Granite Club\", \"p2\": \" 3820 Highland Dr\", \"p3\": \" Millcreek\"}, {\"address\": \"Taqueria La Caba\\u00f1a De Le\\u00f3n Mexican Food, 1303 Washington Blvd, Ogden, UT 84404\", \"p1\": \"Taqueria La Caba\\u00f1a De Le\\u00f3n Mexican Food\", \"p2\": \" 1303 Washington Blvd\", \"p3\": \" Ogden\"}, {\"address\": \"Zion Hawaiian, 932 Zion \\u2013 Mount Carmel Hwy, Springdale, UT 84767\", \"p1\": \"Zion Hawaiian\", \"p2\": \" 932 Zion \\u2013 Mount Carmel Hwy\", \"p3\": \" Springdale\"}, {\"address\": \"Frigid Frogg Shaved Ice, 1400 W Hwy 40 Frontage Road by Esquire RV, Vernal, UT 84078\", \"p1\": \"Frigid Frogg Shaved Ice\", \"p2\": \" 1400 W Hwy 40 Frontage Road by Esquire RV\", \"p3\": \" Vernal\"}, {\"address\": \"Sno Biz, 332 W Main St, Vernal, UT 84078\", \"p1\": \"Sno Biz\", \"p2\": \" 332 W Main St\", \"p3\": \" Vernal\"}, {\"address\": \"The Valley Steakhouse, 1684 US-40, Vernal, UT 84078\", \"p1\": \"The Valley Steakhouse\", \"p2\": \" 1684 US-40\", \"p3\": \" Vernal\"}, {\"address\": \"JJ's Shave Ice, 195 W Main St, Richmond, UT 84333\", \"p1\": \"JJ's Shave Ice\", \"p2\": \" 195 W Main St\", \"p3\": \" Richmond\"}, {\"address\": \"Big Z Motel, 1123 W 2150 S, West Haven, UT 84401\", \"p1\": \"Big Z Motel\", \"p2\": \" 1123 W 2150 S\", \"p3\": \" West Haven\"}, {\"address\": \"stefano's gelato, 12652 2700 W, Riverton, UT 84065\", \"p1\": \"stefano's gelato\", \"p2\": \" 12652 2700 W\", \"p3\": \" Riverton\"}, {\"address\": \"M&C BURGER, 57 W Center St, Midvale, UT 84047\", \"p1\": \"M&C BURGER\", \"p2\": \" 57 W Center St\", \"p3\": \" Midvale\"}, {\"address\": \"Wasatch Pizza Company, 820 E 400 S, Salt Lake City, UT 84102\", \"p1\": \"Wasatch Pizza Company\", \"p2\": \" 820 E 400 S\", \"p3\": \" Salt Lake City\"}, {\"address\": \"Katering Koncepts, Inc., 1495 S Black Ridge Dr #210, St. George, UT 84770\", \"p1\": \"Katering Koncepts\", \"p2\": \" Inc.\", \"p3\": \" 1495 S Black Ridge Dr #210\"}, {\"address\": \"HomeMade Family Restaurant, 1155 N Main St, Layton, UT 84041\", \"p1\": \"HomeMade Family Restaurant\", \"p2\": \" 1155 N Main St\", \"p3\": \" Layton\"}, {\"address\": null, \"p1\": null, \"p2\": null, \"p3\": null}, {\"address\": \"Boston Deli, 450 State St, Salt Lake City, UT 84111\", \"p1\": \"Boston Deli\", \"p2\": \" 450 State St\", \"p3\": \" Salt Lake City\"}, {\"address\": \"The Cake Alley dba Carrie's Cakes (By Appointment Only), 3135 W Wild Flower Ln, Lehi, UT 84043\", \"p1\": \"The Cake Alley dba Carrie's Cakes (By Appointment Only)\", \"p2\": \" 3135 W Wild Flower Ln\", \"p3\": \" Lehi\"}]}",
+      "tool_call_id": "call_980498",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "SELECT \n  COUNT(CASE WHEN avg_rating = 3.0 THEN 1 END) as exact_3,\n  COUNT(CASE WHEN avg_rating >= 3.0 AND avg_rating < 4.0 THEN 1 END) as range_3_to_4,\n  COUNT(CASE WHEN floor(avg_rating) = 3 THEN 1 END) as floor_3,\n  COUNT(CASE WHEN round(avg_rating) = 3 THEN 1 END) as round_3\nFROM establishments;"
+          },
+          "id": "call_978744",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 6066,
+        "output_tokens": 414,
+        "total_tokens": 6480,
+        "input_token_details": {
+          "cache_read": 0
+        },
+        "output_token_details": {
+          "reasoning": 283
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 1, \"truncated\": false, \"rows\": [{\"exact_3\": 78, \"range_3_to_4\": 2013, \"floor_3\": 2013, \"round_3\": 742}]}",
+      "tool_call_id": "call_978744",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "SELECT address FROM establishments WHERE address IS NOT NULL AND avg_rating >= 3.0 AND avg_rating < 4.0 LIMIT 30;"
+          },
+          "id": "call_1003837",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 6538,
+        "output_tokens": 233,
+        "total_tokens": 6771,
+        "input_token_details": {
+          "cache_read": 0
+        },
+        "output_token_details": {
+          "reasoning": 186
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 30, \"truncated\": false, \"rows\": [{\"address\": \"Maverik Adventure's First Stop, 3330 S 500 W, South Salt Lake, UT 84115\"}, {\"address\": \"Wasatch Pizza Company, 820 E 400 S, Salt Lake City, UT 84102\"}, {\"address\": \"Boston Deli, 450 State St, Salt Lake City, UT 84111\"}, {\"address\": \"Mrs. Fields, 2070 Layton Hills Mall #11, Layton, UT 84041\"}, {\"address\": \"SUBWAY\\u00aeRestaurants, 5692 S 900 E #7th, Salt Lake City, UT 84117\"}, {\"address\": \"D&R Spirits, 2430 Grant Ave, Ogden, UT 84401\"}, {\"address\": \"Mangia Park City, 1300 Snow Creek Dr, Park City, UT 84060\"}, {\"address\": \"La Puente Restaurant #7 Sandy, 61 W 10600 S, Sandy, UT 84070\"}, {\"address\": \"R&R BBQ, 301 S Temple, Salt Lake City, UT 84101\"}, {\"address\": \"TA, 1889 Pheasant Ln, Tooele, UT 84074\"}, {\"address\": \"Altitude Restaurant & Bar, 440 Main St, Park City, UT 82930\"}, {\"address\": \"Millcreek Grill, 2020 3300 S, Salt Lake City, UT 84109\"}, {\"address\": \"Walmart Deli, Washington, UT 84780\"}, {\"address\": \"French Bakery, Salt Lake City, UT 84109\"}, {\"address\": \"Malt Shoppe, 1290 N University Ave, Provo, UT 84604\"}, {\"address\": \"Starbucks, SG-5-2-21-3103, St. George, UT 84790\"}, {\"address\": \"Pizza Hut Express, Megaplex 20 At The District, 3761 W Parkway Plaza Dr, South Jordan, UT 84095\"}, {\"address\": \"Thai Chili Gardens, 430 W 800 N, Orem, UT 84057\"}, {\"address\": \"La Gigante, 2765 Washington Blvd, Ogden, UT 84401\"}, {\"address\": \"Maverik Adventure's First Stop, 520 W Main St, Lehi, UT 84043\"}, {\"address\": \"Cinnabon, 1078 E State St, American Fork, UT 84003\"}, {\"address\": \"Chaparro's Tamales, 2995 Scott Ln, West Haven, UT 84401\"}, {\"address\": \"Summit Fitness Kitchen Meal Prep, 1532 1450 S St, St. George, UT 84790\"}, {\"address\": \"Rulos Mexican Food, 4740 State St, Murray, UT 84107\"}, {\"address\": \"Virg's Restaurant, 12458 Minuteman Dr, Draper, UT 84020\"}, {\"address\": \"Sonny Bryan's Smokehouse, 3576 Constitution Blvd, West Valley City, UT 84109\"}, {\"address\": \"Open Rice, 3269 W 5400 S, Salt Lake City, UT 84129\"}, {\"address\": \"The Viking Yurt, Unnamed Road, Park City, UT 84060\"}, {\"address\": \"Arctic Circle, 3883 5400 S, Salt Lake City, UT 84118\"}, {\"address\": \"Dining Services, Utah State University, 0190 Old Main Hill, Logan, UT 84322\"}]}",
+      "tool_call_id": "call_1003837",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "WITH parsed AS (\n  SELECT \n    address,\n    avg_rating,\n    -- Extract portion with digits followed by street name\n    regexp_extract(address, '(\\d+\\s+[A-Za-z0-9\\s\\.\\\u2013\\-]+?)(?:,|$)', 1) as raw_street_part\n  FROM establishments\n  WHERE address IS NOT NULL\n)\nSELECT address, raw_street_part\nFROM parsed\nLIMIT 20;"
+          },
+          "id": "call_704076",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 7683,
+        "output_tokens": 573,
+        "total_tokens": 8256,
+        "input_token_details": {
+          "cache_read": 0
+        },
+        "output_token_details": {
+          "reasoning": 454
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "SQL error: Invalid Input Error: invalid escape sequence: \\\u2013",
+      "tool_call_id": "call_704076",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "WITH parsed AS (\n  SELECT \n    address,\n    avg_rating,\n    regexp_extract(address, '(\\d+\\s+[A-Za-z0-9\\s.-]+?)(?:,|$)', 1) as raw_street_part\n  FROM establishments\n  WHERE address IS NOT NULL\n)\nSELECT address, raw_street_part\nFROM parsed\nLIMIT 20;"
+          },
+          "id": "call_1019928",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 8282,
+        "output_tokens": 131,
+        "total_tokens": 8413,
+        "input_token_details": {
+          "cache_read": 0
+        },
+        "output_token_details": {
+          "reasoning": 26
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 20, \"truncated\": false, \"rows\": [{\"address\": \"Maverik Adventure's First Stop, 3330 S 500 W, South Salt Lake, UT 84115\", \"raw_street_part\": \"3330 S 500 W\"}, {\"address\": \"Wingstop, 2275 N University Pkwy, Provo, UT 84604\", \"raw_street_part\": \"2275 N University Pkwy\"}, {\"address\": \"Metropolitan Restaurant, 173 Broadway, Salt Lake City, UT 84101\", \"raw_street_part\": \"173 Broadway\"}, {\"address\": \"Mara's Mexican Cafe, 22 Main St, Layton, UT 84041\", \"raw_street_part\": \"22 Main St\"}, {\"address\": \"The Granite Club, 3820 Highland Dr, Millcreek, UT 84106\", \"raw_street_part\": \"3820 Highland Dr\"}, {\"address\": \"Taqueria La Caba\\u00f1a De Le\\u00f3n Mexican Food, 1303 Washington Blvd, Ogden, UT 84404\", \"raw_street_part\": \"1303 Washington Blvd\"}, {\"address\": \"Zion Hawaiian, 932 Zion \\u2013 Mount Carmel Hwy, Springdale, UT 84767\", \"raw_street_part\": \"\"}, {\"address\": \"Frigid Frogg Shaved Ice, 1400 W Hwy 40 Frontage Road by Esquire RV, Vernal, UT 84078\", \"raw_street_part\": \"1400 W Hwy 40 Frontage Road by Esquire RV\"}, {\"address\": \"Sno Biz, 332 W Main St, Vernal, UT 84078\", \"raw_street_part\": \"332 W Main St\"}, {\"address\": \"The Valley Steakhouse, 1684 US-40, Vernal, UT 84078\", \"raw_street_part\": \"1684 US-40\"}, {\"address\": \"JJ's Shave Ice, 195 W Main St, Richmond, UT 84333\", \"raw_street_part\": \"195 W Main St\"}, {\"address\": \"Big Z Motel, 1123 W 2150 S, West Haven, UT 84401\", \"raw_street_part\": \"1123 W 2150 S\"}, {\"address\": \"stefano's gelato, 12652 2700 W, Riverton, UT 84065\", \"raw_street_part\": \"12652 2700 W\"}, {\"address\": \"M&C BURGER, 57 W Center St, Midvale, UT 84047\", \"raw_street_part\": \"57 W Center St\"}, {\"address\": \"Wasatch Pizza Company, 820 E 400 S, Salt Lake City, UT 84102\", \"raw_street_part\": \"820 E 400 S\"}, {\"address\": \"Katering Koncepts, Inc., 1495 S Black Ridge Dr #210, St. George, UT 84770\", \"raw_street_part\": \"\"}, {\"address\": \"HomeMade Family Restaurant, 1155 N Main St, Layton, UT 84041\", \"raw_street_part\": \"1155 N Main St\"}, {\"address\": \"Boston Deli, 450 State St, Salt Lake City, UT 84111\", \"raw_street_part\": \"450 State St\"}, {\"address\": \"The Cake Alley dba Carrie's Cakes (By Appointment Only), 3135 W Wild Flower Ln, Lehi, UT 84043\", \"raw_street_part\": \"3135 W Wild Flower Ln\"}, {\"address\": \"Rocky Mountain Chocolate Factory, 1191 E Main St, Price, UT 84501\", \"raw_street_part\": \"1191 E Main St\"}]}",
+      "tool_call_id": "call_1019928",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "WITH base AS (\n  SELECT \n    gmap_id,\n    name,\n    address,\n    avg_rating,\n    regexp_extract(address, '(?:^|,)\\s*(\\d+[A-Za-z0-9\\s.-]+?)(?:,|$)', 1) as addr_part\n  FROM establishments\n  WHERE address IS NOT NULL\n),\ncleaned AS (\n  SELECT \n    gmap_id,\n    name,\n    address,\n    avg_rating,\n    addr_part,\n    -- Strip suite/unit numbers if present\n    regexp_replace(addr_part, '\\s+#.*|\\s+Ste.*|\\s+Suite.*|\\s+Unit.*', '', 'i') as raw_street\n  FROM base\n  WHERE addr_part != ''\n),\nstreets AS (\n  SELECT\n    gmap_id,\n    name,\n    address,\n    avg_rating,\n    raw_street,\n    -- Strip leading building number\n    regexp_replace(raw_street, '^\\d+\\s+', '') as street_with_dir,\n    -- Also strip leading N/S/E/W direction if present\n    regexp_replace(regexp_replace(raw_street, '^\\d+\\s+', ''), '^(N|S|E|W|NORTH|SOUTH|EAST|WEST)\\s+', '', 'i') as street_base\n  FROM cleaned\n)\nSELECT * FROM streets LIMIT 20;"
+          },
+          "id": "call_1006520",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 9373,
+        "output_tokens": 823,
+        "total_tokens": 10196,
+        "input_token_details": {
+          "cache_read": 0
+        },
+        "output_token_details": {
+          "reasoning": 480
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 20, \"truncated\": false, \"rows\": [{\"gmap_id\": \"0x87528bb7ab938cb3:0x5ee996e34cc50715\", \"name\": \"Maverik Adventure's First Stop\", \"address\": \"Maverik Adventure's First Stop, 3330 S 500 W, South Salt Lake, UT 84115\", \"avg_rating\": 3.4, \"raw_street\": \"3330 S 500 W\", \"street_with_dir\": \"S 500 W\", \"street_base\": \"500 W\"}, {\"gmap_id\": \"0x874d9bf9d1db7c85:0xf1c3706a2b497a3\", \"name\": \"Wingstop\", \"address\": \"Wingstop, 2275 N University Pkwy, Provo, UT 84604\", \"avg_rating\": 4.0, \"raw_street\": \"2275 N University Pkwy\", \"street_with_dir\": \"N University Pkwy\", \"street_base\": \"University Pkwy\"}, {\"gmap_id\": \"0x8752f504dc549587:0xae5bc551772b04d1\", \"name\": \"Metropolitan Restaurant\", \"address\": \"Metropolitan Restaurant, 173 Broadway, Salt Lake City, UT 84101\", \"avg_rating\": 4.0, \"raw_street\": \"173 Broadway\", \"street_with_dir\": \"Broadway\", \"street_base\": \"Broadway\"}, {\"gmap_id\": \"0x875302318f2be0bd:0x24204b3f1629becf\", \"name\": \"Mara's Mexican Cafe\", \"address\": \"Mara's Mexican Cafe, 22 Main St, Layton, UT 84041\", \"avg_rating\": 4.0, \"raw_street\": \"22 Main St\", \"street_with_dir\": \"Main St\", \"street_base\": \"Main St\"}, {\"gmap_id\": \"0x875261dcc56289bf:0x87ff2f4dbe87d7be\", \"name\": \"The Granite Club\", \"address\": \"The Granite Club, 3820 Highland Dr, Millcreek, UT 84106\", \"avg_rating\": 4.4, \"raw_street\": \"3820 Highland Dr\", \"street_with_dir\": \"Highland Dr\", \"street_base\": \"Highland Dr\"}, {\"gmap_id\": \"0x87530f390e058629:0x292320115b1705ea\", \"name\": \"Taqueria La Caba\\u00f1a De Le\\u00f3n Mexican Food\", \"address\": \"Taqueria La Caba\\u00f1a De Le\\u00f3n Mexican Food, 1303 Washington Blvd, Ogden, UT 84404\", \"avg_rating\": 4.6, \"raw_street\": \"1303 Washington Blvd\", \"street_with_dir\": \"Washington Blvd\", \"street_base\": \"Washington Blvd\"}, {\"gmap_id\": \"0x8745631c6c92b44f:0x21b255c2107a1c35\", \"name\": \"Frigid Frogg Shaved Ice\", \"address\": \"Frigid Frogg Shaved Ice, 1400 W Hwy 40 Frontage Road by Esquire RV, Vernal, UT 84078\", \"avg_rating\": 5.0, \"raw_street\": \"1400 W Hwy 40 Frontage Road by Esquire RV\", \"street_with_dir\": \"W Hwy 40 Frontage Road by Esquire RV\", \"street_base\": \"Hwy 40 Frontage Road by Esquire RV\"}, {\"gmap_id\": \"0x87456239ad36cd4b:0x837b53961846e468\", \"name\": \"Sno Biz\", \"address\": \"Sno Biz, 332 W Main St, Vernal, UT 84078\", \"avg_rating\": 4.7, \"raw_street\": \"332 W Main St\", \"street_with_dir\": \"W Main St\", \"street_base\": \"Main St\"}, {\"gmap_id\": \"0x8745633eebc9fea1:0x887fcdf0dff6e8f7\", \"name\": \"The Valley Steakhouse\", \"address\": \"The Valley Steakhouse, 1684 US-40, Vernal, UT 84078\", \"avg_rating\": 4.0, \"raw_street\": \"1684 US-40\", \"street_with_dir\": \"US-40\", \"street_base\": \"US-40\"}, {\"gmap_id\": \"0x8754616d6a50ed55:0xa4c7546c416e165a\", \"name\": \"JJ's Shave Ice\", \"address\": \"JJ's Shave Ice, 195 W Main St, Richmond, UT 84333\", \"avg_rating\": 5.0, \"raw_street\": \"195 W Main St\", \"street_with_dir\": \"W Main St\", \"street_base\": \"Main St\"}, {\"gmap_id\": \"0x87530e5dc89088ab:0x85396be731d35f0b\", \"name\": \"Big Z Motel\", \"address\": \"Big Z Motel, 1123 W 2150 S, West Haven, UT 84401\", \"avg_rating\": 4.4, \"raw_street\": \"1123 W 2150 S\", \"street_with_dir\": \"W 2150 S\", \"street_base\": \"2150 S\"}, {\"gmap_id\": \"0x8752842949355163:0x75cf9c3d6d44a674\", \"name\": \"stefano's gelato\", \"address\": \"stefano's gelato, 12652 2700 W, Riverton, UT 84065\", \"avg_rating\": 4.0, \"raw_street\": \"12652 2700 W\", \"street_with_dir\": \"2700 W\", \"street_base\": \"2700 W\"}, {\"gmap_id\": \"0x875289613c18358f:0x7aaf75f9f2b3aaf1\", \"name\": \"M&C BURGER\", \"address\": \"M&C BURGER, 57 W Center St, Midvale, UT 84047\", \"avg_rating\": 4.6, \"raw_street\": \"57 W Center St\", \"street_with_dir\": \"W Center St\", \"street_base\": \"Center St\"}, {\"gmap_id\": \"0x8752f566360bd43b:0x29596486f25fa20d\", \"name\": \"Wasatch Pizza Company\", \"address\": \"Wasatch Pizza Company, 820 E 400 S, Salt Lake City, UT 84102\", \"avg_rating\": 3.3, \"raw_street\": \"820 E 400 S\", \"street_with_dir\": \"E 400 S\", \"street_base\": \"400 S\"}, {\"gmap_id\": \"0x875303fbaaf0c837:0x40b90c5d60395c39\", \"name\": \"HomeMade Family Restaurant\", \"address\": \"HomeMade Family Restaurant, 1155 N Main St, Layton, UT 84041\", \"avg_rating\": 4.6, \"raw_street\": \"1155 N Main St\", \"street_with_dir\": \"N Main St\", \"street_base\": \"Main St\"}, {\"gmap_id\": \"0x8752f51049384697:0x98ee8f9a041373df\", \"name\": \"Boston Deli\", \"address\": \"Boston Deli, 450 State St, Salt Lake City, UT 84111\", \"avg_rating\": 3.2, \"raw_street\": \"450 State St\", \"street_with_dir\": \"State St\", \"street_base\": \"State St\"}, {\"gmap_id\": \"0x875281d588c4591f:0x6942a639cc8cd27\", \"name\": \"The Cake Alley dba Carrie's Cakes (By Appointment Only)\", \"address\": \"The Cake Alley dba Carrie's Cakes (By Appointment Only), 3135 W Wild Flower Ln, Lehi, UT 84043\", \"avg_rating\": 5.0, \"raw_street\": \"3135 W Wild Flower Ln\", \"street_with_dir\": \"W Wild Flower Ln\", \"street_base\": \"Wild Flower Ln\"}, {\"gmap_id\": \"0x874eb9430b0d86e5:0xe219f6069478acbd\", \"name\": \"Rocky Mountain Chocolate Factory\", \"address\": \"Rocky Mountain Chocolate Factory, 1191 E Main St, Price, UT 84501\", \"avg_rating\": 1.0, \"raw_street\": \"1191 E Main St\", \"street_with_dir\": \"E Main St\", \"street_base\": \"Main St\"}, {\"gmap_id\": \"0x87528bb122483115:0x2dd74c4aa24a6a7a\", \"name\": \"The coffee complex\", \"address\": \"The coffee complex, 4515 S Redwood Rd, Taylorsville, UT 84123\", \"avg_rating\": 4.3, \"raw_street\": \"4515 S Redwood Rd\", \"street_with_dir\": \"S Redwood Rd\", \"street_base\": \"Redwood Rd\"}, {\"gmap_id\": \"0x87530fda7aaa7117:0xe86320be513a5d3f\", \"name\": \"O-Town Beach Club\", \"address\": \"O-Town Beach Club, 2350 Lincoln Ave, Ogden, UT 84401\", \"avg_rating\": 5.0, \"raw_street\": \"2350 Lincoln Ave\", \"street_with_dir\": \"Lincoln Ave\", \"street_base\": \"Lincoln Ave\"}]}",
+      "tool_call_id": "call_1006520",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "WITH base AS (\n  SELECT \n    gmap_id,\n    name,\n    address,\n    avg_rating,\n    regexp_extract(address, '(?:^|,)\\s*(\\d+[A-Za-z0-9\\s.-]+?)(?:,|$)', 1) as addr_part\n  FROM establishments\n  WHERE address IS NOT NULL\n),\ncleaned AS (\n  SELECT \n    gmap_id,\n    name,\n    address,\n    avg_rating,\n    regexp_replace(addr_part, '\\s+#.*|\\s+Ste.*|\\s+Suite.*|\\s+Unit.*|\\s+Bldg.*|\\s+Building.*', '', 'i') as raw_street\n  FROM base\n  WHERE addr_part != ''\n),\nstreets AS (\n  SELECT\n    gmap_id,\n    name,\n    address,\n    avg_rating,\n    -- Strip leading building number\n    trim(regexp_replace(raw_street, '^\\d+\\s+', '')) as street_with_dir,\n    -- Strip directional prefixes like N, S, E, W, North, South, East, West\n    trim(regexp_replace(regexp_replace(raw_street, '^\\d+\\s+', ''), '^(N|S|E|W|NORTH|SOUTH|EAST|WEST)\\s+', '', 'i')) as street_base\n  FROM cleaned\n)\nSELECT \n  street_base,\n  COUNT(CASE WHEN avg_rating >= 3.0 AND avg_rating < 4.0 THEN 1 END) as count_3_to_4_star,\n  COUNT(CASE WHEN round(avg_rating) = 3 THEN 1 END) as count_round_3_star,\n  COUNT(CASE WHEN avg_rating = 3.0 THEN 1 END) as count_exact_3_star\nFROM streets\nWHERE street_base != ''\nGROUP BY street_base\nORDER BY count_3_to_4_star DESC\nLIMIT 20;"
+          },
+          "id": "call_928897",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 12763,
+        "output_tokens": 681,
+        "total_tokens": 13444,
+        "input_token_details": {
+          "cache_read": 8096
+        },
+        "output_token_details": {
+          "reasoning": 209
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 20, \"truncated\": false, \"rows\": [{\"street_base\": \"Main St\", \"count_3_to_4_star\": 211, \"count_round_3_star\": 64, \"count_exact_3_star\": 9}, {\"street_base\": \"State St\", \"count_3_to_4_star\": 157, \"count_round_3_star\": 57, \"count_exact_3_star\": 10}, {\"street_base\": \"Redwood Rd\", \"count_3_to_4_star\": 71, \"count_round_3_star\": 28, \"count_exact_3_star\": 5}, {\"street_base\": \"3500 S\", \"count_3_to_4_star\": 26, \"count_round_3_star\": 5, \"count_exact_3_star\": 0}, {\"street_base\": \"5600 W\", \"count_3_to_4_star\": 25, \"count_round_3_star\": 9, \"count_exact_3_star\": 2}, {\"street_base\": \"2100 S\", \"count_3_to_4_star\": 24, \"count_round_3_star\": 7, \"count_exact_3_star\": 1}, {\"street_base\": \"400 S\", \"count_3_to_4_star\": 23, \"count_round_3_star\": 7, \"count_exact_3_star\": 1}, {\"street_base\": \"Harrison Blvd\", \"count_3_to_4_star\": 19, \"count_round_3_star\": 9, \"count_exact_3_star\": 1}, {\"street_base\": \"200 N\", \"count_3_to_4_star\": 19, \"count_round_3_star\": 5, \"count_exact_3_star\": 0}, {\"street_base\": \"700 E\", \"count_3_to_4_star\": 19, \"count_round_3_star\": 7, \"count_exact_3_star\": 0}, {\"street_base\": \"1300 E\", \"count_3_to_4_star\": 19, \"count_round_3_star\": 9, \"count_exact_3_star\": 1}, {\"street_base\": \"3300 S\", \"count_3_to_4_star\": 18, \"count_round_3_star\": 5, \"count_exact_3_star\": 1}, {\"street_base\": \"9000 S\", \"count_3_to_4_star\": 18, \"count_round_3_star\": 7, \"count_exact_3_star\": 0}, {\"street_base\": \"Center St\", \"count_3_to_4_star\": 17, \"count_round_3_star\": 11, \"count_exact_3_star\": 1}, {\"street_base\": \"University Pkwy\", \"count_3_to_4_star\": 17, \"count_round_3_star\": 3, \"count_exact_3_star\": 0}, {\"street_base\": \"University Ave\", \"count_3_to_4_star\": 16, \"count_round_3_star\": 9, \"count_exact_3_star\": 0}, {\"street_base\": \"Washington Blvd\", \"count_3_to_4_star\": 16, \"count_round_3_star\": 5, \"count_exact_3_star\": 0}, {\"street_base\": \"2000 W\", \"count_3_to_4_star\": 15, \"count_round_3_star\": 3, \"count_exact_3_star\": 0}, {\"street_base\": \"Highland Dr\", \"count_3_to_4_star\": 15, \"count_round_3_star\": 7, \"count_exact_3_star\": 0}, {\"street_base\": \"500 S\", \"count_3_to_4_star\": 14, \"count_round_3_star\": 6, \"count_exact_3_star\": 1}]}",
+      "tool_call_id": "call_928897",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "WITH base AS (\n  SELECT \n    gmap_id,\n    name,\n    address,\n    avg_rating,\n    regexp_extract(address, '(?:^|,)\\s*(\\d+[A-Za-z0-9\\s.-]+?)(?:,|$)', 1) as addr_part\n  FROM establishments\n  WHERE address IS NOT NULL\n),\ncleaned AS (\n  SELECT \n    gmap_id,\n    name,\n    address,\n    avg_rating,\n    regexp_replace(addr_part, '\\s+#.*|\\s+Ste.*|\\s+Suite.*|\\s+Unit.*|\\s+Bldg.*|\\s+Building.*', '', 'i') as raw_street\n  FROM base\n  WHERE addr_part != ''\n),\nstreets AS (\n  SELECT\n    gmap_id,\n    name,\n    address,\n    avg_rating,\n    trim(regexp_replace(raw_street, '^\\d+\\s+', '')) as street_with_dir\n  FROM cleaned\n)\nSELECT \n  street_with_dir,\n  COUNT(CASE WHEN avg_rating >= 3.0 AND avg_rating < 4.0 THEN 1 END) as count_3_to_4_star,\n  COUNT(CASE WHEN round(avg_rating) = 3 THEN 1 END) as count_round_3_star,\n  COUNT(CASE WHEN avg_rating = 3.0 THEN 1 END) as count_exact_3_star\nFROM streets\nWHERE street_with_dir != ''\nGROUP BY street_with_dir\nORDER BY count_3_to_4_star DESC\nLIMIT 20;"
+          },
+          "id": "call_869326",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 14346,
+        "output_tokens": 534,
+        "total_tokens": 14880,
+        "input_token_details": {
+          "cache_read": 8101
+        },
+        "output_token_details": {
+          "reasoning": 137
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 20, \"truncated\": false, \"rows\": [{\"street_with_dir\": \"N Main St\", \"count_3_to_4_star\": 85, \"count_round_3_star\": 22, \"count_exact_3_star\": 6}, {\"street_with_dir\": \"State St\", \"count_3_to_4_star\": 71, \"count_round_3_star\": 29, \"count_exact_3_star\": 6}, {\"street_with_dir\": \"S Main St\", \"count_3_to_4_star\": 58, \"count_round_3_star\": 17, \"count_exact_3_star\": 0}, {\"street_with_dir\": \"S Redwood Rd\", \"count_3_to_4_star\": 51, \"count_round_3_star\": 20, \"count_exact_3_star\": 4}, {\"street_with_dir\": \"S State St\", \"count_3_to_4_star\": 38, \"count_round_3_star\": 12, \"count_exact_3_star\": 1}, {\"street_with_dir\": \"N State St\", \"count_3_to_4_star\": 29, \"count_round_3_star\": 7, \"count_exact_3_star\": 0}, {\"street_with_dir\": \"Main St\", \"count_3_to_4_star\": 27, \"count_round_3_star\": 9, \"count_exact_3_star\": 1}, {\"street_with_dir\": \"S 5600 W\", \"count_3_to_4_star\": 25, \"count_round_3_star\": 9, \"count_exact_3_star\": 2}, {\"street_with_dir\": \"W 3500 S\", \"count_3_to_4_star\": 24, \"count_round_3_star\": 5, \"count_exact_3_star\": 0}, {\"street_with_dir\": \"E Main St\", \"count_3_to_4_star\": 24, \"count_round_3_star\": 10, \"count_exact_3_star\": 1}, {\"street_with_dir\": \"S 1300 E\", \"count_3_to_4_star\": 19, \"count_round_3_star\": 9, \"count_exact_3_star\": 1}, {\"street_with_dir\": \"S 700 E\", \"count_3_to_4_star\": 19, \"count_round_3_star\": 7, \"count_exact_3_star\": 0}, {\"street_with_dir\": \"N Redwood Rd\", \"count_3_to_4_star\": 16, \"count_round_3_star\": 8, \"count_exact_3_star\": 1}, {\"street_with_dir\": \"E 2100 S\", \"count_3_to_4_star\": 16, \"count_round_3_star\": 7, \"count_exact_3_star\": 1}, {\"street_with_dir\": \"Harrison Blvd\", \"count_3_to_4_star\": 16, \"count_round_3_star\": 7, \"count_exact_3_star\": 1}, {\"street_with_dir\": \"W Main St\", \"count_3_to_4_star\": 16, \"count_round_3_star\": 6, \"count_exact_3_star\": 1}, {\"street_with_dir\": \"E 3300 S\", \"count_3_to_4_star\": 14, \"count_round_3_star\": 4, \"count_exact_3_star\": 1}, {\"street_with_dir\": \"W 9000 S\", \"count_3_to_4_star\": 14, \"count_round_3_star\": 5, \"count_exact_3_star\": 0}, {\"street_with_dir\": \"13400 S\", \"count_3_to_4_star\": 14, \"count_round_3_star\": 10, \"count_exact_3_star\": 0}, {\"street_with_dir\": \"Washington Blvd\", \"count_3_to_4_star\": 14, \"count_round_3_star\": 4, \"count_exact_3_star\": 0}]}",
+      "tool_call_id": "call_869326",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "WITH parsed AS (\n  SELECT \n    gmap_id,\n    name,\n    address,\n    avg_rating,\n    regexp_extract(address, '([^,]+),\\s*UT\\s+\\d{5}', 1) as city,\n    regexp_extract(address, '(?:^|,)\\s*(\\d+[A-Za-z0-9\\s.-]+?)(?:,|$)', 1) as raw_street\n  FROM establishments\n  WHERE address IS NOT NULL\n)\nSELECT city, count(*) \nFROM parsed \nGROUP BY city \nORDER BY count(*) DESC \nLIMIT 15;"
+          },
+          "id": "call_883538",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 15835,
+        "output_tokens": 436,
+        "total_tokens": 16271,
+        "input_token_details": {
+          "cache_read": 8104
+        },
+        "output_token_details": {
+          "reasoning": 278
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 15, \"truncated\": false, \"rows\": [{\"city\": \" Salt Lake City\", \"count_star()\": 1444}, {\"city\": \" Ogden\", \"count_star()\": 388}, {\"city\": \" Provo\", \"count_star()\": 363}, {\"city\": \" St. George\", \"count_star()\": 332}, {\"city\": \" Orem\", \"count_star()\": 319}, {\"city\": \" West Valley City\", \"count_star()\": 277}, {\"city\": \" Sandy\", \"count_star()\": 275}, {\"city\": \" Park City\", \"count_star()\": 243}, {\"city\": \" Layton\", \"count_star()\": 221}, {\"city\": \" West Jordan\", \"count_star()\": 206}, {\"city\": \" Logan\", \"count_star()\": 199}, {\"city\": \" Draper\", \"count_star()\": 173}, {\"city\": \" Midvale\", \"count_star()\": 172}, {\"city\": \" South Jordan\", \"count_star()\": 169}, {\"city\": \" Lehi\", \"count_star()\": 165}]}",
+      "tool_call_id": "call_883538",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "WITH parsed AS (\n  SELECT \n    gmap_id,\n    name,\n    address,\n    avg_rating,\n    trim(regexp_extract(address, '([^,]+),\\s*UT\\s+\\d{5}', 1)) as city,\n    regexp_extract(address, '(?:^|,)\\s*(\\d+[A-Za-z0-9\\s.-]+?)(?:,|$)', 1) as raw_street\n  FROM establishments\n  WHERE address IS NOT NULL\n),\ncleaned AS (\n  SELECT \n    gmap_id,\n    name,\n    address,\n    avg_rating,\n    city,\n    regexp_replace(raw_street, '\\s+#.*|\\s+Ste.*|\\s+Suite.*|\\s+Unit.*|\\s+Bldg.*|\\s+Building.*', '', 'i') as raw_street\n  FROM parsed\n  WHERE raw_street != ''\n),\nstreets AS (\n  SELECT\n    gmap_id,\n    name,\n    address,\n    avg_rating,\n    city,\n    trim(regexp_replace(raw_street, '^\\d+\\s+', '')) as street_with_dir,\n    trim(regexp_replace(regexp_replace(raw_street, '^\\d+\\s+', ''), '^(N|S|E|W|NORTH|SOUTH|EAST|WEST)\\s+', '', 'i')) as street_base\n  FROM cleaned\n)\nSELECT \n  street_base,\n  city,\n  COUNT(CASE WHEN avg_rating >= 3.0 AND avg_rating < 4.0 THEN 1 END) as count_3_to_4_star,\n  COUNT(CASE WHEN round(avg_rating) = 3 THEN 1 END) as count_round_3_star,\n  COUNT(CASE WHEN avg_rating = 3.0 THEN 1 END) as count_exact_3_star\nFROM streets\nWHERE street_base != '' AND city IS NOT NULL\nGROUP BY street_base, city\nORDER BY count_3_to_4_star DESC\nLIMIT 20;"
+          },
+          "id": "call_970615",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 16516,
+        "output_tokens": 541,
+        "total_tokens": 17057,
+        "input_token_details": {
+          "cache_read": 8103
+        },
+        "output_token_details": {
+          "reasoning": 48
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 20, \"truncated\": false, \"rows\": [{\"street_base\": \"State St\", \"city\": \"Orem\", \"count_3_to_4_star\": 29, \"count_round_3_star\": 9, \"count_exact_3_star\": 0}, {\"street_base\": \"State St\", \"city\": \"Sandy\", \"count_3_to_4_star\": 26, \"count_round_3_star\": 11, \"count_exact_3_star\": 4}, {\"street_base\": \"State St\", \"city\": \"Salt Lake City\", \"count_3_to_4_star\": 26, \"count_round_3_star\": 12, \"count_exact_3_star\": 0}, {\"street_base\": \"State St\", \"city\": \"Murray\", \"count_3_to_4_star\": 21, \"count_round_3_star\": 8, \"count_exact_3_star\": 2}, {\"street_base\": \"3500 S\", \"city\": \"West Valley City\", \"count_3_to_4_star\": 19, \"count_round_3_star\": 4, \"count_exact_3_star\": 0}, {\"street_base\": \"Main St\", \"city\": \"Logan\", \"count_3_to_4_star\": 19, \"count_round_3_star\": 4, \"count_exact_3_star\": 1}, {\"street_base\": \"2100 S\", \"city\": \"Salt Lake City\", \"count_3_to_4_star\": 19, \"count_round_3_star\": 7, \"count_exact_3_star\": 1}, {\"street_base\": \"400 S\", \"city\": \"Salt Lake City\", \"count_3_to_4_star\": 18, \"count_round_3_star\": 7, \"count_exact_3_star\": 1}, {\"street_base\": \"5600 W\", \"city\": \"West Valley City\", \"count_3_to_4_star\": 18, \"count_round_3_star\": 8, \"count_exact_3_star\": 2}, {\"street_base\": \"University Ave\", \"city\": \"Provo\", \"count_3_to_4_star\": 16, \"count_round_3_star\": 9, \"count_exact_3_star\": 0}, {\"street_base\": \"Main St\", \"city\": \"Moab\", \"count_3_to_4_star\": 16, \"count_round_3_star\": 4, \"count_exact_3_star\": 1}, {\"street_base\": \"Harrison Blvd\", \"city\": \"Ogden\", \"count_3_to_4_star\": 16, \"count_round_3_star\": 8, \"count_exact_3_star\": 1}, {\"street_base\": \"Redwood Rd\", \"city\": \"Salt Lake City\", \"count_3_to_4_star\": 15, \"count_round_3_star\": 8, \"count_exact_3_star\": 2}, {\"street_base\": \"University Pkwy\", \"city\": \"Orem\", \"count_3_to_4_star\": 15, \"count_round_3_star\": 3, \"count_exact_3_star\": 0}, {\"street_base\": \"9000 S\", \"city\": \"West Jordan\", \"count_3_to_4_star\": 15, \"count_round_3_star\": 7, \"count_exact_3_star\": 0}, {\"street_base\": \"Main St\", \"city\": \"Layton\", \"count_3_to_4_star\": 15, \"count_round_3_star\": 6, \"count_exact_3_star\": 1}, {\"street_base\": \"3300 S\", \"city\": \"Salt Lake City\", \"count_3_to_4_star\": 15, \"count_round_3_star\": 4, \"count_exact_3_star\": 1}, {\"street_base\": \"Main St\", \"city\": \"Tooele\", \"count_3_to_4_star\": 15, \"count_round_3_star\": 2, \"count_exact_3_star\": 0}, {\"street_base\": \"Washington Blvd\", \"city\": \"Ogden\", \"count_3_to_4_star\": 14, \"count_round_3_star\": 3, \"count_exact_3_star\": 0}, {\"street_base\": \"Redwood Rd\", \"city\": \"Taylorsville\", \"count_3_to_4_star\": 14, \"count_round_3_star\": 7, \"count_exact_3_star\": 1}]}",
+      "tool_call_id": "call_970615",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "run_sql",
+          "args": {
+            "query": "WITH base AS (\n  SELECT \n    gmap_id,\n    name,\n    address,\n    avg_rating,\n    regexp_extract(address, '(?:^|,)\\s*(\\d+[A-Za-z0-9\\s.-]+?)(?:,|$)', 1) as addr_part\n  FROM establishments\n  WHERE address IS NOT NULL\n),\ncleaned AS (\n  SELECT \n    gmap_id,\n    name,\n    address,\n    avg_rating,\n    regexp_replace(addr_part, '\\s+#.*|\\s+Ste.*|\\s+Suite.*|\\s+Unit.*|\\s+Bldg.*|\\s+Building.*', '', 'i') as raw_street\n  FROM base\n  WHERE addr_part != ''\n),\nstreets AS (\n  SELECT\n    gmap_id,\n    name,\n    address,\n    avg_rating,\n    trim(regexp_replace(regexp_replace(raw_street, '^\\d+\\s+', ''), '^(N|S|E|W|NORTH|SOUTH|EAST|WEST)\\s+', '', 'i')) as street_name\n  FROM cleaned\n)\nSELECT \n  street_name,\n  COUNT(CASE WHEN avg_rating >= 3.0 AND avg_rating < 4.0 THEN 1 END) as star_3_39_count,\n  COUNT(CASE WHEN round(avg_rating) = 3 THEN 1 END) as rounded_3_count,\n  COUNT(CASE WHEN avg_rating = 3.0 THEN 1 END) as exact_30_count\nFROM streets\nWHERE street_name != ''\nGROUP BY street_name\nORDER BY star_3_39_count DESC\nLIMIT 10;"
+          },
+          "id": "call_992015",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 18088,
+        "output_tokens": 1130,
+        "total_tokens": 19218,
+        "input_token_details": {
+          "cache_read": 8106
+        },
+        "output_token_details": {
+          "reasoning": 719
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "{\"row_count\": 10, \"truncated\": false, \"rows\": [{\"street_name\": \"Main St\", \"star_3_39_count\": 211, \"rounded_3_count\": 64, \"exact_30_count\": 9}, {\"street_name\": \"State St\", \"star_3_39_count\": 157, \"rounded_3_count\": 57, \"exact_30_count\": 10}, {\"street_name\": \"Redwood Rd\", \"star_3_39_count\": 71, \"rounded_3_count\": 28, \"exact_30_count\": 5}, {\"street_name\": \"3500 S\", \"star_3_39_count\": 26, \"rounded_3_count\": 5, \"exact_30_count\": 0}, {\"street_name\": \"5600 W\", \"star_3_39_count\": 25, \"rounded_3_count\": 9, \"exact_30_count\": 2}, {\"street_name\": \"2100 S\", \"star_3_39_count\": 24, \"rounded_3_count\": 7, \"exact_30_count\": 1}, {\"street_name\": \"400 S\", \"star_3_39_count\": 23, \"rounded_3_count\": 7, \"exact_30_count\": 1}, {\"street_name\": \"1300 E\", \"star_3_39_count\": 19, \"rounded_3_count\": 9, \"exact_30_count\": 1}, {\"street_name\": \"700 E\", \"star_3_39_count\": 19, \"rounded_3_count\": 7, \"exact_30_count\": 0}, {\"street_name\": \"200 N\", \"star_3_39_count\": 19, \"rounded_3_count\": 5, \"exact_30_count\": 0}]}",
+      "tool_call_id": "call_992015",
+      "name": "run_sql"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "plot_chart",
+          "args": {
+            "query": "WITH base AS (\n  SELECT \n    address,\n    avg_rating,\n    regexp_extract(address, '(?:^|,)\\s*(\\d+[A-Za-z0-9\\s.-]+?)(?:,|$)', 1) as addr_part\n  FROM establishments\n  WHERE address IS NOT NULL\n),\ncleaned AS (\n  SELECT \n    address,\n    avg_rating,\n    regexp_replace(addr_part, '\\s+#.*|\\s+Ste.*|\\s+Suite.*|\\s+Unit.*|\\s+Bldg.*|\\s+Building.*', '', 'i') as raw_street\n  FROM base\n  WHERE addr_part != ''\n),\nstreets AS (\n  SELECT\n    avg_rating,\n    trim(regexp_replace(regexp_replace(raw_street, '^\\d+\\s+', ''), '^(N|S|E|W|NORTH|SOUTH|EAST|WEST)\\s+', '', 'i')) as street_name\n  FROM cleaned\n)\nSELECT \n  street_name,\n  COUNT(CASE WHEN avg_rating >= 3.0 AND avg_rating < 4.0 THEN 1 END) as star_3_39_count\nFROM streets\nWHERE street_name != ''\nGROUP BY street_name\nORDER BY star_3_39_count DESC\nLIMIT 10;",
+            "x": "street_name",
+            "chart_type": "bar",
+            "title": "Top 10 Streets by Number of 3-Star Restaurants (3.0-3.9 Star Range)",
+            "y": "star_3_39_count"
+          },
+          "id": "call_664658",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 19645,
+        "output_tokens": 558,
+        "total_tokens": 20203,
+        "input_token_details": {
+          "cache_read": 16218
+        },
+        "output_token_details": {
+          "reasoning": 180
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "Chart created: 'Top 10 Streets by Number of 3-Star Restaurants (3.0-3.9 Star Range)' (bar, 10 rows). It will be shown to the user below your answer.",
+      "tool_call_id": "call_664658",
+      "name": "plot_chart"
+    },
+    {
+      "type": "AIMessage",
+      "content": "",
+      "raw_content": [],
+      "tool_calls": [
+        {
+          "name": "plot_chart",
+          "args": {
+            "query": "WITH parsed AS (\n  SELECT \n    address,\n    avg_rating,\n    trim(regexp_extract(address, '([^,]+),\\s*UT\\s+\\d{5}', 1)) as city,\n    regexp_extract(address, '(?:^|,)\\s*(\\d+[A-Za-z0-9\\s.-]+?)(?:,|$)', 1) as raw_street\n  FROM establishments\n  WHERE address IS NOT NULL\n),\ncleaned AS (\n  SELECT \n    address,\n    avg_rating,\n    city,\n    regexp_replace(raw_street, '\\s+#.*|\\s+Ste.*|\\s+Suite.*|\\s+Unit.*|\\s+Bldg.*|\\s+Building.*', '', 'i') as raw_street\n  FROM parsed\n  WHERE raw_street != ''\n),\nstreets AS (\n  SELECT\n    avg_rating,\n    city,\n    trim(regexp_replace(regexp_replace(raw_street, '^\\d+\\s+', ''), '^(N|S|E|W|NORTH|SOUTH|EAST|WEST)\\s+', '', 'i')) as street_name\n  FROM cleaned\n)\nSELECT \n  (street_name || ' (' || city || ')') as street_city,\n  COUNT(CASE WHEN avg_rating >= 3.0 AND avg_rating < 4.0 THEN 1 END) as count_3_star\nFROM streets\nWHERE street_name != '' AND city IS NOT NULL\nGROUP BY street_name, city\nORDER BY count_3_star DESC\nLIMIT 10;",
+            "y": "count_3_star",
+            "title": "Top 10 Street & City Combinations for 3-Star Restaurants",
+            "chart_type": "bar",
+            "x": "street_city"
+          },
+          "id": "call_1061744",
+          "type": "tool_call"
+        }
+      ],
+      "usage_metadata": {
+        "input_tokens": 20263,
+        "output_tokens": 595,
+        "total_tokens": 20858,
+        "input_token_details": {
+          "cache_read": 16215
+        },
+        "output_token_details": {
+          "reasoning": 177
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    },
+    {
+      "type": "ToolMessage",
+      "content": "Chart created: 'Top 10 Street & City Combinations for 3-Star Restaurants' (bar, 10 rows). It will be shown to the user below your answer.",
+      "tool_call_id": "call_1061744",
+      "name": "plot_chart"
+    },
+    {
+      "type": "AIMessage",
+      "content": "Based on the Google Local rating data across Utah, **Main Street** has the highest number of 3-star restaurants overall, followed by **State Street** and **Redwood Road**. \n\nDepending on how street names, directional prefixes, city boundaries, and star rating ranges are grouped, the breakdown is as follows:\n\n---\n\n### 1. Overall Base Street Name (3.0\u20133.9 Star Range)\nCombining directional variations (N, S, E, W) and all municipality segments:\n\n* **Main Street (`Main St`)**: **211 restaurants** (64 rounded to 3 stars, 9 exact 3.0 stars)\n* **State Street (`State St`)**: **157 restaurants** (57 rounded to 3 stars, 10 exact 3.0 stars)\n* **Redwood Road (`Redwood Rd`)**: **71 restaurants** (28 rounded to 3 stars, 5 exact 3.0 stars)\n* **3500 S**: **26 restaurants**\n* **5600 W**: **25 restaurants**\n* **2100 S**: **24 restaurants**\n* **400 S**: **23 restaurants**\n\n---\n\n### 2. Directional Street Breakdown\nIf directional prefixes are preserved as separate thoroughfares:\n\n* **N Main St**: **85 restaurants**\n* **State St** (unprefixed): **71 restaurants**\n* **S Main St**: **58 restaurants**\n* **S Redwood Rd**: **51 restaurants**\n* **S State St**: **38 restaurants**\n\n---\n\n### 3. Top City-Specific Street Corridors\nWhen looking at individual street corridors within specific cities:\n\n1. **State St (Orem)**: 29 restaurants\n2. **State St (Sandy)**: 26 restaurants\n3. **State St (Salt Lake City)**: 26 restaurants\n4. **State St (Murray)**: 21 restaurants\n5. **3500 S (West Valley City)**: 19 restaurants\n6. **Main St (Logan)**: 19 restaurants\n7. **2100 S (Salt Lake City)**: 19 restaurants\n\n---\n\n*Note: 98.4% of establishments in the database do not have matched SLCHD inspection records, but rating distributions (`avg_rating`) are drawn from Google Local data across all listed food establishments.*",
+      "raw_content": [
+        {
+          "type": "text",
+          "text": "Based on the Google Local rating data across Utah, **Main Street** has the highest number of 3-star restaurants overall, followed by **State Street** and **Redwood Road**. \n\nDepending on how street names, directional prefixes, city boundaries, and star rating ranges are grouped, the breakdown is as follows:\n\n---\n\n### 1. Overall Base Street Name (3.0\u20133.9 Star Range)\nCombining directional variations (N, S, E, W) and all municipality segments:\n\n* **Main Street (`Main St`)**: **211 restaurants** (64 rounded to 3 stars, 9 exact 3.0 stars)\n* **State Street (`State St`)**: **157 restaurants** (57 rounded to 3 stars, 10 exact 3.0 stars)\n* **Redwood Road (`Redwood Rd`)**: **71 restaurants** (28 rounded to 3 stars, 5 exact 3.0 stars)\n* **3500 S**: **26 restaurants**\n* **5600 W**: **25 restaurants**\n* **2100 S**: **24 restaurants**\n* **400 S**: **23 restaurants**\n\n---\n\n### 2. Directional Street Breakdown\nIf directional prefixes are preserved as separate thoroughfares:\n\n* **N Main St**: **85 restaurants**\n* **State St** (unprefixed): **71 restaurants**\n* **S Main St**: **58 restaurants**\n* **S Redwood Rd**: **51 restaurants**\n* **S State St**: **38 restaurants**\n\n---\n\n### 3. Top City-Specific Street Corridors\nWhen looking at individual street corridors within specific cities:\n\n1. **State St (Orem)**: 29 restaurants\n2. **State St (Sandy)**: 26 restaurants\n3. **State St (Salt Lake City)**: 26 restaurants\n4. **State St (Murray)**: 21 restaurants\n5. **3500 S (West Valley City)**: 19 restaurants\n6. **Main St (Logan)**: 19 restaurants\n7. **2100 S (Salt Lake City)**: 19 restaurants\n\n---\n\n*Note: 98.4% of establishments in the database do not have matched SLCHD inspection records, but rating distributions (`avg_rating`) are drawn from Google Local data across all listed food establishments.*",
+          "extras": {
+            "signature": "EtoPCtcPARFNMg+LdgIoXJF/vz3wv+CxZYcyTNhFq1E8YnoLOmn7p/+jErmimQ161cGJ9/iEEWVap7SglIFswAboQqIVJDCljSebU0pHy4xqztb6ij198m0r39jo9mLAadRG/22lAyJUbI867Mu0EBXvZRYRSDxEERIzfDB9w8b8cnGfYK4y3pmqffEGjhfcKVc6/7YokofZWFpGRbDmhg3V/qJsxwefVTMLShih6/iAmdFE7iQQ33IO6EI2bPZTFkxWHcODSqAia4BvSxmugKfqlpmRy5g0zN+e13uB8uuiAdHRc6o+nq0JWkP7yyEHPF7Uftv49fGl/+CGg7jT7b88U5TvJ4dMzVTEIYluK0iT64ilDf37QMs9Ebsu0XCgVnLnt9Un8VY0i0+nPHf9vOds82Hp6gg5dau58yh/71dn+V2D1Yr9DnNsm+EUoFCQzw3QXXI5HBvkM6eA8XOsmBcwm5mLbIlk/S/TnhdV32o84etOWyTnX2xESpMtoN3TqZjPkDHjYxA0FIyAbtjMTFPApm1UPB7wPfCYqEnesrqxF/NViTIV/w0cMUK5MkIE65V98e215pvOxta0+cb0LjCYXiUmKZkLT1O4ne58QdgDFshCbZTojKGW/Dd0uFZosKdpi72k5LE6Pug4p4cYtMc5wuqU1jHjjWkZ7itNBUukFNIEBwddTWM5TWW6lgd4WF6WPVDuKJtZWI1qHFDBYStZ9LXwSo18Nvn543zrCIgKFbTrXfprpT68OjP7PxT3FTb6vhLqzHBLZpcQJc5j4wYmLDkEEHaAp3qfQiyxm5UZrLXquMJPwJY9CGRaxolu+W/+U8Mrv4wG/z63pwFFqJp23K235zbrV0Uvli9dwRsUs73lyJ0wGcUBUeXh8fJVB1rcE0AqhldaBNIqvys1v2JYUpaYN0WTU01U2rf/YPrG+3D9T4U+XZqvxHtTLTm/PXMQcw8u2RoiJUv2+B7/5VNyGnCINtcVxukXGmfsaViTCj63GhaGKFpMAv/g1bMtF+XSbL9tUt0V+gR+9SdmnynIbDQJ6RiOYiEc60BwBkA5a+y7zzCjiOiwt1LuJlfV/jF90x14LDdnmlEAbJbPguZqoaEu3OoCKFd4ocH2aNxITyJkrwEtIg1FH7Uo6yUtVJCJDsDYIREZkaAF4/3VdqPvM8ToqpEUokUqY3XugyT0wJ76s8MeV7YQI61fOY8JzdM7b9w2Sa/qoOkhu6IVptdXWYR3j8WdQ6MV6DfZ3oBoIbC1gxh27niecVKnWo8uaAwqcuXBiXnEe8QM9ECHPpLyWs+mJGue2QUZEs3jV+ogBtS8q37cMJTT1RYQ+yp5I8gC/v/4rtbkYfTZNdjr5MJRBEzZ1Sg3Db3NaiRnuNhJeZxltf0Su0qG00UDRKxRal1kK/+0mP+mzHWR1ya+P9Q3Hu9BpD1C4k0jvOzA/L2LBEoPzAn2XUAKwr6dJe6BkSno4NjSwTbMwA9d+PhfSn80KzcWrGEQSLD2/jsW40AucefGHmZ/5hsvfr4RexQoh5YO7ezkvPmGkYxfSGpGpc6mdTRT/GG3JhIDlKw/M4oH37Yhil9Oao4XqRq4BF33kotkaIE/s+JIWFPYAs3E7zKHV4xUwCwoGNmltWG8wgXvLk43W6fkZTKldrKIg9N/z8bzU6BUoao04peoju7+w2eASp7KS2o//PCpJO9Bb9VYTR7CXzDzMVuLtb1aPDU7EKMXqblyIgLxpYOU0aAqJy+QVHrdL3SlSRMdXj8wOdu/4scXNdlbBRqSCSop67Us9uvhlKrTQuF+dnB90lZf+U4jwTTDDsDTx2r2gdj4ITu9eFZXMR6QsDKWWmOrQQovOYui+lGrcQabDRMnMpb18+yWw+CxetATSDQSMOlP1BWgNowYnIVXJFTwM3DyOEbu0axC0JSAfHr5J+kJMiLFP5h4nnGAuMWcNqylMExzpDOnqYXLGMVxggk9FY7d3LrANF2puQeT6hZ2qvzmUuVPf9/avqbdVtbofHFnMye2ea5Hj4gqLGYiWEOiQ4T69EZO0uClsBy0bzMHcxF+rHH9kfgqz4sxplJ7Ag3TXUKZEwTuWfVaBqmxdSYsCMGXe8y9eqSqUdeQxtbA/V3GpkXMNBozAsPVVJGN9qb+//s2zXVPxoFJEtQakffVhAxQ0Vnyv1OAmCbS7RkFMh6WP86ulgs5sxLjx8zBsF4FVbt+V9T1OhVtbh4q1xfwBrpzO7VZeNVlR1R4oM6DT4ai3wsHNNE4BwyCN52TVeOWMVCZRbgfuok5KhHlxXyYyzSsBpBWE/d81NjIiOIRsWMV/37EWTbnOQo68RIU9eXVLe3bgPC6GHgZVaJb6qjTwn4/b5NXGabcHbtmcjtAc5ybv1zaauVfXFiDRt5KLcxw6D3WXVCtTcdc1e8nkvUEWbCd6OJaJZlEv1aRcxe5LRDfgVyzFKAsRyAlA0TDTaTSzBnSjL8i+kLdV24CTF4OWLd5dEE6h8W71hDG6s/JVazcHmggY9xgbZsr1XSJ2Ty6IMCzfUUTmHawbYOzKtbaQEBTDDMtYF19iGYpKpGvwizpjuOU14npB+Iy08sRbFL+1YRnEVzDBpVmtGDTnmsrBZ3pSZN7sgbbA0y7okVfjYAaXq4XyyDC9eUMs/iVtFA/hSCyNESJb9P7i4y5JweODH10"
+          }
+        }
+      ],
+      "tool_calls": [],
+      "usage_metadata": {
+        "input_tokens": 20910,
+        "output_tokens": 1078,
+        "total_tokens": 21988,
+        "input_token_details": {
+          "cache_read": 16212
+        },
+        "output_token_details": {
+          "reasoning": 545
+        }
+      },
+      "model_name": "gemini-3.6-flash"
+    }
+  ],
+  "charts": [
+    {
+      "data": [
+        {
+          "hovertemplate": "street_name=%{x}<br>star_3_39_count=%{y}<extra></extra>",
+          "legendgroup": "",
+          "marker": {
+            "color": "#000001",
+            "pattern": {
+              "shape": ""
+            }
+          },
+          "name": "",
+          "orientation": "v",
+          "showlegend": false,
+          "textposition": "auto",
+          "x": [
+            "Main St",
+            "State St",
+            "Redwood Rd",
+            "3500 S",
+            "5600 W",
+            "2100 S",
+            "400 S",
+            "Harrison Blvd",
+            "700 E",
+            "200 N"
+          ],
+          "xaxis": "x",
+          "y": {
+            "dtype": "i2",
+            "bdata": "0wCdAEcAGgAZABgAFwATABMAEwA="
+          },
+          "yaxis": "y",
+          "type": "bar"
+        }
+      ],
+      "layout": {
+        "template": {
+          "data": {
+            "candlestick": [
+              {
+                "decreasing": {
+                  "line": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "line": {
+                    "color": "#000032"
+                  }
+                },
+                "type": "candlestick"
+              }
+            ],
+            "contourcarpet": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contourcarpet"
+              }
+            ],
+            "contour": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contour"
+              }
+            ],
+            "heatmap": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "heatmap"
+              }
+            ],
+            "histogram2d": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "histogram2d"
+              }
+            ],
+            "icicle": [
+              {
+                "textfont": {
+                  "color": "white"
+                },
+                "type": "icicle"
+              }
+            ],
+            "sankey": [
+              {
+                "textfont": {
+                  "color": "#000036"
+                },
+                "type": "sankey"
+              }
+            ],
+            "scatter": [
+              {
+                "marker": {
+                  "line": {
+                    "width": 0
+                  }
+                },
+                "type": "scatter"
+              }
+            ],
+            "table": [
+              {
+                "cells": {
+                  "fill": {
+                    "color": "#000038"
+                  },
+                  "font": {
+                    "color": "#000037"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "header": {
+                  "fill": {
+                    "color": "#000040"
+                  },
+                  "font": {
+                    "color": "#000036"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "type": "table"
+              }
+            ],
+            "waterfall": [
+              {
+                "connector": {
+                  "line": {
+                    "color": "#000036",
+                    "width": 2
+                  }
+                },
+                "decreasing": {
+                  "marker": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "marker": {
+                    "color": "#000032"
+                  }
+                },
+                "totals": {
+                  "marker": {
+                    "color": "#000034"
+                  }
+                },
+                "type": "waterfall"
+              }
+            ]
+          },
+          "layout": {
+            "coloraxis": {
+              "colorscale": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorscale": {
+              "diverging": [
+                [
+                  0.0,
+                  "#000021"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000022"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000023"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000024"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000025"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000026"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000027"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000028"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000029"
+                ],
+                [
+                  1.0,
+                  "#000030"
+                ]
+              ],
+              "sequential": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ],
+              "sequentialminus": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorway": [
+              "#000001",
+              "#000002",
+              "#000003",
+              "#000004",
+              "#000005",
+              "#000006",
+              "#000007",
+              "#000008",
+              "#000009",
+              "#000010"
+            ]
+          }
+        },
+        "xaxis": {
+          "anchor": "y",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "street_name"
+          }
+        },
+        "yaxis": {
+          "anchor": "x",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "star_3_39_count"
+          }
+        },
+        "legend": {
+          "tracegroupgap": 0
+        },
+        "title": {
+          "text": "Top 10 Streets by Number of 3-Star Restaurants (3.0-3.9 Star Range)"
+        },
+        "barmode": "relative"
+      }
+    },
+    {
+      "data": [
+        {
+          "hovertemplate": "street_city=%{x}<br>count_3_star=%{y}<extra></extra>",
+          "legendgroup": "",
+          "marker": {
+            "color": "#000001",
+            "pattern": {
+              "shape": ""
+            }
+          },
+          "name": "",
+          "orientation": "v",
+          "showlegend": false,
+          "textposition": "auto",
+          "x": [
+            "State St (Orem)",
+            "State St (Salt Lake City)",
+            "State St (Sandy)",
+            "State St (Murray)",
+            "2100 S (Salt Lake City)",
+            "Main St (Logan)",
+            "3500 S (West Valley City)",
+            "5600 W (West Valley City)",
+            "400 S (Salt Lake City)",
+            "Harrison Blvd (Ogden)"
+          ],
+          "xaxis": "x",
+          "y": {
+            "dtype": "i1",
+            "bdata": "HRoaFRMTExISEA=="
+          },
+          "yaxis": "y",
+          "type": "bar"
+        }
+      ],
+      "layout": {
+        "template": {
+          "data": {
+            "candlestick": [
+              {
+                "decreasing": {
+                  "line": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "line": {
+                    "color": "#000032"
+                  }
+                },
+                "type": "candlestick"
+              }
+            ],
+            "contourcarpet": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contourcarpet"
+              }
+            ],
+            "contour": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "contour"
+              }
+            ],
+            "heatmap": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "heatmap"
+              }
+            ],
+            "histogram2d": [
+              {
+                "colorscale": [
+                  [
+                    0.0,
+                    "#000011"
+                  ],
+                  [
+                    0.1111111111111111,
+                    "#000012"
+                  ],
+                  [
+                    0.2222222222222222,
+                    "#000013"
+                  ],
+                  [
+                    0.3333333333333333,
+                    "#000014"
+                  ],
+                  [
+                    0.4444444444444444,
+                    "#000015"
+                  ],
+                  [
+                    0.5555555555555556,
+                    "#000016"
+                  ],
+                  [
+                    0.6666666666666666,
+                    "#000017"
+                  ],
+                  [
+                    0.7777777777777778,
+                    "#000018"
+                  ],
+                  [
+                    0.8888888888888888,
+                    "#000019"
+                  ],
+                  [
+                    1.0,
+                    "#000020"
+                  ]
+                ],
+                "type": "histogram2d"
+              }
+            ],
+            "icicle": [
+              {
+                "textfont": {
+                  "color": "white"
+                },
+                "type": "icicle"
+              }
+            ],
+            "sankey": [
+              {
+                "textfont": {
+                  "color": "#000036"
+                },
+                "type": "sankey"
+              }
+            ],
+            "scatter": [
+              {
+                "marker": {
+                  "line": {
+                    "width": 0
+                  }
+                },
+                "type": "scatter"
+              }
+            ],
+            "table": [
+              {
+                "cells": {
+                  "fill": {
+                    "color": "#000038"
+                  },
+                  "font": {
+                    "color": "#000037"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "header": {
+                  "fill": {
+                    "color": "#000040"
+                  },
+                  "font": {
+                    "color": "#000036"
+                  },
+                  "line": {
+                    "color": "#000039"
+                  }
+                },
+                "type": "table"
+              }
+            ],
+            "waterfall": [
+              {
+                "connector": {
+                  "line": {
+                    "color": "#000036",
+                    "width": 2
+                  }
+                },
+                "decreasing": {
+                  "marker": {
+                    "color": "#000033"
+                  }
+                },
+                "increasing": {
+                  "marker": {
+                    "color": "#000032"
+                  }
+                },
+                "totals": {
+                  "marker": {
+                    "color": "#000034"
+                  }
+                },
+                "type": "waterfall"
+              }
+            ]
+          },
+          "layout": {
+            "coloraxis": {
+              "colorscale": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorscale": {
+              "diverging": [
+                [
+                  0.0,
+                  "#000021"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000022"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000023"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000024"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000025"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000026"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000027"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000028"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000029"
+                ],
+                [
+                  1.0,
+                  "#000030"
+                ]
+              ],
+              "sequential": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ],
+              "sequentialminus": [
+                [
+                  0.0,
+                  "#000011"
+                ],
+                [
+                  0.1111111111111111,
+                  "#000012"
+                ],
+                [
+                  0.2222222222222222,
+                  "#000013"
+                ],
+                [
+                  0.3333333333333333,
+                  "#000014"
+                ],
+                [
+                  0.4444444444444444,
+                  "#000015"
+                ],
+                [
+                  0.5555555555555556,
+                  "#000016"
+                ],
+                [
+                  0.6666666666666666,
+                  "#000017"
+                ],
+                [
+                  0.7777777777777778,
+                  "#000018"
+                ],
+                [
+                  0.8888888888888888,
+                  "#000019"
+                ],
+                [
+                  1.0,
+                  "#000020"
+                ]
+              ]
+            },
+            "colorway": [
+              "#000001",
+              "#000002",
+              "#000003",
+              "#000004",
+              "#000005",
+              "#000006",
+              "#000007",
+              "#000008",
+              "#000009",
+              "#000010"
+            ]
+          }
+        },
+        "xaxis": {
+          "anchor": "y",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "street_city"
+          }
+        },
+        "yaxis": {
+          "anchor": "x",
+          "domain": [
+            0.0,
+            1.0
+          ],
+          "title": {
+            "text": "count_3_star"
+          }
+        },
+        "legend": {
+          "tracegroupgap": 0
+        },
+        "title": {
+          "text": "Top 10 Street & City Combinations for 3-Star Restaurants"
+        },
+        "barmode": "relative"
+      }
+    }
+  ],
+  "candidate_pool_raw": [],
+  "duration_seconds": 249.03,
+  "usage": {
+    "available": true,
+    "per_call": [
+      {
+        "input_tokens": 2005,
+        "output_tokens": 42,
+        "total_tokens": 2047
+      },
+      {
+        "input_tokens": 3076,
+        "output_tokens": 213,
+        "total_tokens": 3289
+      },
+      {
+        "input_tokens": 3866,
+        "output_tokens": 42,
+        "total_tokens": 3908
+      },
+      {
+        "input_tokens": 4551,
+        "output_tokens": 250,
+        "total_tokens": 4801
+      },
+      {
+        "input_tokens": 6066,
+        "output_tokens": 414,
+        "total_tokens": 6480
+      },
+      {
+        "input_tokens": 6538,
+        "output_tokens": 233,
+        "total_tokens": 6771
+      },
+      {
+        "input_tokens": 7683,
+        "output_tokens": 573,
+        "total_tokens": 8256
+      },
+      {
+        "input_tokens": 8282,
+        "output_tokens": 131,
+        "total_tokens": 8413
+      },
+      {
+        "input_tokens": 9373,
+        "output_tokens": 823,
+        "total_tokens": 10196
+      },
+      {
+        "input_tokens": 12763,
+        "output_tokens": 681,
+        "total_tokens": 13444
+      },
+      {
+        "input_tokens": 14346,
+        "output_tokens": 534,
+        "total_tokens": 14880
+      },
+      {
+        "input_tokens": 15835,
+        "output_tokens": 436,
+        "total_tokens": 16271
+      },
+      {
+        "input_tokens": 16516,
+        "output_tokens": 541,
+        "total_tokens": 17057
+      },
+      {
+        "input_tokens": 18088,
+        "output_tokens": 1130,
+        "total_tokens": 19218
+      },
+      {
+        "input_tokens": 19645,
+        "output_tokens": 558,
+        "total_tokens": 20203
+      },
+      {
+        "input_tokens": 20263,
+        "output_tokens": 595,
+        "total_tokens": 20858
+      },
+      {
+        "input_tokens": 20910,
+        "output_tokens": 1078,
+        "total_tokens": 21988
+      }
+    ],
+    "input_tokens": 189806,
+    "output_tokens": 8274,
+    "total_tokens": 198080
+  },
+  "tokens_per_minute": 47724.3,
+  "estimated_cost_usd": 0.346764,
+  "success": true,
+  "error": null,
+  "chart_image_files": [
+    "2026-08-15T10-37-37.187827+00-00_v1_memory_fa065735_chart0.png",
+    "2026-08-15T10-37-37.187827+00-00_v1_memory_fa065735_chart1.png"
+  ]
+}
