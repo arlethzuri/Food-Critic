@@ -1,0 +1,145 @@
+Question: Among them, can you show me the distribution and timeline of health inspections?
+
+Variant: v1_memory | Provider: ollama | Model: gemma4:26b
+Timestamp: 2026-08-14T16:30:50.218224+00:00 | Duration: 36.16s
+
+--- Answer ---
+The distribution and timeline of health inspections show a significant upward trend in recorded inspections over the last decade.
+
+Key observations from the inspection history:
+* **Growth Trend:** There has been a substantial increase in the volume of inspections recorded, starting from very low numbers (e.g., only 3 inspections in 2009) to peaks of over 1,300 inspections per year in recent years (2025).
+* **Recent Activity:** The highest volumes of inspection data are concentrated between 2021 and 2026, reflecting more comprehensive data coverage or increased reporting frequency in the most recent years.
+* **Historical Context:** While there was a noticeable dip in 2020 (375 inspections) compared to 2019 (611), activity rebounded strongly in subsequent years.
+
+*(Note: The presence of inspection counts for 2025 and 2026 in the data likely reflects scheduled inspections or projected entries within the dataset.)*
+
+--- Reasoning trace ---
+Action: get_schema({})
+
+Observation: Project food_health_viz {
+  database_type: 'DuckDB'
+}
+
+Table establishment_keys {
+  slchd_establishment_key varchar [pk, note: 'NAME|ADDRESS|CITY']
+  name varchar [not null]
+  address varchar [not null]
+  city varchar [not null]
+  city_state_zip varchar
+  establishment_type varchar
+  source varchar [note: 'friend_slc | own_scrape']
+  slchd_lat double
+  slchd_lon double
+  geocode_status varchar [note: 'Match | Match_Nominatim | No_Match | Tie']
+
+  Note: 'SLCHD establishment list, one row per portal listing.'
+}
+
+Table category {
+  category_id integer [pk]
+  category varchar
+}
+
+Table establishments {
+  gmap_id varchar [pk]
+  name varchar
+  address varchar
+  description varchar
+  geom geometry [note: 'ST_Point(longitude, latitude), spatial extension']
+  avg_rating double
+  num_of_reviews integer
+  price varchar
+  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, note: 'nullable; set when ER matched']
+
+  Note: 'One row per Google Local place — all restaurants, not just SLCHD-matched.'
+}
+
+Table establishment_attributes {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  attribute varchar [not null]
+
+  indexes { (gmap_id, attribute) [pk] }
+
+  Note: 'Flattened meta.MISC leaf values. Outer category label (e.g. "Service options") dropped.'
+}
+
+Table establishment_categories {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  category_id integer [ref: > category.category_id, not null]
+
+  indexes { (gmap_id, category_id) [pk] }
+}
+
+Table gmap_hours {
+  gmap_id varchar [ref: > establishments.gmap_id, not null]
+  day integer [not null, note: '0=Sun … 6=Sat']
+  open_min bigint
+  open_max bigint
+
+  indexes { (gmap_id, day) [pk] }
+
+  Note: 'Covers every meta place with parsable hours, not just the SLCHD-matched subset.'
+}
+
+Table review {
+  user_id varchar
+  name varchar
+  time bigint
+  rating double
+  text varchar
+  resp varchar
+  gmap_id varchar [ref: > establishments.gmap_id]
+}
+
+Table inspection_types {
+  inspection_type_id integer [pk, note: 'parsed leading number, e.g. "01 - Routine" -> 1']
+  description varchar [note: 'e.g. "Routine"']
+}
+
+Table inspections {
+  inspection_id bigint [pk, increment]
+  slchd_establishment_key varchar [ref: > establishment_keys.slchd_establishment_key, not null]
+  inspection_date date [not null]
+  inspection_type_id integer [ref: > inspection_types.inspection_type_id, note: 'nullable — 27 rows have no type']
+  inspection_score integer
+
+  Note: 'One row per inspection visit. count_critical/noncritical_violations dropped (derivable from violations).'
+}
+
+Table violation_codes {
+  violation_code_id integer [pk, increment]
+  code_text varchar [not null, note: 'base code, asterisks stripped, e.g. "4.5.18"']
+  asterisk_count integer [not null, note: '0/1/2 trailing * in source, meaning unconfirmed']
+  critical boolean [not null]
+}
+
+Table violations {
+  violation_id bigint [pk, increment]
+  inspection_id bigint [ref: > inspections.inspection_id, not null]
+  violation_code_id integer [ref: > violation_codes.violation_code_id, not null]
+  violation_description varchar [note: 'per-occurrence free text']
+  violation_occurrences integer
+  violation_cos boolean [note: 'corrected on site']
+  violation_phr varchar [note: 'public health rationale']
+
+  Note: 'One row per violation actually cited. Zero-violation inspections get zero rows (no placeholder row).'
+}
+
+
+Action: run_sql({'query': 'SELECT COUNT(DISTINCT slchd_establishment_key) AS establishments_with_inspections FROM inspections'})
+
+Observation: {"row_count": 1, "truncated": false, "rows": [{"establishments_with_inspections": 1315}]}
+
+Action: run_sql({'query': 'SELECT COUNT(*) AS total_establishments FROM establishments'})
+
+Observation: {"row_count": 1, "truncated": false, "rows": [{"total_establishments": 8592}]}
+
+Action: run_sql({'query': "SELECT \n    strftime('%Y', inspection_date) AS inspection_year, \n    COUNT(*) AS num_inspections\nFROM inspections\nGROUP BY 1\nORDER BY 1;"})
+
+Observation: {"row_count": 18, "truncated": false, "rows": [{"inspection_year": "2009", "num_inspections": 3}, {"inspection_year": "2010", "num_inspections": 6}, {"inspection_year": "2011", "num_inspections": 8}, {"inspection_year": "2012", "num_inspections": 11}, {"inspection_year": "2013", "num_inspections": 24}, {"inspection_year": "2014", "num_inspections": 72}, {"inspection_year": "2015", "num_inspections": 82}, {"inspection_year": "2016", "num_inspections": 161}, {"inspection_year": "2017", "num_inspections": 244}, {"inspection_year": "2018", "num_inspections": 461}, {"inspection_year": "2019", "num_inspections": 611}, {"inspection_year": "2020", "num_inspections": 375}, {"inspection_year": "2021", "num_inspections": 621}, {"inspection_year": "2022", "num_inspections": 898}, {"inspection_year": "2023", "num_inspections": 908}, {"inspection_year": "2024", "num_inspections": 1258}, {"inspection_year": "2025", "num_inspections": 1387}, {"inspection_year": "2026", "num_inspections": 890}]}
+
+Action: plot_chart({'chart_type': 'line', 'query': "SELECT \n    strftime('%Y', inspection_date) AS inspection_year, \n    COUNT(*) AS num_inspections\nFROM inspections\nGROUP BY 1\nORDER BY 1;", 'title': 'Annual Number of Health Inspections (2009–2026)', 'x': 'inspection_year', 'y': 'num_inspections'})
+
+Observation: Chart created: 'Annual Number of Health Inspections (2009–2026)' (line, 18 rows). It will be shown to the user below your answer.
+
+--- Usage: 24364 tokens, ~$0.0000 ---
